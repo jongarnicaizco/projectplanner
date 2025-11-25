@@ -110,7 +110,7 @@ export async function generateBodySummary(body) {
   const summaryPrompt = `Summarize the following email in a concise and clear way. The summary must:
 - Capture the main points and the sender's intention
 - Be useful to quickly understand what the email is about
-- Be between 100 and 300 words
+- Be approximately 150 words (be concise, avoid unnecessary details)
 - Be written in English (regardless of the original email language)
 
 Email:
@@ -124,8 +124,8 @@ Summary:`;
     const summary = await callModelText(modelToUse, summaryPrompt);
     
     if (summary && summary.trim()) {
-      // Limitar a 5000 caracteres para Airtable
-      const trimmedSummary = summary.trim().slice(0, 5000);
+      // Limitar a 1500 caracteres para mantener el resumen conciso (~150 palabras)
+      const trimmedSummary = summary.trim().slice(0, 1500);
       console.log("[mfs] Resumen del body generado:", {
         originalLength: body.length,
         summaryLength: trimmedSummary.length
@@ -481,7 +481,22 @@ async function classifyIntentHeuristic({
   const normalizedModelIntent = normalizeModelIntent(modelIntentRaw);
 
   if (!intent && normalizedModelIntent) {
-    if (
+    // Ser más estricto con "Medium" del modelo - requiere señales claras
+    if (normalizedModelIntent === "Medium") {
+      // Solo aceptar Medium si hay señales claras de partnership/comercial
+      if (hasPartnershipCollabAsk || isMediaKitPricingRequest || hasCallOrMeetingInvite) {
+        intent = "Medium";
+        confidence = 0.7;
+      } else if (isPrInvitationCase || isBarterRequest || isFreeCoverageRequest) {
+        // PR, barter, free coverage → Low, no Medium
+        intent = "Low";
+        confidence = 0.65;
+      } else {
+        // Sin señales claras → descartar o Low según contexto
+        intent = hasAnyCommercialSignalForUs ? "Low" : "Discard";
+        confidence = hasAnyCommercialSignalForUs ? 0.65 : 0.85;
+      }
+    } else if (
       normalizedModelIntent === "Very High" &&
       !hasPartnershipCollabAsk &&
       !isMediaKitPricingRequest &&
@@ -491,7 +506,19 @@ async function classifyIntentHeuristic({
     ) {
       intent = "High";
       confidence = 0.75;
+    } else if (normalizedModelIntent === "Discard") {
+      // Confiar más en Discard del modelo si no hay señales claras
+      if (!hasPartnershipCollabAsk && !isMediaKitPricingRequest && !isPrInvitationCase && 
+          !isBarterRequest && !isFreeCoverageRequest && !hasCallOrMeetingInvite) {
+        intent = "Discard";
+        confidence = 0.85;
+      } else {
+        // Hay señales, no descartar
+        intent = hasPartnershipCollabAsk || isMediaKitPricingRequest ? "Medium" : "Low";
+        confidence = 0.7;
+      }
     } else {
+      // High, Low, Very High: usar directamente pero validar
       intent = normalizedModelIntent;
       confidence = confidence || 0.7;
     }
@@ -502,7 +529,7 @@ async function classifyIntentHeuristic({
     }
   }
 
-  // Fallback final
+  // Fallback final - ser más estricto
   if (!intent) {
     if (!hasAnyCommercialSignalForUs) {
       intent = "Discard";
@@ -510,9 +537,15 @@ async function classifyIntentHeuristic({
       reasoning =
         "Email does not fit PR, barter, pricing, free coverage or partnership patterns, so it is discarded.";
     } else if (hasPartnershipCollabAsk || isMediaKitPricingRequest) {
+      // Solo Medium si hay señales CLARAS de partnership/comercial
       intent = "Medium";
       confidence = 0.7;
+    } else if (isPrInvitationCase || isBarterRequest || isFreeCoverageRequest) {
+      // PR, barter, free coverage → Low, no Medium
+      intent = "Low";
+      confidence = 0.65;
     } else {
+      // Otras señales comerciales débiles → Low, no Medium
       intent = "Low";
       confidence = 0.65;
     }

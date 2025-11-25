@@ -154,19 +154,21 @@ export async function createAirtableRecord({
 
     // Intentar usar el ID del campo directamente para "Body Summary" si está disponible
     const BODY_SUMMARY_FIELD_ID = "fldx6yJnCtIeVvJqc";
+    const MAX_SUMMARY_LENGTH = 1500; // ~150 palabras
     if (bodySummary && bodySummary.trim()) {
+      const trimmedSummary = bodySummary.trim().slice(0, MAX_SUMMARY_LENGTH);
       if (meta.nameSet.has("Body Summary")) {
-        fields["Body Summary"] = bodySummary.trim().slice(0, 5000);
+        fields["Body Summary"] = trimmedSummary;
       } else if (meta.idSet.has(BODY_SUMMARY_FIELD_ID)) {
-        fields[BODY_SUMMARY_FIELD_ID] = bodySummary.trim().slice(0, 5000);
+        fields[BODY_SUMMARY_FIELD_ID] = trimmedSummary;
         console.log("[mfs] Airtable: usando ID del campo Body Summary directamente");
       } else {
         console.warn("[mfs] Airtable: campo Body Summary no encontrado, recargando cache...");
         const refreshedMeta = await getAirtableFieldMaps(true);
         if (refreshedMeta.nameSet.has("Body Summary")) {
-          fields["Body Summary"] = bodySummary.trim().slice(0, 5000);
+          fields["Body Summary"] = trimmedSummary;
         } else if (refreshedMeta.idSet.has(BODY_SUMMARY_FIELD_ID)) {
-          fields[BODY_SUMMARY_FIELD_ID] = bodySummary.trim().slice(0, 5000);
+          fields[BODY_SUMMARY_FIELD_ID] = trimmedSummary;
         } else {
           console.error("[mfs] Airtable: campo Body Summary no existe en la tabla");
         }
