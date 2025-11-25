@@ -96,7 +96,12 @@ export async function createAirtableRecord({
   intent,
   confidence,
   reasoning,
-  meddic,
+  meddicMetrics,
+  meddicEconomicBuyer,
+  meddicDecisionCriteria,
+  meddicDecisionProcess,
+  meddicIdentifyPain,
+  meddicChampion,
   isFreeCoverage,
   isBarter,
   isPrInvitation,
@@ -122,7 +127,23 @@ export async function createAirtableRecord({
         ? Number(confidence.toFixed(3))
         : undefined;
     const reasoningStr = (reasoning || "").toString().slice(0, 1000);
-    const meddicStr = (meddic || "").toString().slice(0, 1000);
+    
+    // Combine all MEDDIC fields into a single string for the "MEDDIC Analysis" field
+    // Format with line breaks:
+    // M: XXXX
+    // E: XXXXX
+    // D: XXXXX
+    // D: XXXXX
+    // I: XXXXX
+    // C: XXXXX
+    const meddicParts = [];
+    if (meddicMetrics) meddicParts.push(`M: ${meddicMetrics}`);
+    if (meddicEconomicBuyer) meddicParts.push(`E: ${meddicEconomicBuyer}`);
+    if (meddicDecisionCriteria) meddicParts.push(`D: ${meddicDecisionCriteria}`);
+    if (meddicDecisionProcess) meddicParts.push(`D: ${meddicDecisionProcess}`);
+    if (meddicIdentifyPain) meddicParts.push(`I: ${meddicIdentifyPain}`);
+    if (meddicChampion) meddicParts.push(`C: ${meddicChampion}`);
+    const meddicStr = meddicParts.join("\n\n").slice(0, 1000);
 
     const fields = {};
 

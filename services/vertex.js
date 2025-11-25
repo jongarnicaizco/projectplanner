@@ -168,7 +168,16 @@ ${body}`.trim();
   let raw = "";
   let modelIntentRaw = null;
   let reasoning = "";
-  let meddic = "";
+  let meddicMetrics = "";
+  let meddicEconomicBuyer = "";
+  let meddicDecisionCriteria = "";
+  let meddicDecisionProcess = "";
+  let meddicIdentifyPain = "";
+  let meddicChampion = "";
+  let modelFreeCoverage = false;
+  let modelBarter = false;
+  let modelPrInvitation = false;
+  let modelPricing = false;
 
   try {
     raw = await callModelText(CFG.VERTEX_INTENT_MODEL, prompt);
@@ -187,13 +196,49 @@ ${body}`.trim();
       if (parsed.reasoning) {
         reasoning = String(parsed.reasoning).trim().slice(0, 1000);
       }
-      if (parsed.meddic_pain_hypothesis) {
-        meddic = String(parsed.meddic_pain_hypothesis).trim().slice(0, 250);
-      } else if (parsed.meddic) {
-        meddic = String(parsed.meddic).trim().slice(0, 250);
-      }
       if (parsed.intent) {
         modelIntentRaw = String(parsed.intent).trim();
+      }
+      
+      // Extract checkbox flags
+      if (parsed.free_coverage_request !== undefined) {
+        modelFreeCoverage = Boolean(parsed.free_coverage_request);
+      }
+      if (parsed.barter_request !== undefined) {
+        modelBarter = Boolean(parsed.barter_request);
+      }
+      if (parsed.pr_invitation !== undefined) {
+        modelPrInvitation = Boolean(parsed.pr_invitation);
+      }
+      if (parsed.pricing_request !== undefined) {
+        modelPricing = Boolean(parsed.pricing_request);
+      }
+      
+      // Extract MEDDIC fields (only if not Discard)
+      if (modelIntentRaw && modelIntentRaw !== "Discard") {
+        if (parsed.meddic_metrics) {
+          meddicMetrics = String(parsed.meddic_metrics).trim();
+        }
+        if (parsed.meddic_economic_buyer) {
+          meddicEconomicBuyer = String(parsed.meddic_economic_buyer).trim();
+        }
+        if (parsed.meddic_decision_criteria) {
+          meddicDecisionCriteria = String(parsed.meddic_decision_criteria).trim();
+        }
+        if (parsed.meddic_decision_process) {
+          meddicDecisionProcess = String(parsed.meddic_decision_process).trim();
+        }
+        if (parsed.meddic_identify_pain) {
+          meddicIdentifyPain = String(parsed.meddic_identify_pain).trim();
+        }
+        if (parsed.meddic_champion) {
+          meddicChampion = String(parsed.meddic_champion).trim();
+        }
+        
+        // Legacy support: if old meddic_pain_hypothesis exists, use it for Identify Pain
+        if (!meddicIdentifyPain && parsed.meddic_pain_hypothesis) {
+          meddicIdentifyPain = String(parsed.meddic_pain_hypothesis).trim();
+        }
       }
     } catch {
       console.warn(
@@ -212,7 +257,16 @@ ${body}`.trim();
     body,
     modelIntentRaw,
     reasoning,
-    meddic,
+    meddicMetrics,
+    meddicEconomicBuyer,
+    meddicDecisionCriteria,
+    meddicDecisionProcess,
+    meddicIdentifyPain,
+    meddicChampion,
+    modelFreeCoverage,
+    modelBarter,
+    modelPrInvitation,
+    modelPricing,
   });
 
   return result;
@@ -228,7 +282,16 @@ async function classifyIntentHeuristic({
   body,
   modelIntentRaw,
   reasoning,
-  meddic,
+  meddicMetrics,
+  meddicEconomicBuyer,
+  meddicDecisionCriteria,
+  meddicDecisionProcess,
+  meddicIdentifyPain,
+  meddicChampion,
+  modelFreeCoverage,
+  modelBarter,
+  modelPrInvitation,
+  modelPricing,
 }) {
   const mailText = `${subject || ""}\n${body || ""}`.toLowerCase();
   const fromLc = (from || "").toLowerCase();
@@ -330,8 +393,9 @@ async function classifyIntentHeuristic({
 
   const bigBrand = bigBrandsRegex.test(mailText);
 
+  // Updated to detect >50k USD (per new specification)
   const largeBudgetRegex =
-    /(200k|250k|300k|400k|500k|\b200\,000\b|\b250\,000\b|\b300\,000\b|\b200\.000\b|\b250\.000\b|\b300\.000\b|\€\s?200 ?000|\$200,000|£200,000)/;
+    /(50k|60k|70k|80k|90k|100k|200k|250k|300k|400k|500k|\b50\,000\b|\b60\,000\b|\b70\,000\b|\b80\,000\b|\b90\,000\b|\b100\,000\b|\b200\,000\b|\b250\,000\b|\b300\,000\b|\b50\.000\b|\b60\.000\b|\b70\.000\b|\b80\.000\b|\b90\.000\b|\b100\.000\b|\b200\.000\b|\b250\.000\b|\b300\.000\b|\€\s?50 ?000|\€\s?60 ?000|\€\s?70 ?000|\€\s?80 ?000|\€\s?90 ?000|\€\s?100 ?000|\$50,000|\$60,000|\$70,000|\$80,000|\$90,000|\$100,000|£50,000|£60,000|£70,000|£80,000|£90,000|£100,000|more than 50|m[aá]s de 50|over 50|above 50)/;
 
   const largeBudgetMention = largeBudgetRegex.test(mailText);
 
@@ -421,59 +485,62 @@ async function classifyIntentHeuristic({
       "Model reasoning indicates this is not a PR, barter, pricing, free coverage or partnership opportunity and no strong signals contradict that.";
   }
 
-  // Intent comercial / PR hacia nosotros
+  // STEP 2: Analyze Partnership Intent (per new specification)
   if (!intent) {
     if (hasPartnershipCollabAsk) {
+      // 2.a. Very High: long-term partnership OR very large brand OR >50k USD upfront
       if (
-        bigBrand ||
-        largeBudgetMention ||
         multiYearRegex.test(mailText) ||
-        multiMarketRegex.test(mailText)
+        multiMarketRegex.test(mailText) ||
+        bigBrand ||
+        largeBudgetMention
       ) {
         intent = "Very High";
         confidence = 0.86;
-      } else if (hasBudgetKeywords || isMediaKitPricingRequest) {
+      } 
+      // 2.b. High: clear partnership proposal with defined elements (budget range, fees, commissions, etc.)
+      else if (hasBudgetKeywords || isMediaKitPricingRequest) {
         intent = "High";
         confidence = 0.8;
-      } else {
+      } 
+      // 2.c. Medium: partnership intention but nothing clearly defined regarding final scope
+      else {
         intent = "Medium";
         confidence = 0.72;
       }
-    } else if (isMediaKitPricingRequest) {
-      if (bigBrand || largeBudgetMention) {
-        intent = "High";
-        confidence = 0.82;
-      } else {
-        intent = "Medium";
-        confidence = 0.78;
-      }
-    } else if (isBarterRequest) {
+    } 
+    // STEP 3: If NO Partnership Intent
+    else if (isMediaKitPricingRequest) {
+      // Pricing request: categorize based on context
       if (bigBrand) {
-        intent = "Medium";
-        confidence = 0.72;
+        intent = "Very High"; // Very large brand asking for pricing
+        confidence = 0.85;
+      } else if (hasBudgetKeywords || hasPartnershipCollabAsk) {
+        intent = "High"; // Context given + asking for budget
+        confidence = 0.8;
       } else {
-        intent = "Low";
-        confidence = 0.68;
+        intent = "Medium"; // Just asking prices without more context
+        confidence = 0.75;
       }
     } else if (isFreeCoverageRequest) {
-      if (bigBrand) {
-        intent = "Medium";
-        confidence = 0.7;
-      } else {
-        intent = "Low";
-        confidence = 0.65;
-      }
-    } else if (isPrInvitationCase || hasCallOrMeetingInvite) {
+      // 3.a. Free Coverage Request → Low
+      intent = "Low";
+      confidence = 0.65;
+    } else if (isBarterRequest) {
+      // 3.b. Barter Request → Low
+      intent = "Low";
+      confidence = 0.65;
+    } else if (isPrInvitationCase) {
+      // 3.c. PR Invitation → Low
+      intent = "Low";
+      confidence = 0.65;
+    } else if (hasCallOrMeetingInvite) {
       intent = "Low";
       confidence = 0.65;
     } else if (hasAnyCommercialSignalForUs) {
-      if (bigBrand || largeBudgetMention) {
-        intent = "Medium";
-        confidence = 0.75;
-      } else {
-        intent = "Low";
-        confidence = 0.6;
-      }
+      // Fallback for other commercial signals
+      intent = "Low";
+      confidence = 0.6;
     }
   }
 
@@ -585,36 +652,73 @@ async function classifyIntentHeuristic({
     confidence = Math.max(confidence || 0.7, 0.7);
   }
 
-  // MEDDIC fallback
-  if (!meddic) {
-    if (intent === "Discard") {
-      meddic =
-        "No clear PR, barter, pricing, free coverage or partnership challenge involving us is expressed; outreach is not actionable for our media network.";
-    } else if (isBarterRequest) {
-      meddic =
-        "Limited cash marketing budget is pushing them to trade invitations or experiences for exposure and coverage.";
-    } else if (isFreeCoverageRequest || isPrInvitationCase) {
-      meddic =
-        "They rely on earned media and editorial exposure to boost awareness and attendance without strong paid media investment.";
-    } else if (isMediaKitPricingRequest) {
-      meddic =
-        "Unclear media costs are blocking planning of campaigns, creating risk of delayed or suboptimal investment.";
-    } else if (hasPartnershipCollabAsk) {
-      meddic =
-        "They lack a strong media or distribution partner to scale reach and engagement for their events, artists or experiences.";
-    } else if (mailText.includes("ticket") || mailText.includes("event")) {
-      meddic =
-        "Insufficient reach is limiting event attendance and ticket revenue, prompting the search for stronger promotional partners.";
-    } else if (mailText.includes("sponsor")) {
-      meddic =
-        "Brand visibility is lagging in key markets, prompting them to explore sponsorships and high-impact placements.";
-    } else {
-      meddic =
-        "They are seeking partners to improve reach, engagement and efficiency of their marketing and commercial efforts.";
-    }
-  }
+  // Combine model checkboxes with heuristic detection (NOT mutually exclusive)
+  const finalFreeCoverage = modelFreeCoverage || isFreeCoverageRequest;
+  const finalBarter = modelBarter || isBarterRequest;
+  const finalPrInvitation = modelPrInvitation || isPrInvitationCase;
+  const finalPricing = modelPricing || isMediaKitPricingRequest;
 
-  meddic = meddic.slice(0, 250);
+  // MEDDIC: Use model values if available, otherwise generate fallbacks (only for non-Discard)
+  let finalMeddicMetrics = meddicMetrics;
+  let finalMeddicEconomicBuyer = meddicEconomicBuyer;
+  let finalMeddicDecisionCriteria = meddicDecisionCriteria;
+  let finalMeddicDecisionProcess = meddicDecisionProcess;
+  let finalMeddicIdentifyPain = meddicIdentifyPain;
+  let finalMeddicChampion = meddicChampion;
+
+  if (intent !== "Discard") {
+    // Generate fallbacks only if model didn't provide them
+    if (!finalMeddicIdentifyPain) {
+      if (isBarterRequest) {
+        finalMeddicIdentifyPain = "Limited cash marketing budget is pushing them to trade invitations or experiences for exposure and coverage.";
+      } else if (isFreeCoverageRequest || isPrInvitationCase) {
+        finalMeddicIdentifyPain = "They rely on earned media and editorial exposure to boost awareness and attendance without strong paid media investment.";
+      } else if (isMediaKitPricingRequest) {
+        finalMeddicIdentifyPain = "Unclear media costs are blocking planning of campaigns, creating risk of delayed or suboptimal investment.";
+      } else if (hasPartnershipCollabAsk) {
+        finalMeddicIdentifyPain = "They lack a strong media or distribution partner to scale reach and engagement for their events, artists or experiences.";
+      } else if (mailText.includes("ticket") || mailText.includes("event")) {
+        finalMeddicIdentifyPain = "Insufficient reach is limiting event attendance and ticket revenue, prompting the search for stronger promotional partners.";
+      } else if (mailText.includes("sponsor")) {
+        finalMeddicIdentifyPain = "Brand visibility is lagging in key markets, prompting them to explore sponsorships and high-impact placements.";
+      } else {
+        finalMeddicIdentifyPain = "They are seeking partners to improve reach, engagement and efficiency of their marketing and commercial efforts.";
+      }
+    }
+    
+    // Limit total MEDDIC to 200 words (~1200 characters total across all fields)
+    // Calculate total length and trim proportionally if needed
+    const allMeddicText = [
+      finalMeddicMetrics,
+      finalMeddicEconomicBuyer,
+      finalMeddicDecisionCriteria,
+      finalMeddicDecisionProcess,
+      finalMeddicIdentifyPain,
+      finalMeddicChampion
+    ].filter(Boolean).join(" ");
+    
+    const maxTotalChars = 1200; // ~200 words
+    if (allMeddicText.length > maxTotalChars) {
+      // Trim proportionally - keep Identify Pain (I) as priority, then others
+      const ratio = maxTotalChars / allMeddicText.length;
+      const trimLength = (text) => Math.floor((text || "").length * ratio);
+      
+      finalMeddicMetrics = (finalMeddicMetrics || "").slice(0, trimLength(finalMeddicMetrics));
+      finalMeddicEconomicBuyer = (finalMeddicEconomicBuyer || "").slice(0, trimLength(finalMeddicEconomicBuyer));
+      finalMeddicDecisionCriteria = (finalMeddicDecisionCriteria || "").slice(0, trimLength(finalMeddicDecisionCriteria));
+      finalMeddicDecisionProcess = (finalMeddicDecisionProcess || "").slice(0, trimLength(finalMeddicDecisionProcess));
+      finalMeddicIdentifyPain = (finalMeddicIdentifyPain || "").slice(0, Math.min(trimLength(finalMeddicIdentifyPain) + 50, (finalMeddicIdentifyPain || "").length)); // Prioritize I
+      finalMeddicChampion = (finalMeddicChampion || "").slice(0, trimLength(finalMeddicChampion));
+    }
+  } else {
+    // Discard: empty all MEDDIC fields
+    finalMeddicMetrics = "";
+    finalMeddicEconomicBuyer = "";
+    finalMeddicDecisionCriteria = "";
+    finalMeddicDecisionProcess = "";
+    finalMeddicIdentifyPain = "";
+    finalMeddicChampion = "";
+  }
 
   // Reasoning coherente
   if (!reasoning) {
@@ -636,10 +740,10 @@ async function classifyIntentHeuristic({
   console.log("[mfs] [classify] Resultado final de clasificación:", {
     intent,
     confidence,
-    isFreeCoverageRequest,
-    isBarterRequest,
-    isPrInvitationCase,
-    isMediaKitPricingRequest,
+    finalFreeCoverage,
+    finalBarter,
+    finalPrInvitation,
+    finalPricing,
     hasPartnershipCollabAsk,
   });
 
@@ -647,11 +751,16 @@ async function classifyIntentHeuristic({
     intent,
     confidence,
     reasoning,
-    meddic,
-    isFreeCoverage: isFreeCoverageRequest,
-    isBarter: isBarterRequest,
-    isPrInvitation: isPrInvitationCase,
-    isPricing: isMediaKitPricingRequest,
+    meddicMetrics: finalMeddicMetrics,
+    meddicEconomicBuyer: finalMeddicEconomicBuyer,
+    meddicDecisionCriteria: finalMeddicDecisionCriteria,
+    meddicDecisionProcess: finalMeddicDecisionProcess,
+    meddicIdentifyPain: finalMeddicIdentifyPain,
+    meddicChampion: finalMeddicChampion,
+    isFreeCoverage: finalFreeCoverage,
+    isBarter: finalBarter,
+    isPrInvitation: finalPrInvitation,
+    isPricing: finalPricing,
   };
 }
 
