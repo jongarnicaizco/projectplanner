@@ -1,0 +1,126 @@
+/**
+ * Servicio de Google Cloud Storage
+ */
+import { Storage } from "@google-cloud/storage";
+import { CFG } from "../config.js";
+
+const storage = new Storage();
+
+/**
+ * Guarda contenido en GCS
+ */
+export async function saveToGCS(name, content, contentType = "text/plain") {
+  if (!CFG.GCS_BUCKET) {
+    console.log("[mfs] GCS_BUCKET no definido, no guardo en GCS:", name);
+    return null;
+  }
+
+  try {
+    const file = storage.bucket(CFG.GCS_BUCKET).file(name);
+    await file.save(content, { resumable: false, contentType });
+    return `gs://${CFG.GCS_BUCKET}/${name}`;
+  } catch (e) {
+    console.error("[mfs] Error guardando en GCS:", e);
+    return null;
+  }
+}
+
+/**
+ * Lee el estado del historyId desde GCS
+ */
+export async function readHistoryState() {
+  if (!CFG.GCS_BUCKET) return null;
+
+  try {
+    const [buf] = await storage
+      .bucket(CFG.GCS_BUCKET)
+      .file(CFG.STATE_OBJECT)
+      .download();
+    const j = JSON.parse(buf.toString("utf8"));
+    return j.historyId || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Escribe el estado del historyId en GCS
+ */
+export async function writeHistoryState(historyId) {
+  if (!CFG.GCS_BUCKET) return;
+
+  await saveToGCS(
+    CFG.STATE_OBJECT,
+    JSON.stringify({ historyId, updatedAt: new Date().toISOString() }, null, 2),
+    "application/json"
+  );
+}
+
+/**
+ * Borra el estado del historyId
+ */
+export async function clearHistoryState() {
+  if (!CFG.GCS_BUCKET) return;
+
+  try {
+    await storage
+      .bucket(CFG.GCS_BUCKET)
+      .file(CFG.STATE_OBJECT)
+      .delete({ ignoreNotFound: true });
+    console.log("[mfs] Estado de historyId borrado en GCS");
+  } catch (e) {
+    console.warn("[mfs] Aviso borrando estado de historyId:", e?.message || e);
+  }
+}
+
+/**
+ * Adquiere un lock por messageId para evitar duplicados
+ */
+export async function acquireMessageLock(messageId) {
+  if (!CFG.GCS_BUCKET) return true;
+
+  const file = storage
+    .bucket(CFG.GCS_BUCKET)
+    .file(`locks/gmail_${messageId}.lock`);
+
+  try {
+    await file.save("1", {
+      resumable: false,
+      contentType: "text/plain",
+      preconditionOpts: { ifGenerationMatch: 0 },
+    });
+    console.log("[mfs] Lock adquirido para mensaje", messageId);
+    return true;
+  } catch (e) {
+    const code = e?.code || e?.response?.status;
+    if (code === 412 || code === 409) {
+      console.log(
+        "[mfs] Lock ya existía, otra instancia procesa este mensaje, lo salto:",
+        messageId
+      );
+      return false;
+    }
+    console.error("[mfs] Error al adquirir lock:", e);
+    return false;
+  }
+}
+
+/**
+ * Libera el lock de un mensaje
+ */
+export async function releaseMessageLock(messageId) {
+  if (!CFG.GCS_BUCKET) return;
+
+  const file = storage
+    .bucket(CFG.GCS_BUCKET)
+    .file(`locks/gmail_${messageId}.lock`);
+
+  try {
+    await file.delete({ ignoreNotFound: true });
+    console.log("[mfs] Lock liberado para mensaje", messageId);
+  } catch (e) {
+    console.warn("[mfs] Aviso al liberar lock:", e?.message || e?.code || e);
+  }
+}
+
+
