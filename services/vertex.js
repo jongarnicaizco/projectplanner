@@ -37,13 +37,16 @@ export async function callModelText(modelName, prompt) {
     "gemini-2.5-flash-001",
     "gemini-2.0-flash",
     "gemini-2.0-flash-001",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-001",
+    "gemini-1.5-pro",
   ];
 
   const REGIONS = Array.from(
     new Set([CFG.VERTEX_LOCATION || "us-central1", "us-central1", "europe-west1"])
   );
 
-  console.log("[mfs] Llamando a Vertex para clasificación de intent...");
+  console.log("[mfs] Llamando a Vertex con modelo:", modelName, "fallbacks:", MODEL_ALIASES.slice(1));
 
   for (const loc of REGIONS) {
     for (const mdl of MODEL_ALIASES) {
@@ -59,20 +62,82 @@ export async function callModelText(modelName, prompt) {
           return out.trim();
         }
       } catch (e) {
-        if (isNotFound(e)) {
+        // Detectar errores 404 o "not found" de diferentes formas
+        const is404 = isNotFound(e) || 
+          String(e?.message || "").includes("not found") ||
+          String(e?.message || "").includes("NOT_FOUND") ||
+          String(e?.code || "") === "404" ||
+          String(e?.status || "") === "404";
+        
+        if (is404) {
           console.warn("[mfs] Vertex NOT_FOUND → pruebo siguiente combinación", {
             location: loc,
             model: mdl,
+            error: e?.message?.slice(0, 100) || String(e).slice(0, 100),
           });
           continue;
         }
-        console.error("[mfs] Error en Vertex:", e);
-        return "";
+        // Para otros errores, también intentar siguiente modelo en lugar de fallar inmediatamente
+        console.warn("[mfs] Vertex error → pruebo siguiente combinación", {
+          location: loc,
+          model: mdl,
+          error: e?.message?.slice(0, 100) || String(e).slice(0, 100),
+        });
+        continue;
       }
     }
   }
 
   return "";
+}
+
+/**
+ * Genera un resumen del cuerpo del correo usando Gemini
+ */
+export async function generateBodySummary(body) {
+  if (FLAGS.SKIP_VERTEX) {
+    console.log("[mfs] SKIP_VERTEX activado → no genero resumen del body");
+    return "";
+  }
+
+  if (!body || body.trim().length === 0) {
+    return "";
+  }
+
+  // Limitar el body a 100000 caracteres para evitar tokens excesivos
+  const bodyToSummarize = body.slice(0, 100000);
+  
+  const summaryPrompt = `Summarize the following email in a concise and clear way. The summary must:
+- Capture the main points and the sender's intention
+- Be useful to quickly understand what the email is about
+- Be between 100 and 300 words
+- Be written in English (regardless of the original email language)
+
+Email:
+${bodyToSummarize}
+
+Summary:`;
+
+  try {
+    const modelToUse = CFG.VERTEX_MODEL || CFG.VERTEX_INTENT_MODEL;
+    console.log("[mfs] Generando resumen del body con Gemini usando modelo:", modelToUse);
+    const summary = await callModelText(modelToUse, summaryPrompt);
+    
+    if (summary && summary.trim()) {
+      // Limitar a 5000 caracteres para Airtable
+      const trimmedSummary = summary.trim().slice(0, 5000);
+      console.log("[mfs] Resumen del body generado:", {
+        originalLength: body.length,
+        summaryLength: trimmedSummary.length
+      });
+      return trimmedSummary;
+    }
+    
+    return "";
+  } catch (e) {
+    console.error("[mfs] Error generando resumen del body:", e);
+    return "";
+  }
 }
 
 /**

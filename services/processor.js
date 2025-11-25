@@ -8,7 +8,7 @@ import {
   releaseMessageLock,
   saveToGCS,
 } from "./storage.js";
-import { classifyIntent } from "./vertex.js";
+import { classifyIntent, generateBodySummary } from "./vertex.js";
 import {
   airtableFindByEmailId,
   createAirtableRecord,
@@ -124,6 +124,14 @@ export async function processMessageIds(gmail, ids) {
         body,
       });
 
+      // Generar resumen del body con Gemini
+      const bodySummary = await generateBodySummary(body);
+      console.log("[mfs] Resumen del body generado:", {
+        hasSummary: !!bodySummary,
+        summaryLength: bodySummary?.length || 0,
+        preview: bodySummary?.slice(0, 100) || "(vacío)",
+      });
+
       // Crear registro en Airtable
       const rec = await createAirtableRecord({
         id,
@@ -132,6 +140,7 @@ export async function processMessageIds(gmail, ids) {
         cc,
         subject,
         body,
+        bodySummary,
         intent,
         confidence,
         reasoning,

@@ -8,10 +8,18 @@ import { accessSecret } from "./secrets.js";
 let airtableMetaCache = null;
 
 /**
+ * Limpia el cache de campos de Airtable (útil cuando se agregan nuevos campos)
+ */
+export function clearAirtableFieldCache() {
+  airtableMetaCache = null;
+  console.log("[mfs] Airtable: cache de campos limpiado");
+}
+
+/**
  * Obtiene los mapas de campos de Airtable
  */
-export async function getAirtableFieldMaps() {
-  if (airtableMetaCache) return airtableMetaCache;
+export async function getAirtableFieldMaps(forceRefresh = false) {
+  if (airtableMetaCache && !forceRefresh) return airtableMetaCache;
 
   const token = await getAirtableToken();
   const metaUrl = `https://api.airtable.com/v0/meta/bases/${CFG.AIRTABLE_BASE_ID}/tables`;
@@ -28,17 +36,20 @@ export async function getAirtableFieldMaps() {
 
   const nameSet = new Set();
   const idSet = new Set();
+  const nameToIdMap = new Map();
 
   (table?.fields || []).forEach((f) => {
     nameSet.add(f.name);
     idSet.add(f.id);
+    nameToIdMap.set(f.name, f.id);
   });
 
-  airtableMetaCache = { nameSet, idSet };
+  airtableMetaCache = { nameSet, idSet, nameToIdMap };
 
   console.log("[mfs] Airtable: campos cargados para la tabla:", {
     table: table?.name || table?.id,
     fieldCount: nameSet.size,
+    hasBodySummary: nameSet.has("Body Summary"),
   });
 
   return airtableMetaCache;
@@ -81,6 +92,7 @@ export async function createAirtableRecord({
   cc,
   subject,
   body,
+  bodySummary,
   intent,
   confidence,
   reasoning,
@@ -101,7 +113,7 @@ export async function createAirtableRecord({
       CFG.AIRTABLE_TABLE
     )}`;
 
-    const meta = await getAirtableFieldMaps();
+    let meta = await getAirtableFieldMaps();
 
     const intentCap = intent || "Discard";
     const SAFE_BODY = (body || "").slice(0, 50000);
@@ -127,10 +139,39 @@ export async function createAirtableRecord({
     putId(FIDS.BUSINESS_OPPT, intentCap);
 
     const putName = (name, val) => {
-      if (!meta.nameSet.has(name)) return;
+      if (!meta.nameSet.has(name)) {
+        // Si el campo no está en el cache, intentar recargar el cache una vez
+        if (!meta._reloadAttempted) {
+          console.log(`[mfs] Airtable: campo "${name}" no encontrado en cache, recargando...`);
+          meta._reloadAttempted = true;
+          return; // Se reintentará en el siguiente intento
+        }
+        return;
+      }
       if (val === undefined) return;
       fields[name] = val;
     };
+
+    // Intentar usar el ID del campo directamente para "Body Summary" si está disponible
+    const BODY_SUMMARY_FIELD_ID = "fldx6yJnCtIeVvJqc";
+    if (bodySummary && bodySummary.trim()) {
+      if (meta.nameSet.has("Body Summary")) {
+        fields["Body Summary"] = bodySummary.trim().slice(0, 5000);
+      } else if (meta.idSet.has(BODY_SUMMARY_FIELD_ID)) {
+        fields[BODY_SUMMARY_FIELD_ID] = bodySummary.trim().slice(0, 5000);
+        console.log("[mfs] Airtable: usando ID del campo Body Summary directamente");
+      } else {
+        console.warn("[mfs] Airtable: campo Body Summary no encontrado, recargando cache...");
+        const refreshedMeta = await getAirtableFieldMaps(true);
+        if (refreshedMeta.nameSet.has("Body Summary")) {
+          fields["Body Summary"] = bodySummary.trim().slice(0, 5000);
+        } else if (refreshedMeta.idSet.has(BODY_SUMMARY_FIELD_ID)) {
+          fields[BODY_SUMMARY_FIELD_ID] = bodySummary.trim().slice(0, 5000);
+        } else {
+          console.error("[mfs] Airtable: campo Body Summary no existe en la tabla");
+        }
+      }
+    }
 
     putName("Email ID", id);
     putName("From", from);

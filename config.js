@@ -9,8 +9,8 @@ export const CFG = {
 
   // Vertex 2.x
   VERTEX_LOCATION: process.env.VERTEX_LOCATION || "us-central1",
-  VERTEX_MODEL: process.env.VERTEX_MODEL || "gemini-3.0-flash",
-  VERTEX_INTENT_MODEL: process.env.VERTEX_INTENT_MODEL || "gemini-3.0-flash",
+  VERTEX_MODEL: process.env.VERTEX_MODEL || "gemini-2.5-flash",
+  VERTEX_INTENT_MODEL: process.env.VERTEX_INTENT_MODEL || "gemini-2.5-flash",
 
   // Gmail
   GMAIL_ADDRESS: process.env.GMAIL_ADDRESS,
