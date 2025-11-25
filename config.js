@@ -70,7 +70,13 @@ STEP 2: Analyze Partnership Intent
 2.b. High:
 - Does NOT meet Very High criteria
 - BUT from the email, a clear partnership proposal is deduced
-- With defined elements: budget range, fees, commissions, revenue share, or concrete scope
+- With defined elements: budget range, fees, commissions, revenue share, OR concrete scope
+- Concrete scope includes: specific volume (e.g., "5 articles per month", "10 posts", "ongoing collaborations"), frequency (e.g., "monthly", "weekly"), campaign duration, number of placements, or any quantifiable commitment
+- Examples of High:
+  * Agency asking for rates AND mentioning "5 articles per month" or similar volume
+  * Client asking for pricing AND specifying campaign scope (number of posts, articles, duration)
+  * Partnership proposal with defined volume, frequency, or quantity of deliverables
+  * Request for rates/pricing combined with specific collaboration details (not just "interested in partnering")
 
 2.c. Medium:
 - Does NOT meet Very High or High criteria
@@ -104,10 +110,11 @@ STEP 3: If NO Partnership Intent
 - If NOT free coverage, NOT barter, and NOT PR invitation
 - What they sent in the email is a question about our prices because they want to know them
 - Mark checkbox "Media Kit/Pricing Request" = true
+- IMPORTANT: If pricing request is combined with partnership intent (e.g., "interested in partnering" + asking for rates), treat it as PARTNERSHIP (Step 2), not as standalone pricing request
 - Categorization follows partnership rules above:
   * If asking for budget is Coca-Cola (very large brand) → "Very High"
+  * If someone gives us context (volume, frequency, scope) AND asks for budget → "High" (e.g., "5 articles per month" + asking rates = High)
   * If someone writes without more context than asking prices → "Medium"
-  * If someone gives us context of what they want and asks for budget → "High" (because there's clearer context and they're asking for budget)
 
 IMPORTANT: Checkbox columns are NOT mutually exclusive. For the same case, two columns can be checked. For example, an email can be both "PR Invitation" and "Barter Request".
 

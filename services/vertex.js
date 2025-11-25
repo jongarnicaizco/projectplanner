@@ -361,7 +361,13 @@ async function classifyIntentHeuristic({
     contentCollabRegex.test(mailText);
 
   const hasBudgetKeywords =
-    /(budget|fee\b|fees\b|commission|rev[-\s]?share|revenue share|flat fee|cpm\b|cpc\b|media spend|media budget|sponsorship package|amount of|per month|per year|contract value|minimum guarantee|minimum spend)/.test(
+    /(budget|fee\b|fees\b|commission|rev[-\s]?share|revenue share|flat fee|cpm\b|cpc\b|media spend|media budget|sponsorship package|amount of|per month|per year|contract value|minimum guarantee|minimum spend|rates|pricing|package deal|agency discount|discount)/.test(
+      mailText
+    );
+
+  // Detect concrete scope: volume, frequency, quantity
+  const hasConcreteScope =
+    /(\d+\s+(articles?|posts?|pieces?|placements?|campaigns?|collaborations?))\s+(per\s+(month|week|year)|monthly|weekly|annually|ongoing)|(up to|up to|minimum|at least|around|approximately)\s+\d+\s+(articles?|posts?|pieces?|placements?)|(ongoing|regular|monthly|weekly)\s+(collaborations?|partnerships?|campaigns?)|(package|deal|discount)/.test(
       mailText
     );
 
@@ -487,7 +493,7 @@ async function classifyIntentHeuristic({
 
   // STEP 2: Analyze Partnership Intent (per new specification)
   if (!intent) {
-    if (hasPartnershipCollabAsk) {
+    if (hasPartnershipCollabAsk || (isMediaKitPricingRequest && hasPartnershipCollabAsk)) {
       // 2.a. Very High: long-term partnership OR very large brand OR >50k USD upfront
       if (
         multiYearRegex.test(mailText) ||
@@ -498,8 +504,9 @@ async function classifyIntentHeuristic({
         intent = "Very High";
         confidence = 0.86;
       } 
-      // 2.b. High: clear partnership proposal with defined elements (budget range, fees, commissions, etc.)
-      else if (hasBudgetKeywords || isMediaKitPricingRequest) {
+      // 2.b. High: clear partnership proposal with defined elements (budget range, fees, commissions, OR concrete scope)
+      // Concrete scope: volume (e.g., "5 articles per month"), frequency, campaign duration, number of placements
+      else if (hasBudgetKeywords || isMediaKitPricingRequest || hasConcreteScope) {
         intent = "High";
         confidence = 0.8;
       } 
@@ -509,14 +516,17 @@ async function classifyIntentHeuristic({
         confidence = 0.72;
       }
     } 
-    // STEP 3: If NO Partnership Intent
-    else if (isMediaKitPricingRequest) {
-      // Pricing request: categorize based on context
+    // STEP 3: If NO Partnership Intent (standalone pricing request without partnership mention)
+    else if (isMediaKitPricingRequest && !hasPartnershipCollabAsk) {
+      // Pricing request without partnership intent: categorize based on context
       if (bigBrand) {
         intent = "Very High"; // Very large brand asking for pricing
         confidence = 0.85;
-      } else if (hasBudgetKeywords || hasPartnershipCollabAsk) {
-        intent = "High"; // Context given + asking for budget
+      } else if (hasConcreteScope) {
+        intent = "High"; // Scope defined (volume, frequency) + asking for pricing = High
+        confidence = 0.8;
+      } else if (hasBudgetKeywords) {
+        intent = "High"; // Budget/fee context + asking for pricing = High
         confidence = 0.8;
       } else {
         intent = "Medium"; // Just asking prices without more context
