@@ -640,6 +640,15 @@ async function classifyIntentHeuristic({
       "Email contains PR, coverage, barter, pricing, meeting or partnership signals, so it is treated as a real opportunity instead of being discarded.";
   }
 
+  // PR Invitation SIEMPRE debe ser Low (regla dura según especificación)
+  if (isPrInvitationCase || modelPrInvitation) {
+    intent = "Low";
+    confidence = 0.65;
+    if (!reasoning) {
+      reasoning = "Email is a PR invitation, categorized as Low intent.";
+    }
+  }
+
   // Low SOLO cuando haya alguna de las 4 columnas
   const hasAnyAirtableFlag =
     isPrInvitationCase ||
@@ -657,6 +666,15 @@ async function classifyIntentHeuristic({
   const finalBarter = modelBarter || isBarterRequest;
   const finalPrInvitation = modelPrInvitation || isPrInvitationCase;
   const finalPricing = modelPricing || isMediaKitPricingRequest;
+  
+  // Asegurar que PR Invitation siempre sea Low (verificación final)
+  if (finalPrInvitation && intent !== "Low") {
+    intent = "Low";
+    confidence = 0.65;
+    if (!reasoning || reasoning.includes("Very High") || reasoning.includes("High") || reasoning.includes("Medium")) {
+      reasoning = "Email is a PR invitation, categorized as Low intent.";
+    }
+  }
 
   // MEDDIC: Use model values if available, otherwise generate fallbacks (only for non-Discard)
   let finalMeddicMetrics = meddicMetrics;
