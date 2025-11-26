@@ -543,7 +543,7 @@ async function classifyIntentHeuristic({
       intent = "Low";
       confidence = 0.65;
     } else if (isPrInvitationCase) {
-      // 3.c. PR Invitation → Low
+      // 3.c. Press Release → Low
         intent = "Low";
         confidence = 0.65;
     } else if (hasCallOrMeetingInvite) {
