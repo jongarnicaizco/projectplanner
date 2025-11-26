@@ -30,6 +30,7 @@ async function getSheetsClient() {
   const auth = new GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    projectId: process.env.GOOGLE_CLOUD_PROJECT || "check-in-sf",
   });
 
   sheetsClient = google.sheets({ version: "v4", auth });
