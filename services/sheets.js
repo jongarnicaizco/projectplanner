@@ -215,6 +215,7 @@ export async function readHistoricalMetrics(days = 30) {
 
 /**
  * Lee todas las correcciones del Sheet de correcciones
+ * Retorna las correcciones con su índice de fila (para poder eliminarlas después)
  */
 export async function readCorrectionsFromSheet() {
   const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
@@ -228,6 +229,19 @@ export async function readCorrectionsFromSheet() {
   try {
     const sheets = await getSheetsClient();
 
+    // Primero obtener el ID de la hoja
+    const spreadsheet = await sheets.spreadsheets.get({
+      spreadsheetId,
+    });
+
+    const sheet = spreadsheet.data.sheets.find((s) => s.properties.title === sheetName);
+    if (!sheet) {
+      console.warn(`[mfs] [sheets] Hoja "${sheetName}" no encontrada`);
+      return [];
+    }
+
+    const sheetId = sheet.properties.sheetId;
+
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: `${sheetName}!A2:G`, // Skip header
@@ -235,10 +249,11 @@ export async function readCorrectionsFromSheet() {
 
     const rows = response.data.values || [];
     
-    // Parsear datos
+    // Parsear datos con índice de fila (empezando desde 2 porque la fila 1 es el header)
     const corrections = rows
-      .filter((row) => row.length >= 6) // Al menos 6 columnas
-      .map((row) => ({
+      .map((row, index) => ({
+        rowIndex: index + 2, // +2 porque empezamos desde la fila 2 (después del header)
+        sheetId,
         date: row[0] || "",
         emailId: row[1] || "",
         from: row[2] || "",
@@ -254,6 +269,107 @@ export async function readCorrectionsFromSheet() {
   } catch (error) {
     console.error("[mfs] [sheets] Error leyendo correcciones:", error);
     return [];
+  }
+}
+
+/**
+ * Elimina una fila del Sheet de correcciones
+ */
+export async function deleteCorrectionRow(rowIndex, sheetId) {
+  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  const sheetName = process.env.GOOGLE_SHEETS_CORRECTIONS_SHEET || "Corrections";
+
+  if (!spreadsheetId) {
+    console.warn("[mfs] [sheets] GOOGLE_SHEETS_SPREADSHEET_ID not configured");
+    return false;
+  }
+
+  try {
+    const sheets = await getSheetsClient();
+
+    // Eliminar la fila usando batchUpdate
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId: sheetId,
+                dimension: "ROWS",
+                startIndex: rowIndex - 1, // Google Sheets usa índice base 0
+                endIndex: rowIndex, // Eliminar solo una fila
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    console.log(`[mfs] [sheets] Fila ${rowIndex} eliminada del Sheet`);
+    return true;
+  } catch (error) {
+    console.error(`[mfs] [sheets] Error eliminando fila ${rowIndex}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Elimina múltiples filas del Sheet de correcciones
+ */
+export async function deleteCorrectionRows(corrections) {
+  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  const sheetName = process.env.GOOGLE_SHEETS_CORRECTIONS_SHEET || "Corrections";
+
+  if (!spreadsheetId || corrections.length === 0) {
+    return { deleted: 0, failed: 0 };
+  }
+
+  try {
+    const sheets = await getSheetsClient();
+
+    // Agrupar por sheetId y ordenar por rowIndex descendente (para eliminar de abajo hacia arriba)
+    const bySheetId = {};
+    corrections.forEach((c) => {
+      if (!bySheetId[c.sheetId]) {
+        bySheetId[c.sheetId] = [];
+      }
+      bySheetId[c.sheetId].push(c.rowIndex);
+    });
+
+    // Crear requests de eliminación (ordenar descendente para no afectar índices)
+    const requests = [];
+    Object.keys(bySheetId).forEach((sheetId) => {
+      const rowIndices = [...new Set(bySheetId[sheetId])].sort((a, b) => b - a); // Ordenar descendente
+      
+      rowIndices.forEach((rowIndex) => {
+        requests.push({
+          deleteDimension: {
+            range: {
+              sheetId: parseInt(sheetId),
+              dimension: "ROWS",
+              startIndex: rowIndex - 1, // Google Sheets usa índice base 0
+              endIndex: rowIndex,
+            },
+          },
+        });
+      });
+    });
+
+    if (requests.length > 0) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: { requests },
+      });
+
+      console.log(`[mfs] [sheets] ${requests.length} filas eliminadas del Sheet`);
+      return { deleted: requests.length, failed: 0 };
+    }
+
+    return { deleted: 0, failed: 0 };
+  } catch (error) {
+    console.error("[mfs] [sheets] Error eliminando filas:", error);
+    return { deleted: 0, failed: corrections.length };
   }
 }
 

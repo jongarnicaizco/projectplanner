@@ -1,7 +1,7 @@
 /**
  * Servicio que ajusta automáticamente el código basándose en correcciones del Sheet
  */
-import { readCorrectionsFromSheet } from "./sheets.js";
+import { readCorrectionsFromSheet, deleteCorrectionRows } from "./sheets.js";
 import { autoCommitAndPush } from "./git-auto-commit.js";
 import fs from "fs";
 import path from "path";
@@ -36,10 +36,17 @@ export async function adjustCodeFromSheetCorrections() {
 
   // Aplicar ajustes al código
   const adjustments = [];
+  const processedCorrections = []; // Correcciones que se procesaron exitosamente
+  
   for (const pattern of patterns) {
     const result = await applyAdjustment(pattern);
     if (result.success) {
       adjustments.push(result);
+      
+      // Marcar las correcciones relacionadas con este patrón como procesadas
+      if (pattern.relatedCorrections) {
+        processedCorrections.push(...pattern.relatedCorrections);
+      }
     }
   }
 
@@ -50,11 +57,31 @@ export async function adjustCodeFromSheetCorrections() {
       `Ajustes automáticos basados en ${corrections.length} correcciones del Sheet`
     );
     
+    // Eliminar las correcciones procesadas del Sheet
+    if (processedCorrections.length > 0) {
+      const deleteResult = await deleteCorrectionRows(processedCorrections);
+      console.log(`[mfs] [code-adjuster] Eliminadas ${deleteResult.deleted} correcciones procesadas del Sheet`);
+    }
+    
     return {
       adjusted: true,
       adjustments,
       summary: `Se aplicaron ${adjustments.length} ajustes automáticos`,
       commit: commitResult,
+      deletedRows: processedCorrections.length,
+    };
+  }
+
+  // Si no hay ajustes pero hay correcciones, eliminarlas igual (ya fueron analizadas)
+  if (corrections.length > 0) {
+    const deleteResult = await deleteCorrectionRows(corrections);
+    console.log(`[mfs] [code-adjuster] Eliminadas ${deleteResult.deleted} correcciones del Sheet (no requirieron ajustes)`);
+    
+    return {
+      adjusted: false,
+      adjustments: [],
+      summary: "No se requirieron ajustes, pero las correcciones fueron procesadas y eliminadas",
+      deletedRows: deleteResult.deleted,
     };
   }
 
@@ -62,6 +89,7 @@ export async function adjustCodeFromSheetCorrections() {
     adjusted: false,
     adjustments: [],
     summary: "No se requirieron ajustes",
+    deletedRows: 0,
   };
 }
 
@@ -114,6 +142,7 @@ function analyzeCorrectionPatterns(corrections) {
           priority: "high",
           count: pricingRelated.length,
           newTerms,
+          relatedCorrections: pricingRelated, // Guardar para eliminarlas después
           examples: pricingRelated.slice(0, 3).map((c) => ({
             subject: c.subject,
             reason: c.reason,
@@ -140,6 +169,7 @@ function analyzeCorrectionPatterns(corrections) {
       type: "verify_pricing_rule",
       priority: "high",
       count: lowToHighPricing.length,
+      relatedCorrections: lowToHighPricing, // Guardar para eliminarlas después
       note: "La regla de pricing mínimo High debería estar funcionando, verificar",
       examples: lowToHighPricing.slice(0, 3),
     });
@@ -165,6 +195,7 @@ function analyzeCorrectionPatterns(corrections) {
         type: "enhance_high_intent_detection",
         priority: "medium",
         count: hasScope.length,
+        relatedCorrections: hasScope, // Guardar para eliminarlas después
         examples: hasScope.slice(0, 3),
       });
     }
@@ -191,6 +222,7 @@ function analyzeCorrectionPatterns(corrections) {
         type: "add_big_brand_detection",
         priority: "medium",
         count: bigBrands.length,
+        relatedCorrections: bigBrands, // Guardar para eliminarlas después
         examples: bigBrands,
       });
     }
