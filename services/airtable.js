@@ -65,6 +65,49 @@ export async function getAirtableToken() {
 /**
  * Busca un registro por Email ID
  */
+/**
+ * Obtiene registros de Airtable filtrados por fecha
+ */
+export async function getAirtableRecords(date) {
+  const token = await getAirtableToken();
+  const baseUrl = `https://api.airtable.com/v0/${CFG.AIRTABLE_BASE_ID}/${CFG.AIRTABLE_TABLE}`;
+  
+  try {
+    // Construir filtro para la fecha (formato ISO: YYYY-MM-DD)
+    const startOfDay = `${date}T00:00:00.000Z`;
+    const endOfDay = `${date}T23:59:59.999Z`;
+    
+    // Airtable usa formato de fecha específico, pero podemos filtrar por Timestamp
+    const filterFormula = `AND(IS_AFTER({Timestamp}, "${startOfDay}"), IS_BEFORE({Timestamp}, "${endOfDay}"))`;
+    
+    const records = [];
+    let offset = null;
+    
+    do {
+      const params = {
+        filterByFormula: filterFormula,
+        maxRecords: 100,
+      };
+      if (offset) params.offset = offset;
+      
+      const response = await axios.get(baseUrl, {
+        params,
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      records.push(...(response.data.records || []));
+      offset = response.data.offset || null;
+    } while (offset);
+    
+    return records;
+  } catch (error) {
+    console.error("[mfs] Error obteniendo registros de Airtable:", error);
+    return [];
+  }
+}
+
 export async function airtableFindByEmailId(emailId) {
   const token = await getAirtableToken();
   const url = `https://api.airtable.com/v0/${CFG.AIRTABLE_BASE_ID}/${encodeURIComponent(

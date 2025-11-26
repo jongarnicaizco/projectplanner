@@ -18,6 +18,11 @@ import {
   handleMessage,
   handleScan,
 } from "./handlers/debug.js";
+import {
+  handleDailyMetrics,
+  handleAnalyzeMetrics,
+  handleCorrection,
+} from "./handlers/metrics.js";
 
 /* ───────────────────────────── App ───────────────────────────── */
 const app = express();
@@ -105,6 +110,23 @@ app.post("/_pubsub", handlePubSub);
 app.get("/debug/labels", handleLabels);
 app.get("/debug/msg", handleMessage);
 app.post("/debug/scan", handleScan);
+
+// Endpoints de métricas
+app.post("/metrics/daily", handleDailyMetrics);
+app.get("/metrics/analyze", handleAnalyzeMetrics);
+app.post("/metrics/correction", handleCorrection);
+
+// Endpoint para auto-corrección
+app.get("/metrics/auto-correct", async (req, res) => {
+  try {
+    const { generateAdjustmentReport } = await import("./services/auto-corrector.js");
+    const report = await generateAdjustmentReport();
+    res.json(report);
+  } catch (error) {
+    logErr("[mfs] [metrics] Error en auto-correct:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 /* ───────── Registro handler (Functions) + Express puro ───────── */
 functions.http("handler", app);
