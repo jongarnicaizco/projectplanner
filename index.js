@@ -3,6 +3,8 @@
  * 
  * Procesa correos de INBOX usando Gmail History + locks en GCS
  * Clasifica con Vertex AI 2.x y guarda en Airtable
+ * 
+ * CI/CD: GitHub -> Cloud Build -> Cloud Run (solo contenedores)
  */
 import express from "express";
 import functions from "@google-cloud/functions-framework";
