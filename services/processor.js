@@ -86,6 +86,12 @@ export async function processMessageIds(gmail, ids) {
       const to = headers["to"] || process.env.GMAIL_ADDRESS || "";
       const cc = headers["cc"] || "";
       const body = bodyFromMessage(msg.data);
+      
+      // Extraer timestamp del mensaje (internalDate está en milisegundos)
+      const internalDate = msg.data.internalDate;
+      const timestamp = internalDate 
+        ? new Date(parseInt(internalDate, 10)).toISOString()
+        : new Date().toISOString(); // Fallback a fecha actual si no hay internalDate
 
       console.log("[mfs] Mensaje listo para clasificar:", {
         id,
@@ -146,6 +152,7 @@ export async function processMessageIds(gmail, ids) {
         subject,
         body,
         bodySummary,
+        timestamp,
         intent,
         confidence,
         reasoning,

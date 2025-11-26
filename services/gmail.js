@@ -192,18 +192,45 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId) {
  * Configura el watch de Gmail
  */
 export async function setupWatch(gmail) {
-  const watchResp = await backoff(
-    () =>
-      gmail.users.watch({
-        userId: "me",
-        requestBody: {
-          topicName: `projects/${CFG.PROJECT_ID}/topics/${CFG.PUBSUB_TOPIC}`,
-          labelIds: ["INBOX"],
-          labelFilterAction: "include",
-        },
-      }),
-    "users.watch"
-  );
+  // Gmail Watch requiere que el topic esté en el proyecto asociado a la cuenta de Gmail
+  // Por defecto usa el mismo proyecto, pero puede configurarse con PUBSUB_PROJECT_ID
+  const pubsubProjectId = CFG.PUBSUB_PROJECT_ID || CFG.PROJECT_ID;
+  const topicName = `projects/${pubsubProjectId}/topics/${CFG.PUBSUB_TOPIC}`;
+  
+  console.log("[mfs] Configurando Gmail Watch con topic:", topicName);
+  
+  try {
+    const watchResp = await backoff(
+      () =>
+        gmail.users.watch({
+          userId: "me",
+          requestBody: {
+            topicName: topicName,
+            labelIds: ["INBOX"],
+            labelFilterAction: "include",
+          },
+        }),
+      "users.watch"
+    );
+    
+    return watchResp.data;
+  } catch (error) {
+    // Si el topic no existe en el proyecto requerido, loguear el error pero no fallar
+    const errorMsg = error?.message || String(error);
+    if (errorMsg.includes("Invalid topicName") || errorMsg.includes("does not match")) {
+      console.warn(
+        `[mfs] No se pudo configurar Gmail Watch: el topic ${topicName} no existe o no está en el proyecto correcto.`,
+        "El procesamiento seguirá funcionando vía Cloud Scheduler cada 10 minutos."
+      );
+      console.warn(
+        `[mfs] Para habilitar procesamiento en tiempo real, crea el topic en el proyecto: ${pubsubProjectId}`
+      );
+      // Retornar null para indicar que el watch no se configuró, pero no fallar
+      return { historyId: null, expiration: null };
+    }
+    // Para otros errores, relanzar
+    throw error;
+  }
 
   const hist = String(watchResp.data.historyId || "");
   if (hist) {

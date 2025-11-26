@@ -93,6 +93,7 @@ export async function createAirtableRecord({
   subject,
   body,
   bodySummary,
+  timestamp,
   intent,
   confidence,
   reasoning,
@@ -202,6 +203,7 @@ export async function createAirtableRecord({
     putName("CC", cc);
     putName("Subject", subject);
     putName("Body", SAFE_BODY);
+    putName("Timestamp", timestamp);
     putName("Business Oppt", intentCap);
     putName("Classification Scoring", scoreVal);
     putName("Classification Reasoning", reasoningStr);

@@ -78,7 +78,18 @@ app.post("/watch", async (_req, res) => {
     console.log("[mfs] /watch → configurando watch en Gmail");
     const gmail = await getGmailClient();
     const resp = await setupWatch(gmail);
-    res.json(resp);
+    
+    if (resp && resp.historyId) {
+      res.json({
+        ...resp,
+        message: "Gmail Watch configurado correctamente. Procesamiento en tiempo real activo.",
+      });
+    } else {
+      res.status(200).json({
+        message: "Gmail Watch no se pudo configurar (topic no existe en el proyecto requerido). El procesamiento seguirá funcionando vía Cloud Scheduler cada 10 minutos.",
+        warning: true,
+      });
+    }
   } catch (e) {
     logErr("watch error:", e);
     res.status(500).json({ error: e?.response?.data || e?.message });
