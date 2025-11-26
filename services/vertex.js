@@ -330,7 +330,7 @@ async function classifyIntentHeuristic({
     /(book a (call|meeting)|schedule (a )?(call|meeting)|pick a slot|choose a time|select a time|time slot|drop in anytime between\s+\d|from \d{1,2}(am|pm)\s+to\s+\d{1,2}(am|pm)|agenda (una|una) llamada|concertar una llamada)/;
 
   const pricingRegex =
-    /(rate card|ratecard|media kit\b|mediakit|pricing|price list|tariff|tarifs|tarifa|price (catalog|catalogue)|cat[aá]logo de precios|c[oó]mo (cobr[aá]is|factur[aá]is)|how much (do you charge|would it cost)|cost of (a )?(campaign|post|article|placement)|what are your (rates|fees)|precios de (publicidad|campañas|anuncios)|cu[aá]nto cuesta (anunciarse|una campa[nñ]a))/;
+    /(rate card|ratecard|media kit\b|mediakit|pricing|price list|tariff|tarifs|tarifa|price (catalog|catalogue)|cat[aá]logo de precios|c[oó]mo (cobr[aá]is|factur[aá]is)|how much (do you charge|would it cost)|cost of (a )?(campaign|post|article|placement)|what are your (rates|fees)|precios de (publicidad|campañas|anuncios)|cu[aá]nto cuesta (anunciarse|una campa[nñ]a)|quel serait le prix|quel serait (le|un) prix|what would be the (price|cost)|discuss (the )?(possibility of )?advertising|article (publication|publications)|banner advertising|guest (post|article|publication)|publish (an|a) (article|guest post)|publication (price|cost|rate)|advertising (price|cost|rate|format)|discuss specifics|discuter (des )?(prix|tarifs)|publication (avec|sans) (lien|link)|dofollow (link|lien))/;
 
   const directPartnershipAskRegex =
     /(we (would like|want|are looking|are interested)( to)? (partner|collaborate|work together|explore a partnership|explore collaboration)|would you (like|be interested) (to )?(partner|collaborate)|are you interested in (a )?(partnership|collaboration|media partnership)|partnership proposal (for you|with you)|propuesta de colaboraci[oó]n (con vosotros|con ustedes|contigo)|queremos (colaborar|trabajar) (con vosotros|con ustedes|contigo)|buscamos (colaboradores|partners?|socios comerciales))/;
@@ -542,15 +542,15 @@ async function classifyIntentHeuristic({
       confidence = 0.65;
     } else if (isPrInvitationCase) {
       // 3.c. PR Invitation → Low
-      intent = "Low";
-      confidence = 0.65;
+        intent = "Low";
+        confidence = 0.65;
     } else if (hasCallOrMeetingInvite) {
       intent = "Low";
       confidence = 0.65;
     } else if (hasAnyCommercialSignalForUs) {
       // Fallback for other commercial signals
-      intent = "Low";
-      confidence = 0.6;
+        intent = "Low";
+        confidence = 0.6;
     }
   }
 
@@ -677,6 +677,22 @@ async function classifyIntentHeuristic({
   const finalPrInvitation = modelPrInvitation || isPrInvitationCase;
   const finalPricing = modelPricing || isMediaKitPricingRequest;
   
+  // Regla dura: Pricing/Media Kit Request SIEMPRE debe ser como mínimo High
+  if (finalPricing) {
+    const intentLevels = { "Discard": 0, "Low": 1, "Medium": 2, "High": 3, "Very High": 4 };
+    const currentLevel = intentLevels[intent] || 0;
+    const minLevel = intentLevels["High"]; // 3
+    
+    if (currentLevel < minLevel) {
+      // Si el intent actual es menor que High, subirlo a High
+      intent = "High";
+      confidence = Math.max(confidence || 0.75, 0.75);
+      if (!reasoning || reasoning.includes("Low") || reasoning.includes("Medium") || reasoning.includes("Discard")) {
+        reasoning = "Email contains media kit or pricing request, categorized as High intent (minimum level for pricing inquiries).";
+      }
+    }
+  }
+  
   // Asegurar que PR Invitation siempre sea Low (verificación final)
   if (finalPrInvitation && intent !== "Low") {
     intent = "Low";
@@ -699,21 +715,21 @@ async function classifyIntentHeuristic({
     if (!finalMeddicIdentifyPain) {
       if (isBarterRequest) {
         finalMeddicIdentifyPain = "Limited cash marketing budget is pushing them to trade invitations or experiences for exposure and coverage.";
-      } else if (isFreeCoverageRequest || isPrInvitationCase) {
+    } else if (isFreeCoverageRequest || isPrInvitationCase) {
         finalMeddicIdentifyPain = "They rely on earned media and editorial exposure to boost awareness and attendance without strong paid media investment.";
-      } else if (isMediaKitPricingRequest) {
+    } else if (isMediaKitPricingRequest) {
         finalMeddicIdentifyPain = "Unclear media costs are blocking planning of campaigns, creating risk of delayed or suboptimal investment.";
-      } else if (hasPartnershipCollabAsk) {
+    } else if (hasPartnershipCollabAsk) {
         finalMeddicIdentifyPain = "They lack a strong media or distribution partner to scale reach and engagement for their events, artists or experiences.";
-      } else if (mailText.includes("ticket") || mailText.includes("event")) {
+    } else if (mailText.includes("ticket") || mailText.includes("event")) {
         finalMeddicIdentifyPain = "Insufficient reach is limiting event attendance and ticket revenue, prompting the search for stronger promotional partners.";
-      } else if (mailText.includes("sponsor")) {
+    } else if (mailText.includes("sponsor")) {
         finalMeddicIdentifyPain = "Brand visibility is lagging in key markets, prompting them to explore sponsorships and high-impact placements.";
-      } else {
+    } else {
         finalMeddicIdentifyPain = "They are seeking partners to improve reach, engagement and efficiency of their marketing and commercial efforts.";
-      }
     }
-    
+  }
+
     // Limit total MEDDIC to 200 words (~1200 characters total across all fields)
     // Calculate total length and trim proportionally if needed
     const allMeddicText = [
