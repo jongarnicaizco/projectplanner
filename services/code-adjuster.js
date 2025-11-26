@@ -109,6 +109,8 @@ function analyzeCorrectionPatterns(corrections) {
     byType[key].push(c);
   });
 
+  console.log("[mfs] [code-adjuster] Correcciones agrupadas por tipo:", Object.keys(byType).map(k => `${k}: ${byType[k].length}`).join(", "));
+
   // Patrón 1: Discard → High/Medium (pricing no detectado)
   const discardToHigh = byType["Discard→High"] || [];
   const discardToMedium = byType["Discard→Medium"] || [];
