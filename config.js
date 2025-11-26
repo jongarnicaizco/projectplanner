@@ -89,21 +89,26 @@ STEP 3: If NO Partnership Intent
 - If it does NOT meet any partnership criteria above, move to the next level:
 
 3.a. Free Coverage Request:
-- Client is clearly asking for free coverage of an event
-- They tell us about their event and say they want us to write about it without receiving anything in return or for free
-- MUST be clear and explicit
+- Client is EXPLICITLY asking for free coverage of an event, story, or content
+- They clearly state they want us to write about it FOR FREE, without receiving anything in return
+- MUST be explicit about wanting free coverage (e.g., "we want free coverage", "can you cover this for free", "no budget for paid media")
+- If they just share news/info without explicitly asking for free coverage, it's NOT a Free Coverage Request
 - Mark checkbox "Free Coverage Request" = true
 - Categorize as "Low"
+- IMPORTANT: Free Coverage Request and Barter Request are MUTUALLY EXCLUSIVE
 
 3.b. Barter Request:
-- If NOT free coverage
-- What they offer in exchange for promoting their event is an invitation to their event or any other type of service in exchange
+- If NOT a Free Coverage Request (they don't explicitly ask for free coverage)
+- What they offer in exchange for promoting their event/content is an invitation to their event, a service, or anything else in exchange
+- If there's ANY exchange (invitation, service, etc.), it's a Barter Request, NOT a Free Coverage Request
 - Mark checkbox "Barter Request" = true
 - Categorize as "Low"
+- IMPORTANT: Barter Request and Free Coverage Request are MUTUALLY EXCLUSIVE
 
 3.c. Press Release:
 - If NOT free coverage and NOT barter
 - If it's simply a press release or news they share in case we're interested in sharing it on our blogs
+- They are just informing/sharing news without explicitly asking for free coverage or offering anything in exchange
 - Mark checkbox "Press Release" = true
 - Categorize as "Low"
 

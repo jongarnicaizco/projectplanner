@@ -373,11 +373,15 @@ async function classifyIntentHeuristic({
       mailText
     );
 
+  // Barter Request: Si hay cobertura request Y hay algo a cambio (invitación, servicio, etc.)
+  // IMPORTANTE: Si hay algo a cambio, es Barter, NO Free Coverage
   const isBarterRequest =
     (isCoverageRequest && hasEventInvite) ||
-    /(in exchange for|a cambio de|in return for)/.test(mailText);
+    /(in exchange for|a cambio de|in return for|te invitamos|we invite you|invitaci[oó]n)/.test(mailText);
 
-  const isFreeCoverageRequest = isCoverageRequest && isExplicitFree;
+  // Free Coverage Request: SOLO si explícitamente piden cobertura GRATIS
+  // Si hay algo a cambio (invitación, servicio), NO es Free Coverage, es Barter
+  const isFreeCoverageRequest = isCoverageRequest && isExplicitFree && !isBarterRequest;
   const isPrCore =
     isPressStyle || isCoverageRequest || hasEventInvite || isEventPrInfo;
   const isPrInvitationCase = isPrCore;
@@ -673,9 +677,17 @@ async function classifyIntentHeuristic({
     confidence = Math.max(confidence || 0.7, 0.7);
   }
 
-  // Combine model checkboxes with heuristic detection (NOT mutually exclusive)
-  const finalFreeCoverage = modelFreeCoverage || isFreeCoverageRequest;
-  const finalBarter = modelBarter || isBarterRequest;
+  // Combine model checkboxes with heuristic detection
+  // IMPORTANT: Free Coverage and Barter are MUTUALLY EXCLUSIVE
+  let finalFreeCoverage = modelFreeCoverage || isFreeCoverageRequest;
+  let finalBarter = modelBarter || isBarterRequest;
+  
+  // Si ambos están marcados, priorizar Barter (si hay algo a cambio, no es "free")
+  if (finalFreeCoverage && finalBarter) {
+    finalFreeCoverage = false; // Si hay algo a cambio, no es free coverage
+    console.log("[mfs] [classify] Free Coverage y Barter ambos detectados, priorizando Barter (hay algo a cambio)");
+  }
+  
   const finalPrInvitation = modelPrInvitation || isPrInvitationCase;
   const finalPricing = modelPricing || isMediaKitPricingRequest;
   
