@@ -116,34 +116,30 @@ function analyzeCorrectionPatterns(corrections) {
   const discardToMedium = byType["Discard→Medium"] || [];
   
   if (discardToHigh.length + discardToMedium.length >= 2) {
-    // Verificar si son pricing requests
-    const pricingRelated = [...discardToHigh, ...discardToMedium].filter((c) => {
+    // Si hay 2+ correcciones de Discard → High/Medium, asumir que son pricing-related
+    // (a menos que explícitamente digan lo contrario)
+    const allDiscardCorrections = [...discardToHigh, ...discardToMedium];
+    
+    // Filtrar solo las que explícitamente NO son pricing
+    const notPricing = allDiscardCorrections.filter((c) => {
       const reason = (c.reason || "").toLowerCase();
-      const subject = (c.subject || "").toLowerCase();
-      const from = (c.from || "").toLowerCase();
-      
-      return (
-        reason.includes("pricing") ||
-        reason.includes("media kit") ||
-        reason.includes("rate") ||
-        reason.includes("precio") ||
-        reason.includes("tarifa") ||
-        subject.includes("pricing") ||
-        subject.includes("rate") ||
-        subject.includes("media kit")
-      );
+      return reason.includes("not pricing") || reason.includes("no pricing");
     });
-
-    if (pricingRelated.length >= 1) {
+    
+    const pricingRelated = allDiscardCorrections.filter((c) => !notPricing.includes(c));
+    
+    if (pricingRelated.length >= 2) {
       // Extraer términos que no están en el regex actual
       const newTerms = extractNewTerms(pricingRelated);
       
-      if (newTerms.length > 0) {
+      // Si no hay términos nuevos pero hay 2+ correcciones, aún así aplicar ajuste
+      // (puede ser que el regex no esté funcionando bien)
+      if (newTerms.length > 0 || pricingRelated.length >= 2) {
         patterns.push({
           type: "expand_pricing_regex",
           priority: "high",
           count: pricingRelated.length,
-          newTerms,
+          newTerms: newTerms.length > 0 ? newTerms : ["general pricing terms"], // Placeholder si no hay términos nuevos
           relatedCorrections: pricingRelated, // Guardar para eliminarlas después
           examples: pricingRelated.slice(0, 3).map((c) => ({
             subject: c.subject,
