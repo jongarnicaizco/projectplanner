@@ -113,7 +113,7 @@ function analyzeCorrectionPatterns(corrections) {
   const discardToHigh = byType["Discard→High"] || [];
   const discardToMedium = byType["Discard→Medium"] || [];
   
-  if (discardToHigh.length + discardToMedium.length >= 3) {
+  if (discardToHigh.length + discardToMedium.length >= 2) {
     // Verificar si son pricing requests
     const pricingRelated = [...discardToHigh, ...discardToMedium].filter((c) => {
       const reason = (c.reason || "").toLowerCase();
@@ -132,7 +132,7 @@ function analyzeCorrectionPatterns(corrections) {
       );
     });
 
-    if (pricingRelated.length >= 2) {
+    if (pricingRelated.length >= 1) {
       // Extraer términos que no están en el regex actual
       const newTerms = extractNewTerms(pricingRelated);
       
@@ -164,7 +164,7 @@ function analyzeCorrectionPatterns(corrections) {
     );
   });
 
-  if (lowToHighPricing.length >= 2) {
+  if (lowToHighPricing.length >= 1) {
     patterns.push({
       type: "verify_pricing_rule",
       priority: "high",
@@ -177,7 +177,7 @@ function analyzeCorrectionPatterns(corrections) {
 
   // Patrón 3: Medium → High (falta de detección de scope concreto)
   const mediumToHigh = byType["Medium→High"] || [];
-  if (mediumToHigh.length >= 3) {
+  if (mediumToHigh.length >= 2) {
     const hasScope = mediumToHigh.filter((c) => {
       const reason = (c.reason || "").toLowerCase();
       return (
@@ -190,7 +190,7 @@ function analyzeCorrectionPatterns(corrections) {
       );
     });
 
-    if (hasScope.length >= 2) {
+    if (hasScope.length >= 1) {
       patterns.push({
         type: "enhance_high_intent_detection",
         priority: "medium",
