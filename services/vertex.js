@@ -652,12 +652,12 @@ async function classifyIntentHeuristic({
       "Email contains PR, coverage, barter, pricing, meeting or partnership signals, so it is treated as a real opportunity instead of being discarded.";
   }
 
-  // PR Invitation SIEMPRE debe ser Low (regla dura según especificación)
+  // Press Release SIEMPRE debe ser Low (regla dura según especificación)
   if (isPrInvitationCase || modelPrInvitation) {
     intent = "Low";
     confidence = 0.65;
     if (!reasoning) {
-      reasoning = "Email is a PR invitation, categorized as Low intent.";
+      reasoning = "Email is a press release, categorized as Low intent.";
     }
   }
 
@@ -700,7 +700,7 @@ async function classifyIntentHeuristic({
     intent = "Low";
     confidence = 0.65;
     if (!reasoning || reasoning.includes("Very High") || reasoning.includes("High") || reasoning.includes("Medium")) {
-      reasoning = "Email is a PR invitation, categorized as Low intent.";
+      reasoning = "Email is a press release, categorized as Low intent.";
     }
   }
 
