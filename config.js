@@ -101,14 +101,14 @@ STEP 3: If NO Partnership Intent
 - Mark checkbox "Barter Request" = true
 - Categorize as "Low"
 
-3.c. PR Invitation:
+3.c. Press Release:
 - If NOT free coverage and NOT barter
 - If it's simply a press release or news they share in case we're interested in sharing it on our blogs
-- Mark checkbox "PR Invitation" = true
+- Mark checkbox "Press Release" = true
 - Categorize as "Low"
 
 3.d. Media Kit/Pricing Request:
-- If NOT free coverage, NOT barter, and NOT PR invitation
+- If NOT free coverage, NOT barter, and NOT press release
 - What they sent in the email is a question about our prices because they want to know them
 - Mark checkbox "Media Kit/Pricing Request" = true
 - IMPORTANT: If pricing request is combined with partnership intent (e.g., "interested in partnering" + asking for rates), treat it as PARTNERSHIP (Step 2), not as standalone pricing request
@@ -117,7 +117,7 @@ STEP 3: If NO Partnership Intent
   * If someone gives us context (volume, frequency, scope) AND asks for budget → "High" (e.g., "5 articles per month" + asking rates = High)
   * If someone writes without more context than asking prices → "Medium"
 
-IMPORTANT: Checkbox columns are NOT mutually exclusive. For the same case, two columns can be checked. For example, an email can be both "PR Invitation" and "Barter Request".
+IMPORTANT: Checkbox columns are NOT mutually exclusive. For the same case, two columns can be checked. For example, an email can be both "Press Release" and "Barter Request".
 
 STEP 4: Additional Outputs
 - Classification Scoring: Provide a confidence score between 0 and 1 (float) indicating how confident you are in this classification

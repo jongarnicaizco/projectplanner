@@ -255,7 +255,7 @@ export async function createAirtableRecord({
     // checkboxes
     putName("Free Coverage Request", !!isFreeCoverage);
     putName("Barter Request", !!isBarter);
-    putName("PR invitation", !!isPrInvitation);
+    putName("Press Release", !!isPrInvitation);
     putName("Media Kits/Pricing Request", !!isPricing);
 
     console.log("[mfs] Airtable: creo nuevo registro para email:", {

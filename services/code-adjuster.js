@@ -256,7 +256,7 @@ function analyzeCorrectionPatterns(corrections) {
     }
   }
 
-  // Patrón 6: Cualquier corrección → Low (PR invitation no detectado)
+  // Patrón 6: Cualquier corrección → Low (Press Release no detectado)
   const anyToLow = Object.keys(byType)
     .filter(key => key.endsWith("→Low"))
     .flatMap(key => byType[key] || []);
@@ -265,10 +265,10 @@ function analyzeCorrectionPatterns(corrections) {
     const prRelated = anyToLow.filter((c) => {
       const reason = (c.reason || "").toLowerCase();
       return (
-        reason.includes("pr invitation") ||
         reason.includes("press release") ||
+        reason.includes("pr invitation") ||
         reason.includes("nota de prensa") ||
-        reason.includes("pr invitation")
+        reason.includes("comunicado de prensa")
       );
     });
 
@@ -649,7 +649,7 @@ async function expandRegex(pattern, regexName, category) {
 function extractTermsFromCorrections(corrections, category) {
   const categoryKeywords = {
     "unsubscribe": ["unsubscribe", "opt-out", "darse de baja", "cancelar", "désabonner", "désinscrire"],
-    "press release": ["press release", "nota de prensa", "ndp", "comunicado", "press kit"],
+    "press release": ["press release", "nota de prensa", "ndp", "comunicado de prensa", "comunicado", "press kit", "pr invitation"],
     "free coverage": ["free coverage", "cobertura gratuita", "gratis", "sin costo", "free"],
     "barter": ["barter", "trueque", "intercambio", "invitation", "invitación"],
     "pricing": ["pricing", "precio", "tarifa", "rate", "cost", "coste", "mediakit"],

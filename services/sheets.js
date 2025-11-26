@@ -105,7 +105,7 @@ export async function writeDailyMetrics({
               "Medium",
               "Low",
               "Pricing Requests",
-              "PR Invitations",
+              "Press Releases",
               "Barter Requests",
               "Free Coverage",
               "Avg Confidence",

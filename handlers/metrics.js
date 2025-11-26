@@ -47,7 +47,7 @@ export async function handleDailyMetrics(req, res) {
 
       // Flags
       if (record.fields["Media Kit/Pricing Request"]) metrics.pricingRequests++;
-      if (record.fields["PR Invitation"]) metrics.prInvitations++;
+      if (record.fields["Press Release"]) metrics.prInvitations++;
       if (record.fields["Barter Request"]) metrics.barterRequests++;
       if (record.fields["Free Coverage Request"]) metrics.freeCoverageRequests++;
 
