@@ -214,6 +214,50 @@ export async function readHistoricalMetrics(days = 30) {
 }
 
 /**
+ * Lee todas las correcciones del Sheet de correcciones
+ */
+export async function readCorrectionsFromSheet() {
+  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+  const sheetName = process.env.GOOGLE_SHEETS_CORRECTIONS_SHEET || "Corrections";
+
+  if (!spreadsheetId) {
+    console.warn("[mfs] [sheets] GOOGLE_SHEETS_SPREADSHEET_ID not configured");
+    return [];
+  }
+
+  try {
+    const sheets = await getSheetsClient();
+
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A2:G`, // Skip header
+    });
+
+    const rows = response.data.values || [];
+    
+    // Parsear datos
+    const corrections = rows
+      .filter((row) => row.length >= 6) // Al menos 6 columnas
+      .map((row) => ({
+        date: row[0] || "",
+        emailId: row[1] || "",
+        from: row[2] || "",
+        subject: row[3] || "",
+        originalIntent: row[4] || "",
+        correctedIntent: row[5] || "",
+        reason: row[6] || "",
+      }))
+      .filter((c) => c.emailId && c.originalIntent && c.correctedIntent); // Filtrar filas incompletas
+
+    console.log(`[mfs] [sheets] Leídas ${corrections.length} correcciones del Sheet`);
+    return corrections;
+  } catch (error) {
+    console.error("[mfs] [sheets] Error leyendo correcciones:", error);
+    return [];
+  }
+}
+
+/**
  * Escribe correcciones manuales a una hoja separada
  */
 export async function writeCorrection({

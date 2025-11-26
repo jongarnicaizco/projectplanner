@@ -22,6 +22,7 @@ import {
   handleDailyMetrics,
   handleAnalyzeMetrics,
   handleCorrection,
+  handleAutoAdjustCode,
 } from "./handlers/metrics.js";
 
 /* ───────────────────────────── App ───────────────────────────── */
@@ -116,7 +117,10 @@ app.post("/metrics/daily", handleDailyMetrics);
 app.get("/metrics/analyze", handleAnalyzeMetrics);
 app.post("/metrics/correction", handleCorrection);
 
-// Endpoint para auto-corrección
+// Endpoint para auto-ajuste de código desde Sheet
+app.post("/metrics/auto-adjust", handleAutoAdjustCode);
+
+// Endpoint para auto-corrección (reporte)
 app.get("/metrics/auto-correct", async (req, res) => {
   try {
     const { generateAdjustmentReport } = await import("./services/auto-corrector.js");

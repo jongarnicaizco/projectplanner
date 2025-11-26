@@ -73,6 +73,35 @@ export async function handleDailyMetrics(req, res) {
 }
 
 /**
+ * Ajusta el código automáticamente basándose en correcciones del Sheet
+ */
+export async function handleAutoAdjustCode(req, res) {
+  try {
+    console.log("[mfs] [metrics] Iniciando auto-ajuste de código desde Sheet");
+
+    const { adjustCodeFromSheetCorrections } = await import("../services/code-adjuster.js");
+    const result = await adjustCodeFromSheetCorrections();
+
+    if (result.adjusted) {
+      res.json({
+        ok: true,
+        message: "Código ajustado automáticamente",
+        result,
+      });
+    } else {
+      res.json({
+        ok: true,
+        message: "No se requirieron ajustes",
+        result,
+      });
+    }
+  } catch (error) {
+    logErr("[mfs] [metrics] Error en handleAutoAdjustCode:", error);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
  * Analiza métricas históricas y sugiere ajustes
  */
 export async function handleAnalyzeMetrics(req, res) {
