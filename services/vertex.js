@@ -476,6 +476,15 @@ async function classifyIntentHeuristic({
   let confidence = null;
 
   // Casos "ruido" claros → Discard
+  // Email sin sentido o muy corto (solo saludo, sin contenido)
+  const meaningfulContent = normalizedBody.replace(/^(bonjour|hello|hi|hola|buenos d[ií]as|buenas tardes|saludos|greetings|ciao|salut)[\s.,!]*$/i, "").trim();
+  const isMeaninglessEmail = meaningfulContent.length < 20 && 
+    !hasPartnershipCollabAsk && 
+    !isPricing && 
+    !isCoverageRequest && 
+    !isPressStyle &&
+    !hasEventInvite;
+  
   if (isTestEmail) {
     intent = "Discard";
     confidence = 0.99;
@@ -486,6 +495,10 @@ async function classifyIntentHeuristic({
     confidence = 0.99;
     reasoning =
       "Automated social network notification with no commercial or partnership intent, so it is discarded.";
+  } else if (isMeaninglessEmail) {
+    intent = "Discard";
+    confidence = 0.95;
+    reasoning = "Email contains no meaningful content (only greeting or very short message without business context).";
   } else if (saysNoCommercialIntent && !hasAnyCommercialSignalForUs) {
     intent = "Discard";
     confidence = 0.96;
@@ -506,8 +519,9 @@ async function classifyIntentHeuristic({
         intent = "Very High";
         confidence = 0.86;
       } 
-      // 2.b. High: clear partnership proposal with defined elements (budget range, fees, commissions, OR concrete scope)
+      // 2.b. High: clear partnership proposal with defined elements (budget range, fees, commissions, OR concrete scope, OR asking for pricing)
       // Concrete scope: volume (e.g., "5 articles per month"), frequency, campaign duration, number of placements
+      // IMPORTANT: Si están pidiendo pricing/rates/press kit Y hablando de partnership, es High
       else if (hasBudgetKeywords || isMediaKitPricingRequest || hasConcreteScope) {
         intent = "High";
         confidence = 0.8;
@@ -534,18 +548,14 @@ async function classifyIntentHeuristic({
         intent = "Medium"; // Just asking prices without more context
         confidence = 0.75;
       }
-    } else if (isFreeCoverageRequest) {
-      // 3.a. Free Coverage Request → Low
-      intent = "Low";
-      confidence = 0.65;
     } else if (isBarterRequest) {
-      // 3.b. Barter Request → Low
+      // 3.b. Barter Request → Low (invitación a evento a cambio de cobertura)
       intent = "Low";
       confidence = 0.65;
-    } else if (isFreeCoverageRequest) {
-      // 3.a. Free Coverage Request → Low (incluye press releases y noticias compartidas)
-        intent = "Low";
-        confidence = 0.65;
+    } else if (isFreeCoverageRequest || (mentionsEvent && isPressStyle)) {
+      // 3.a. Free Coverage Request → Low (incluye press releases, noticias compartidas, anuncios de eventos)
+      intent = "Low";
+      confidence = 0.65;
     } else if (hasCallOrMeetingInvite) {
       intent = "Low";
       confidence = 0.65;
