@@ -801,12 +801,17 @@ async function classifyIntentHeuristic({
     }
   }
 
-  // Free Coverage Request (incluye press releases) SIEMPRE debe ser Low
-  if (isFreeCoverageRequest && intent !== "Low") {
-    intent = "Low";
-    confidence = 0.65;
-    if (!reasoning) {
-      reasoning = "Email is a free coverage request (press release or news shared), categorized as Low intent.";
+  // REGLA DURA: Free Coverage Request (incluye press releases) SIEMPRE debe ser Low
+  // Esta regla debe ejecutarse ANTES de cualquier otra lógica que pueda cambiar el intent
+  if (isFreeCoverageRequest) {
+    if (intent !== "Low" && intent !== "Discard") {
+      console.log("[mfs] [classify] FORZANDO Low para Free Coverage Request (intent actual era:", intent, ")");
+      intent = "Low";
+      confidence = Math.max(confidence || 0.75, 0.75);
+      reasoning = "Email is a free coverage request (press release or news shared), categorized as Low intent (not Medium or higher).";
+    } else if (intent === "Low") {
+      // Asegurar que el confidence sea alto para Free Coverage Request
+      confidence = Math.max(confidence || 0.75, 0.75);
     }
   }
 
