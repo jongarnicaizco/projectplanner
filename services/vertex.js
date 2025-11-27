@@ -308,7 +308,7 @@ async function classifyIntentHeuristic({
   // Mejorado: detecta unsubscribe incluso en links y en cualquier parte del email
   // Incluye variantes en múltiples idiomas: inglés, español, francés
   const unsubscribeRegex =
-    /(unsubscribe|opt[-\s]?out|manage preferences|update your preferences|leave this list|darse de baja|cancelar suscripci[oó]n|si no quieres recibir m[aá]s correos|no deseas recibir estos correos electr[oó]nicos|gestionar preferencias|(se )?d[ée]sabonner|(pour )?vous d[ée]sabonner|se d[ée]sinscrire|g[eé]rer vos pr[eé]f[eé]rences|desuscribirte|desuscribirse|(cliquez|click).*d[ée]sabonner|d[ée]sabonner.*(cliquez|click)|link.*unsubscribe|unsubscribe.*link|href.*unsubscribe|pour vous d[ée]sabonner|d[ée]sinscrire)/i;
+    /(unsubscribe|opt[-\s]?out|manage preferences|update your preferences|leave this list|darse de baja|cancelar suscripci[oó]n|si no quieres recibir m[aá]s correos|no deseas recibir estos correos electr[oó]nicos|gestionar preferencias|(se )?d[ée]sabonner|(pour )?vous d[ée]sabonner|pour vous d[ée]sabonner|se d[ée]sinscrire|g[eé]rer vos pr[eé]f[eé]rences|desuscribirte|desuscribirse|(cliquez|click)[^<]*(d[ée]sabonner|unsubscribe)|(d[ée]sabonner|unsubscribe)[^<]*(cliquez|click|ici|here)|link.*unsubscribe|unsubscribe.*link|href.*unsubscribe|d[ée]sinscrire)/i;
 
   const pressReleaseRegex =
     /(nota de prensa|ndp[\s_:]|ndp\b|press release|news release|comunicado de prensa|press kit)/;
@@ -382,14 +382,23 @@ async function classifyIntentHeuristic({
   // PRIMERO: Buscar unsubscribe en todo el texto (incluyendo links HTML y en cualquier idioma)
   // Buscar en el texto completo y también en el body HTML
   const bodyText = body || "";
+  const bodyTextLower = bodyText.toLowerCase();
+  
+  // Múltiples patrones para detectar unsubscribe en diferentes formatos
   const containsUnsubscribe = 
     unsubscribeRegex.test(mailText) || 
     unsubscribeRegex.test(bodyText) ||
+    unsubscribeRegex.test(bodyTextLower) ||
+    // Links HTML con unsubscribe
     /href[^>]*(unsubscribe|d[ée]sabonner|d[ée]sinscrire|darse de baja)/i.test(bodyText) ||
     /(unsubscribe|d[ée]sabonner|d[ée]sinscrire|darse de baja)[^<]*href/i.test(bodyText) ||
-    /(cliquez|click)[^<]*(d[ée]sabonner|unsubscribe)/i.test(bodyText) ||
+    // Patrones específicos: "Pour vous désabonner cliquez-ici" o "cliquez-ici pour désabonner"
     /(pour vous|para )?(d[ée]sabonner|unsubscribe|darse de baja)/i.test(bodyText) ||
-    /(cliquez[^<]*ici|click[^<]*here).*d[ée]sabonner|d[ée]sabonner.*(cliquez[^<]*ici|click[^<]*here)/i.test(bodyText);
+    /(cliquez|click)[^<]*(d[ée]sabonner|unsubscribe|ici|here)/i.test(bodyText) ||
+    /(d[ée]sabonner|unsubscribe)[^<]*(cliquez|click|ici|here)/i.test(bodyText) ||
+    // Patrón específico: "Pour vous désabonner cliquez-ici"
+    /pour vous d[ée]sabonner.*cliquez/i.test(bodyText) ||
+    /cliquez.*d[ée]sabonner/i.test(bodyText);
   
   // REGLA DURA: Si hay unsubscribe, descartar INMEDIATAMENTE (antes de cualquier otra verificación)
   if (containsUnsubscribe) {
