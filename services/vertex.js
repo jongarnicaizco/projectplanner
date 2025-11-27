@@ -318,7 +318,7 @@ async function classifyIntentHeuristic({
     /(descarga de im[aá]genes|download (the )?images|download photos|press photos|media assets|descarga de siluetas)/;
 
   const prFooterRegex =
-    /(departamento de comunicaci[oó]n|dpto\. de comunicaci[oó]n|press office|press contact|pr agency|agencia de comunicaci[oó]n|gabinete de prensa|press@|media@)/;
+    /(departamento de comunicaci[oó]n|dpto\. de comunicaci[oó]n|press office|press contact|pr agency|agencia de comunicaci[oó]n|gabinete de prensa|press@|media@|atendimento (à|a) imprensa|atendimento à imprensa|atendimento a imprensa|atendimento imprensa|atendimento à mídia|atendimento a mídia|atendimento mídia)/i;
 
   const aboutBrandRegex = /\b(sobre|about)\s+[a-z0-9&.\- ]{2,40}:/;
 
@@ -610,11 +610,15 @@ async function classifyIntentHeuristic({
       "Model reasoning indicates this is not a PR, barter, pricing, free coverage or partnership opportunity and no strong signals contradict that.";
   }
 
-  // REGLA DURA: Press Release SIEMPRE Low (antes de analizar partnership)
-  if (!intent && isPressStyle) {
+  // REGLA DURA: Press Release o Free Coverage Request SIEMPRE Low (antes de analizar partnership)
+  if (!intent && (isPressStyle || isFreeCoverageRequest)) {
     intent = "Low";
     confidence = 0.8;
-    reasoning = "Email is a press release, so it is categorized as Low intent (not Medium or higher).";
+    if (isPressStyle) {
+      reasoning = "Email is a press release, so it is categorized as Low intent (not Medium or higher).";
+    } else {
+      reasoning = "Email is a free coverage request, so it is categorized as Low intent (not Medium or higher).";
+    }
   }
 
   // STEP 2: Analyze Partnership Intent (per new specification)
@@ -754,10 +758,14 @@ async function classifyIntentHeuristic({
       // REGLA DURA: Press Release → SIEMPRE Low, no Medium
       intent = "Low";
       confidence = 0.75;
+    } else if (isPressStyle) {
+      // REGLA DURA: Press Release → SIEMPRE Low, no Medium
+      intent = "Low";
+      confidence = 0.8;
     } else if (isBarterRequest || isFreeCoverageRequest) {
       // PR, barter, free coverage → Low, no Medium
       intent = "Low";
-      confidence = 0.65;
+      confidence = 0.75;
     } else {
       // Otras señales comerciales débiles → Low, no Medium
       intent = "Low";
