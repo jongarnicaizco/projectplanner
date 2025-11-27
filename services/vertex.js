@@ -933,13 +933,17 @@ async function classifyIntentHeuristic({
     reasoning = defaultReasoningForIntent(intent);
   }
 
-  // REGLA DURA FINAL: Press Release SIEMPRE Low (última verificación antes de retornar)
+  // REGLA DURA FINAL: Press Release o Free Coverage Request SIEMPRE Low (última verificación antes de retornar)
   // Esta es la verificación más importante - sobrescribe cualquier otra lógica
-  if (isPressStyle && intent !== "Low" && intent !== "Discard") {
-    console.log("[mfs] [classify] FORZANDO Low para press release (intent actual era:", intent, ")");
+  if ((isPressStyle || isFreeCoverageRequest) && intent !== "Low" && intent !== "Discard") {
+    console.log("[mfs] [classify] FORZANDO Low para press release/Free Coverage Request (intent actual era:", intent, ", isPressStyle:", isPressStyle, ", isFreeCoverageRequest:", isFreeCoverageRequest, ")");
     intent = "Low";
     confidence = Math.max(confidence || 0.8, 0.8);
-    reasoning = "Email is a press release, so it is categorized as Low intent (not Medium, High, or Very High).";
+    if (isPressStyle) {
+      reasoning = "Email is a press release, so it is categorized as Low intent (not Medium, High, or Very High).";
+    } else {
+      reasoning = "Email is a free coverage request, so it is categorized as Low intent (not Medium, High, or Very High).";
+    }
   }
 
   console.log("[mfs] [classify] Resultado final de clasificación:", {
