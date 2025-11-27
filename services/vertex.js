@@ -718,10 +718,22 @@ async function classifyIntentHeuristic({
       confidence = confidence || 0.7;
     }
 
-    // REGLA DURA: Si es press release, NUNCA cambiar a Medium aunque tenga partnership signals
-    if (intent === "Low" && hasPartnershipCollabAsk && !isPressStyle) {
+    // REGLA DURA: Si es press release o Free Coverage Request, NUNCA cambiar a Medium aunque tenga partnership signals
+    if (intent === "Low" && hasPartnershipCollabAsk && !isPressStyle && !isFreeCoverageRequest) {
       intent = "Medium";
       confidence = 0.72;
+    }
+    
+    // REGLA DURA: Si el modelo dice High/Very High/Medium pero es press release o Free Coverage Request, forzar Low
+    if ((isPressStyle || isFreeCoverageRequest) && (intent === "High" || intent === "Very High" || intent === "Medium")) {
+      console.log("[mfs] [classify] FORZANDO Low para press release/Free Coverage Request (modelo dijo:", intent, ")");
+      intent = "Low";
+      confidence = 0.8;
+      if (isPressStyle) {
+        reasoning = "Email is a press release, so it is categorized as Low intent (not Medium, High, or Very High).";
+      } else {
+        reasoning = "Email is a free coverage request, so it is categorized as Low intent (not Medium, High, or Very High).";
+      }
     }
   }
 
