@@ -477,7 +477,7 @@ async function classifyIntentHeuristic({
     isMediaKitPricingRequest ||
     isBarterRequest ||
     isFreeCoverageRequest ||
-    isPrCore ||
+    isPressStyle ||
     hasCallOrMeetingInvite;
 
   const saysNoCommercialIntent =
