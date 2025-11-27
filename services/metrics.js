@@ -19,7 +19,6 @@ export async function collectDailyMetrics() {
     medium: 0,
     low: 0,
     pricingRequests: 0,
-    prInvitations: 0,
     barterRequests: 0,
     freeCoverageRequests: 0,
     avgConfidence: 0,
@@ -44,7 +43,6 @@ export async function analyzeMetricsAndSuggestAdjustments() {
   const discardRate = totalLeads > 0 ? totalDiscarded / totalLeads : 0;
 
   const totalPricing = metrics.reduce((sum, m) => sum + m.pricingRequests, 0);
-  const totalPR = metrics.reduce((sum, m) => sum + m.prInvitations, 0);
   const totalBarter = metrics.reduce((sum, m) => sum + m.barterRequests, 0);
   const totalFreeCoverage = metrics.reduce((sum, m) => sum + m.freeCoverageRequests, 0);
 

@@ -28,7 +28,6 @@ export async function handleDailyMetrics(req, res) {
       medium: 0,
       low: 0,
       pricingRequests: 0,
-      prInvitations: 0,
       barterRequests: 0,
       freeCoverageRequests: 0,
       confidences: [],

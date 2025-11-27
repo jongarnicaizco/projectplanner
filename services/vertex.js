@@ -261,7 +261,6 @@ ${body}`.trim();
     meddicChampion,
     modelFreeCoverage,
     modelBarter,
-    modelPrInvitation,
     modelPricing,
   });
 
@@ -443,7 +442,6 @@ async function classifyIntentHeuristic({
     hasCallOrMeetingInvite,
     isBarterRequest,
     isFreeCoverageRequest,
-    isPrInvitationCase,
     isMediaKitPricingRequest,
     hasPartnershipCollabAsk,
     hasAnyCommercialSignalForUs,
@@ -465,7 +463,6 @@ async function classifyIntentHeuristic({
         ),
       isFreeCoverage: false,
       isBarter: false,
-      isPrInvitation: false,
       isPricing: false,
     };
   }
@@ -630,7 +627,6 @@ async function classifyIntentHeuristic({
 
   // NUNCA Discard para PR, Barter, pricing, free coverage, calls, partnerships
   const neverDiscard =
-    isPrInvitationCase ||
     isFreeCoverageRequest ||
     isBarterRequest ||
     isMediaKitPricingRequest ||
@@ -661,7 +657,6 @@ async function classifyIntentHeuristic({
 
   // Low SOLO cuando haya alguna de las 4 columnas
   const hasAnyAirtableFlag =
-    isPrInvitationCase ||
     isBarterRequest ||
     isMediaKitPricingRequest ||
     isFreeCoverageRequest;
@@ -700,14 +695,6 @@ async function classifyIntentHeuristic({
     }
   }
   
-  // Asegurar que PR Invitation siempre sea Low (verificación final)
-  if (finalPrInvitation && intent !== "Low") {
-    intent = "Low";
-    confidence = 0.65;
-    if (!reasoning || reasoning.includes("Very High") || reasoning.includes("High") || reasoning.includes("Medium")) {
-      reasoning = "Email is a press release, categorized as Low intent.";
-    }
-  }
 
   // MEDDIC: Use model values if available, otherwise generate fallbacks (only for non-Discard)
   let finalMeddicMetrics = meddicMetrics;
@@ -793,7 +780,6 @@ async function classifyIntentHeuristic({
     confidence,
     finalFreeCoverage,
     finalBarter,
-    finalPrInvitation,
     finalPricing,
     hasPartnershipCollabAsk,
   });
@@ -810,7 +796,6 @@ async function classifyIntentHeuristic({
     meddicChampion: finalMeddicChampion,
     isFreeCoverage: finalFreeCoverage,
     isBarter: finalBarter,
-    isPrInvitation: finalPrInvitation,
     isPricing: finalPricing,
   };
 }
