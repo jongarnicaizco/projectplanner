@@ -379,7 +379,7 @@ async function classifyIntentHeuristic({
     /(pitch (some )?content\b|creat(e|ing) (a )?post (for|on) your (site|blog|website|page)|guest post\b|write a guest post|guest article|creat(e|ing) (some )?content for your (site|blog|website|publication|magazine|channels|audience)|we('?d)? love [^.!?\n]{0,80} to create (some )?content\b|shoot (some )?content (together|with you)|content (collab|collaboration|partnership))/;
 
   // Detecciones
-  // Buscar unsubscribe en todo el texto (incluyendo links HTML y en cualquier idioma)
+  // PRIMERO: Buscar unsubscribe en todo el texto (incluyendo links HTML y en cualquier idioma)
   // Buscar en el texto completo y también en el body HTML
   const bodyText = body || "";
   const containsUnsubscribe = 
@@ -388,7 +388,27 @@ async function classifyIntentHeuristic({
     /href[^>]*(unsubscribe|d[ée]sabonner|d[ée]sinscrire|darse de baja)/i.test(bodyText) ||
     /(unsubscribe|d[ée]sabonner|d[ée]sinscrire|darse de baja)[^<]*href/i.test(bodyText) ||
     /(cliquez|click)[^<]*(d[ée]sabonner|unsubscribe)/i.test(bodyText) ||
-    /(pour vous|para )?(d[ée]sabonner|unsubscribe|darse de baja)/i.test(bodyText);
+    /(pour vous|para )?(d[ée]sabonner|unsubscribe|darse de baja)/i.test(bodyText) ||
+    /(cliquez[^<]*ici|click[^<]*here).*d[ée]sabonner|d[ée]sabonner.*(cliquez[^<]*ici|click[^<]*here)/i.test(bodyText);
+  
+  // REGLA DURA: Si hay unsubscribe, descartar INMEDIATAMENTE (antes de cualquier otra verificación)
+  if (containsUnsubscribe) {
+    console.log("[mfs] [classify] Unsubscribe detectado, descartando email inmediatamente");
+    return {
+      intent: "Discard",
+      confidence: 0.99,
+      reasoning:
+        "Email includes unsubscribe/opt-out style language or links (e.g., 'désabonner', 'unsubscribe', 'darse de baja'), so it is treated as a generic mailing and discarded regardless of other content.",
+      meddic:
+        "This is an opt-out or mailing management email, not a PR, barter, pricing, free coverage or partnership opportunity for our media network.".slice(
+          0,
+          250
+        ),
+      isFreeCoverage: false,
+      isBarter: false,
+      isPricing: false,
+    };
+  }
   const isPressStyle =
     pressReleaseRegex.test(mailText) ||
     prAssetsRegex.test(mailText) ||
