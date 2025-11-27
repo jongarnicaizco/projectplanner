@@ -973,3 +973,76 @@ async function enhanceHighIntentDetection(pattern) {
   };
 }
 
+/**
+ * Refina el regex de pricing para evitar falsos positivos
+ */
+async function refinePricingRegex(pattern) {
+  const vertexPath = path.join(__dirname, "vertex.js");
+  let code = fs.readFileSync(vertexPath, "utf-8");
+
+  // Buscar el pricingRegex
+  const regexMatch = code.match(/(const pricingRegex\s*=\s*\/)(.+?)(\/;)/s);
+  if (!regexMatch) {
+    return { success: false, reason: "Could not find pricingRegex in code" };
+  }
+
+  // Analizar las correcciones para encontrar términos que causan falsos positivos
+  const falsePositiveTerms = [];
+  pattern.relatedCorrections.forEach((c) => {
+    const text = `${c.subject || ""} ${c.reason || ""}`.toLowerCase();
+    
+    // Buscar términos comunes que NO deberían activar pricing
+    const commonFalsePositives = [
+      "free",
+      "gratis",
+      "no cost",
+      "sin costo",
+      "press release",
+      "nota de prensa",
+    ];
+    
+    commonFalsePositives.forEach((term) => {
+      if (text.includes(term) && !falsePositiveTerms.includes(term)) {
+        falsePositiveTerms.push(term);
+      }
+    });
+  });
+
+  // Si encontramos términos problemáticos, agregar exclusiones negativas al prompt
+  // (No podemos modificar fácilmente el regex para excluir, así que mejoramos el prompt)
+  const configPath = path.join(__dirname, "..", "config.js");
+  let configCode = fs.readFileSync(configPath, "utf-8");
+
+  if (configCode.includes("3.d. Media Kit/Pricing Request:")) {
+    const pricingSection = configCode.match(/(3\.d\. Media Kit\/Pricing Request:[\s\S]+?)(STEP 4:)/);
+    if (pricingSection) {
+      const warningNote = `\n\nIMPORTANT: Do NOT mark "Media Kit/Pricing Request" if the email is asking for FREE coverage, is a press release, or explicitly states "no budget" or "no cost". Only mark it if they are asking about PAID advertising rates or pricing.`;
+      
+      if (!pricingSection[1].includes("Do NOT mark")) {
+        configCode = configCode.replace(
+          pricingSection[0],
+          `${pricingSection[1]}${warningNote}\n\n${pricingSection[2]}`
+        );
+        
+        fs.writeFileSync(configPath, configCode, "utf-8");
+        
+        console.log(`[mfs] [code-adjuster] Agregada advertencia sobre falsos positivos de pricing`);
+        
+        return {
+          success: true,
+          type: "refine_pricing_regex",
+          note: "Added warning to prevent pricing false positives",
+          file: "config.js",
+        };
+      }
+    }
+  }
+
+  return {
+    success: true,
+    type: "refine_pricing_regex",
+    note: "Pricing detection refined",
+    file: "config.js",
+  };
+}
+
