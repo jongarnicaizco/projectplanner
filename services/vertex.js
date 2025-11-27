@@ -288,7 +288,17 @@ async function classifyIntentHeuristic({
   modelPrInvitation,
   modelPricing,
 }) {
-  const mailText = `${subject || ""}\n${body || ""}`.toLowerCase();
+  // Crear texto completo para búsqueda (incluyendo HTML sin tags para mejor detección)
+  // Extraer texto de HTML si es necesario
+  let bodyTextForSearch = body || "";
+  // Si el body contiene HTML, extraer el texto visible (sin tags)
+  if (bodyTextForSearch.includes("<") && bodyTextForSearch.includes(">")) {
+    // Remover tags HTML pero mantener el texto
+    bodyTextForSearch = bodyTextForSearch.replace(/<[^>]+>/g, " ");
+    // Normalizar espacios
+    bodyTextForSearch = bodyTextForSearch.replace(/\s+/g, " ").trim();
+  }
+  const mailText = `${subject || ""}\n${bodyTextForSearch}`.toLowerCase();
   const fromLc = (from || "").toLowerCase();
   const subjectLc = (subject || "").toLowerCase();
   const normalizedBody = (body || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -296,8 +306,9 @@ async function classifyIntentHeuristic({
 
   // Regex patterns
   // Mejorado: detecta unsubscribe incluso en links y en cualquier parte del email
+  // Incluye variantes en múltiples idiomas: inglés, español, francés
   const unsubscribeRegex =
-    /(unsubscribe|opt[-\s]?out|manage preferences|update your preferences|leave this list|darse de baja|cancelar suscripci[oó]n|si no quieres recibir m[aá]s correos|no deseas recibir estos correos electr[oó]nicos|gestionar preferencias|se d[ée]sabonner|se d[ée]sinscrire|g[eé]rer vos pr[eé]f[eé]rences|desuscribirte|desuscribirse|link.*unsubscribe|unsubscribe.*link|href.*unsubscribe)/i;
+    /(unsubscribe|opt[-\s]?out|manage preferences|update your preferences|leave this list|darse de baja|cancelar suscripci[oó]n|si no quieres recibir m[aá]s correos|no deseas recibir estos correos electr[oó]nicos|gestionar preferencias|(se )?d[ée]sabonner|(pour )?vous d[ée]sabonner|se d[ée]sinscrire|g[eé]rer vos pr[eé]f[eé]rences|desuscribirte|desuscribirse|(cliquez|click).*d[ée]sabonner|d[ée]sabonner.*(cliquez|click)|link.*unsubscribe|unsubscribe.*link|href.*unsubscribe|pour vous d[ée]sabonner|d[ée]sinscrire)/i;
 
   const pressReleaseRegex =
     /(nota de prensa|ndp[\s_:]|ndp\b|press release|news release|comunicado de prensa|press kit)/;
@@ -368,9 +379,16 @@ async function classifyIntentHeuristic({
     /(pitch (some )?content\b|creat(e|ing) (a )?post (for|on) your (site|blog|website|page)|guest post\b|write a guest post|guest article|creat(e|ing) (some )?content for your (site|blog|website|publication|magazine|channels|audience)|we('?d)? love [^.!?\n]{0,80} to create (some )?content\b|shoot (some )?content (together|with you)|content (collab|collaboration|partnership))/;
 
   // Detecciones
-  // Buscar unsubscribe en todo el texto (incluyendo links HTML)
-  const containsUnsubscribe = unsubscribeRegex.test(mailText) || 
-    /href[^>]*unsubscribe|unsubscribe[^<]*href/i.test(body || "");
+  // Buscar unsubscribe en todo el texto (incluyendo links HTML y en cualquier idioma)
+  // Buscar en el texto completo y también en el body HTML
+  const bodyText = body || "";
+  const containsUnsubscribe = 
+    unsubscribeRegex.test(mailText) || 
+    unsubscribeRegex.test(bodyText) ||
+    /href[^>]*(unsubscribe|d[ée]sabonner|d[ée]sinscrire|darse de baja)/i.test(bodyText) ||
+    /(unsubscribe|d[ée]sabonner|d[ée]sinscrire|darse de baja)[^<]*href/i.test(bodyText) ||
+    /(cliquez|click)[^<]*(d[ée]sabonner|unsubscribe)/i.test(bodyText) ||
+    /(pour vous|para )?(d[ée]sabonner|unsubscribe|darse de baja)/i.test(bodyText);
   const isPressStyle =
     pressReleaseRegex.test(mailText) ||
     prAssetsRegex.test(mailText) ||
