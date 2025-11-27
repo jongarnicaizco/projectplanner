@@ -429,7 +429,7 @@ async function classifyIntentHeuristic({
   const isExplicitFree = explicitFreeRegex.test(mailText);
   const hasEventInvite = eventInviteRegex.test(mailText);
   const hasCallOrMeetingInvite = callSlotsRegex.test(mailText);
-  const isPricing = pricingRegex.test(mailText);
+  // isPricing ya está definido arriba (línea 368)
   const hasPartnershipCollabAsk =
     directPartnershipAskRegex.test(mailText) ||
     platformCollabRegex.test(mailText) ||
