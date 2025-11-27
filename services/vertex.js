@@ -558,24 +558,6 @@ async function classifyIntentHeuristic({
     isIgNotification,
   });
 
-  // Regla dura: unsubscribe → Discard
-  if (containsUnsubscribe) {
-    return {
-      intent: "Discard",
-      confidence: 0.99,
-      reasoning:
-        "Email includes unsubscribe/opt-out style language, so it is treated as a generic mailing and discarded regardless of other signals.",
-      meddic:
-        "This is an opt-out or mailing management email, not a PR, barter, pricing, free coverage or partnership opportunity for our media network.".slice(
-          0,
-          250
-        ),
-      isFreeCoverage: false,
-      isBarter: false,
-      isPricing: false,
-    };
-  }
-
   let intent = null;
   let confidence = null;
 
@@ -745,7 +727,16 @@ async function classifyIntentHeuristic({
 
   // Fallback final - ser más estricto
   if (!intent) {
-    if (!hasAnyCommercialSignalForUs) {
+    // REGLA DURA: Press Release o Free Coverage Request → SIEMPRE Low (verificación temprana en fallback)
+    if (isPressStyle || isFreeCoverageRequest) {
+      intent = "Low";
+      confidence = 0.8;
+      if (isPressStyle) {
+        reasoning = "Email is a press release, so it is categorized as Low intent (not Medium or higher).";
+      } else {
+        reasoning = "Email is a free coverage request, so it is categorized as Low intent (not Medium or higher).";
+      }
+    } else if (!hasAnyCommercialSignalForUs) {
       intent = "Discard";
       confidence = 0.9;
       reasoning =
@@ -754,16 +745,8 @@ async function classifyIntentHeuristic({
       // Solo Medium si hay señales CLARAS de partnership/comercial
       intent = "Medium";
       confidence = 0.7;
-    } else if (isPressStyle) {
-      // REGLA DURA: Press Release → SIEMPRE Low, no Medium
-      intent = "Low";
-      confidence = 0.75;
-    } else if (isPressStyle) {
-      // REGLA DURA: Press Release → SIEMPRE Low, no Medium
-      intent = "Low";
-      confidence = 0.8;
-    } else if (isBarterRequest || isFreeCoverageRequest) {
-      // PR, barter, free coverage → Low, no Medium
+    } else if (isBarterRequest) {
+      // Barter → Low, no Medium
       intent = "Low";
       confidence = 0.75;
     } else {
@@ -783,19 +766,23 @@ async function classifyIntentHeuristic({
     hasPartnershipCollabAsk;
 
   if (intent === "Discard" && neverDiscard) {
-    // REGLA DURA: Si es press release, SIEMPRE Low (no Medium)
-    if (isPressStyle) {
+    // REGLA DURA: Si es press release o Free Coverage Request, SIEMPRE Low (no Medium)
+    if (isPressStyle || isFreeCoverageRequest) {
       intent = "Low";
-      confidence = Math.max(confidence || 0.75, 0.75);
-      reasoning = "Email is a press release, so it is categorized as Low intent (not Medium or higher).";
+      confidence = Math.max(confidence || 0.8, 0.8);
+      if (isPressStyle) {
+        reasoning = "Email is a press release, so it is categorized as Low intent (not Medium or higher).";
+      } else {
+        reasoning = "Email is a free coverage request, so it is categorized as Low intent (not Medium or higher).";
+      }
     } else if (hasPartnershipCollabAsk || isMediaKitPricingRequest) {
       intent = "Medium";
       confidence = Math.max(confidence || 0.7, 0.7);
+      reasoning =
+        "Email contains PR, coverage, barter, pricing, meeting or partnership signals, so it is treated as a real opportunity instead of being discarded.";
     } else {
       intent = "Low";
       confidence = Math.max(confidence || 0.7, 0.7);
-    }
-    if (!isPressStyle) {
       reasoning =
         "Email contains PR, coverage, barter, pricing, meeting or partnership signals, so it is treated as a real opportunity instead of being discarded.";
     }
@@ -842,8 +829,8 @@ async function classifyIntentHeuristic({
   const finalPricing = modelPricing || isMediaKitPricingRequest;
   
   // Regla dura: Pricing/Media Kit Request SIEMPRE debe ser como mínimo High
-  // EXCEPCIÓN: Si es press release, NO aplicar esta regla (press release siempre es Low)
-  if (finalPricing && !isPressStyle) {
+  // EXCEPCIÓN: Si es press release o Free Coverage Request, NO aplicar esta regla (siempre es Low)
+  if (finalPricing && !isPressStyle && !isFreeCoverageRequest) {
     const intentLevels = { "Discard": 0, "Low": 1, "Medium": 2, "High": 3, "Very High": 4 };
     const currentLevel = intentLevels[intent] || 0;
     const minLevel = intentLevels["High"]; // 3
