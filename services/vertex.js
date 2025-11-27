@@ -295,8 +295,9 @@ async function classifyIntentHeuristic({
   let reasoningLc = (reasoning || "").toLowerCase();
 
   // Regex patterns
+  // Mejorado: detecta unsubscribe incluso en links y en cualquier parte del email
   const unsubscribeRegex =
-    /(unsubscribe|opt[-\s]?out|manage preferences|update your preferences|leave this list|darse de baja|cancelar suscripci[oó]n|si no quieres recibir m[aá]s correos|no deseas recibir estos correos electr[oó]nicos|gestionar preferencias|se d[ée]sabonner|se d[ée]sinscrire|g[eé]rer vos pr[eé]f[eé]rences)/;
+    /(unsubscribe|opt[-\s]?out|manage preferences|update your preferences|leave this list|darse de baja|cancelar suscripci[oó]n|si no quieres recibir m[aá]s correos|no deseas recibir estos correos electr[oó]nicos|gestionar preferencias|se d[ée]sabonner|se d[ée]sinscrire|g[eé]rer vos pr[eé]f[eé]rences|desuscribirte|desuscribirse|link.*unsubscribe|unsubscribe.*link|href.*unsubscribe)/i;
 
   const pressReleaseRegex =
     /(nota de prensa|ndp[\s_:]|ndp\b|press release|news release|comunicado de prensa|press kit)/;
@@ -339,7 +340,9 @@ async function classifyIntentHeuristic({
     /(pitch (some )?content\b|creat(e|ing) (a )?post (for|on) your (site|blog|website|page)|guest post\b|write a guest post|guest article|creat(e|ing) (some )?content for your (site|blog|website|publication|magazine|channels|audience)|we('?d)? love [^.!?\n]{0,80} to create (some )?content\b|shoot (some )?content (together|with you)|content (collab|collaboration|partnership))/;
 
   // Detecciones
-  const containsUnsubscribe = unsubscribeRegex.test(mailText);
+  // Buscar unsubscribe en todo el texto (incluyendo links HTML)
+  const containsUnsubscribe = unsubscribeRegex.test(mailText) || 
+    /href[^>]*unsubscribe|unsubscribe[^<]*href/i.test(body || "");
   const isPressStyle =
     pressReleaseRegex.test(mailText) ||
     prAssetsRegex.test(mailText) ||
@@ -370,9 +373,11 @@ async function classifyIntentHeuristic({
 
   // Barter Request: Si hay cobertura request Y hay algo a cambio (invitación, servicio, etc.)
   // IMPORTANTE: Si hay algo a cambio, es Barter, NO Free Coverage
+  // También: Si hay invitación a evento/prensa, asumir que es Barter (invitación a cambio de cobertura)
   const isBarterRequest =
     (isCoverageRequest && hasEventInvite) ||
-    /(in exchange for|a cambio de|in return for|te invitamos|we invite you|invitaci[oó]n)/.test(mailText);
+    (hasEventInvite && (isPressStyle || isCoverageRequest || mentionsEvent)) ||
+    /(in exchange for|a cambio de|in return for|te invitamos|we invite you|invitaci[oó]n|convite (à|a) imprensa)/.test(mailText);
 
   // Free Coverage Request: Incluye press releases, noticias compartidas, y peticiones directas de cobertura gratis
   // Si hay algo a cambio (invitación, servicio), NO es Free Coverage, es Barter
@@ -442,7 +447,7 @@ async function classifyIntentHeuristic({
     hasCallOrMeetingInvite,
     isBarterRequest,
     isFreeCoverageRequest,
-    isMediaKitPricingRequest,
+    isMediaKitPricingRequest: isExplicitPricingRequest,
     hasPartnershipCollabAsk,
     hasAnyCommercialSignalForUs,
     isTestEmail,
