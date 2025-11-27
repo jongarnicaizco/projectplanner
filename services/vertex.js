@@ -593,9 +593,21 @@ async function classifyIntentHeuristic({
       "Model reasoning indicates this is not a PR, barter, pricing, free coverage or partnership opportunity and no strong signals contradict that.";
   }
 
+  // REGLA DURA: Press Release SIEMPRE Low (antes de analizar partnership)
+  if (!intent && isPressStyle) {
+    intent = "Low";
+    confidence = 0.8;
+    reasoning = "Email is a press release, so it is categorized as Low intent (not Medium or higher).";
+  }
+
   // STEP 2: Analyze Partnership Intent (per new specification)
   if (!intent) {
-    if (hasPartnershipCollabAsk || (isMediaKitPricingRequest && hasPartnershipCollabAsk)) {
+    // REGLA DURA: Si es press release, NO analizar partnership (ya es Low)
+    if (isPressStyle) {
+      intent = "Low";
+      confidence = 0.8;
+      reasoning = "Email is a press release, so it is categorized as Low intent (not Medium or higher).";
+    } else if (hasPartnershipCollabAsk || (isMediaKitPricingRequest && hasPartnershipCollabAsk)) {
       // 2.a. Very High: long-term partnership OR very large brand OR >50k USD upfront
       if (
         multiYearRegex.test(mailText) ||
