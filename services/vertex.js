@@ -812,7 +812,8 @@ async function classifyIntentHeuristic({
   const finalPricing = modelPricing || isMediaKitPricingRequest;
   
   // Regla dura: Pricing/Media Kit Request SIEMPRE debe ser como mínimo High
-  if (finalPricing) {
+  // EXCEPCIÓN: Si es press release, NO aplicar esta regla (press release siempre es Low)
+  if (finalPricing && !isPressStyle) {
     const intentLevels = { "Discard": 0, "Low": 1, "Medium": 2, "High": 3, "Very High": 4 };
     const currentLevel = intentLevels[intent] || 0;
     const minLevel = intentLevels["High"]; // 3
@@ -907,6 +908,15 @@ async function classifyIntentHeuristic({
     reasoning = defaultReasoningForIntent(intent);
   }
 
+  // REGLA DURA FINAL: Press Release SIEMPRE Low (última verificación antes de retornar)
+  // Esta es la verificación más importante - sobrescribe cualquier otra lógica
+  if (isPressStyle && intent !== "Low" && intent !== "Discard") {
+    console.log("[mfs] [classify] FORZANDO Low para press release (intent actual era:", intent, ")");
+    intent = "Low";
+    confidence = Math.max(confidence || 0.8, 0.8);
+    reasoning = "Email is a press release, so it is categorized as Low intent (not Medium, High, or Very High).";
+  }
+
   console.log("[mfs] [classify] Resultado final de clasificación:", {
     intent,
     confidence,
@@ -914,6 +924,7 @@ async function classifyIntentHeuristic({
     finalBarter,
     finalPricing,
     hasPartnershipCollabAsk,
+    isPressStyle,
   });
 
   return {
