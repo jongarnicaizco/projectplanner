@@ -176,7 +176,6 @@ ${body}`.trim();
   let meddicChampion = "";
   let modelFreeCoverage = false;
   let modelBarter = false;
-  let modelPrInvitation = false;
   let modelPricing = false;
 
   try {
@@ -206,9 +205,6 @@ ${body}`.trim();
       }
       if (parsed.barter_request !== undefined) {
         modelBarter = Boolean(parsed.barter_request);
-      }
-      if (parsed.pr_invitation !== undefined) {
-        modelPrInvitation = Boolean(parsed.pr_invitation);
       }
       if (parsed.pricing_request !== undefined) {
         modelPricing = Boolean(parsed.pricing_request);
@@ -379,12 +375,10 @@ async function classifyIntentHeuristic({
     (isCoverageRequest && hasEventInvite) ||
     /(in exchange for|a cambio de|in return for|te invitamos|we invite you|invitaci[oó]n)/.test(mailText);
 
-  // Free Coverage Request: SOLO si explícitamente piden cobertura GRATIS
+  // Free Coverage Request: Incluye press releases, noticias compartidas, y peticiones directas de cobertura gratis
   // Si hay algo a cambio (invitación, servicio), NO es Free Coverage, es Barter
-  const isFreeCoverageRequest = isCoverageRequest && isExplicitFree && !isBarterRequest;
-  const isPrCore =
-    isPressStyle || isCoverageRequest || hasEventInvite || isEventPrInfo;
-  const isPrInvitationCase = isPrCore;
+  const isFreeCoverageRequest = 
+    (isPressStyle || isCoverageRequest || isEventPrInfo) && !isBarterRequest;
   const isMediaKitPricingRequest = isPricing;
 
   const hasAnyCommercialSignalForUs =
@@ -546,8 +540,8 @@ async function classifyIntentHeuristic({
       // 3.b. Barter Request → Low
       intent = "Low";
       confidence = 0.65;
-    } else if (isPrInvitationCase) {
-      // 3.c. Press Release → Low
+    } else if (isFreeCoverageRequest) {
+      // 3.a. Free Coverage Request → Low (incluye press releases y noticias compartidas)
         intent = "Low";
         confidence = 0.65;
     } else if (hasCallOrMeetingInvite) {
@@ -570,7 +564,7 @@ async function classifyIntentHeuristic({
       if (hasPartnershipCollabAsk || isMediaKitPricingRequest || hasCallOrMeetingInvite) {
         intent = "Medium";
         confidence = 0.7;
-      } else if (isPrInvitationCase || isBarterRequest || isFreeCoverageRequest) {
+      } else if (isBarterRequest || isFreeCoverageRequest) {
         // PR, barter, free coverage → Low, no Medium
         intent = "Low";
         confidence = 0.65;
@@ -591,7 +585,7 @@ async function classifyIntentHeuristic({
       confidence = 0.75;
     } else if (normalizedModelIntent === "Discard") {
       // Confiar más en Discard del modelo si no hay señales claras
-      if (!hasPartnershipCollabAsk && !isMediaKitPricingRequest && !isPrInvitationCase && 
+      if (!hasPartnershipCollabAsk && !isMediaKitPricingRequest && 
           !isBarterRequest && !isFreeCoverageRequest && !hasCallOrMeetingInvite) {
         intent = "Discard";
         confidence = 0.85;
@@ -623,7 +617,7 @@ async function classifyIntentHeuristic({
       // Solo Medium si hay señales CLARAS de partnership/comercial
       intent = "Medium";
       confidence = 0.7;
-    } else if (isPrInvitationCase || isBarterRequest || isFreeCoverageRequest) {
+    } else if (isBarterRequest || isFreeCoverageRequest) {
       // PR, barter, free coverage → Low, no Medium
       intent = "Low";
       confidence = 0.65;
@@ -656,12 +650,12 @@ async function classifyIntentHeuristic({
       "Email contains PR, coverage, barter, pricing, meeting or partnership signals, so it is treated as a real opportunity instead of being discarded.";
   }
 
-  // Press Release SIEMPRE debe ser Low (regla dura según especificación)
-  if (isPrInvitationCase || modelPrInvitation) {
+  // Free Coverage Request (incluye press releases) SIEMPRE debe ser Low
+  if (isFreeCoverageRequest && intent !== "Low") {
     intent = "Low";
     confidence = 0.65;
     if (!reasoning) {
-      reasoning = "Email is a press release, categorized as Low intent.";
+      reasoning = "Email is a free coverage request (press release or news shared), categorized as Low intent.";
     }
   }
 
@@ -688,7 +682,6 @@ async function classifyIntentHeuristic({
     console.log("[mfs] [classify] Free Coverage y Barter ambos detectados, priorizando Barter (hay algo a cambio)");
   }
   
-  const finalPrInvitation = modelPrInvitation || isPrInvitationCase;
   const finalPricing = modelPricing || isMediaKitPricingRequest;
   
   // Regla dura: Pricing/Media Kit Request SIEMPRE debe ser como mínimo High
@@ -729,7 +722,7 @@ async function classifyIntentHeuristic({
     if (!finalMeddicIdentifyPain) {
       if (isBarterRequest) {
         finalMeddicIdentifyPain = "Limited cash marketing budget is pushing them to trade invitations or experiences for exposure and coverage.";
-    } else if (isFreeCoverageRequest || isPrInvitationCase) {
+    } else if (isFreeCoverageRequest) {
         finalMeddicIdentifyPain = "They rely on earned media and editorial exposure to boost awareness and attendance without strong paid media investment.";
     } else if (isMediaKitPricingRequest) {
         finalMeddicIdentifyPain = "Unclear media costs are blocking planning of campaigns, creating risk of delayed or suboptimal investment.";

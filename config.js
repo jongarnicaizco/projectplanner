@@ -89,31 +89,24 @@ STEP 3: If NO Partnership Intent
 - If it does NOT meet any partnership criteria above, move to the next level:
 
 3.a. Free Coverage Request:
-- Client is EXPLICITLY asking for free coverage of an event, story, or content
-- They clearly state they want us to write about it FOR FREE, without receiving anything in return
-- MUST be explicit about wanting free coverage (e.g., "we want free coverage", "can you cover this for free", "no budget for paid media")
-- If they just share news/info without explicitly asking for free coverage, it's NOT a Free Coverage Request
-- Mark checkbox "Free Coverage Request" = true
+- Mark checkbox "Free Coverage Request" = true if ANY of the following:
+  * It's a press release or news they share (even if they don't explicitly ask for coverage)
+  * They are asking directly if we can cover something for free
+  * They share news/information and want to see if we're interested in covering it
+  * They explicitly ask for free coverage (e.g., "we want free coverage", "can you cover this for free", "no budget for paid media")
 - Categorize as "Low"
 - IMPORTANT: Free Coverage Request and Barter Request are MUTUALLY EXCLUSIVE
 
 3.b. Barter Request:
-- If NOT a Free Coverage Request (they don't explicitly ask for free coverage)
+- If NOT a Free Coverage Request
 - What they offer in exchange for promoting their event/content is an invitation to their event, a service, or anything else in exchange
 - If there's ANY exchange (invitation, service, etc.), it's a Barter Request, NOT a Free Coverage Request
 - Mark checkbox "Barter Request" = true
 - Categorize as "Low"
 - IMPORTANT: Barter Request and Free Coverage Request are MUTUALLY EXCLUSIVE
 
-3.c. Press Release:
+3.c. Media Kit/Pricing Request:
 - If NOT free coverage and NOT barter
-- If it's simply a press release or news they share in case we're interested in sharing it on our blogs
-- They are just informing/sharing news without explicitly asking for free coverage or offering anything in exchange
-- Mark checkbox "Press Release" = true
-- Categorize as "Low"
-
-3.d. Media Kit/Pricing Request:
-- If NOT free coverage, NOT barter, and NOT press release
 - What they sent in the email is a question about our prices because they want to know them
 - Mark checkbox "Media Kit/Pricing Request" = true
 - IMPORTANT: If pricing request is combined with partnership intent (e.g., "interested in partnering" + asking for rates), treat it as PARTNERSHIP (Step 2), not as standalone pricing request
@@ -161,7 +154,6 @@ Return ONLY a valid JSON object with this exact structure:
   "reasoning": "short English explanation (max 300 characters)",
   "free_coverage_request": true/false,
   "barter_request": true/false,
-  "pr_invitation": true/false,
   "pricing_request": true/false,
   "meddic_metrics": "description (only if intent is Low/Medium/High/Very High, all MEDDIC fields combined must be max 200 words total)",
   "meddic_economic_buyer": "description (only if intent is Low/Medium/High/Very High, all MEDDIC fields combined must be max 200 words total)",

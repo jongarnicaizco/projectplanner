@@ -126,7 +126,6 @@ export async function processMessageIds(gmail, ids) {
         meddicChampion,
         isFreeCoverage,
         isBarter,
-        isPrInvitation,
         isPricing,
       } = await classifyIntent({
         subject,
@@ -164,7 +163,6 @@ export async function processMessageIds(gmail, ids) {
         meddicChampion,
         isFreeCoverage,
         isBarter,
-        isPrInvitation,
         isPricing,
       });
 

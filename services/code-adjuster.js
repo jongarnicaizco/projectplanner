@@ -256,33 +256,10 @@ function analyzeCorrectionPatterns(corrections) {
     }
   }
 
-  // Patrón 6: Cualquier corrección → Low (Press Release no detectado)
+  // Patrón 6: Cualquier corrección → Low (Free Coverage no detectado - incluye press releases)
   const anyToLow = Object.keys(byType)
     .filter(key => key.endsWith("→Low"))
     .flatMap(key => byType[key] || []);
-  
-  if (anyToLow.length >= 2) {
-    const prRelated = anyToLow.filter((c) => {
-      const reason = (c.reason || "").toLowerCase();
-      return (
-        reason.includes("press release") ||
-        reason.includes("pr invitation") ||
-        reason.includes("nota de prensa") ||
-        reason.includes("comunicado de prensa") ||
-        reason.includes("should be press release")
-      );
-    });
-
-    if (prRelated.length >= 2) {
-      patterns.push({
-        type: "expand_pr_regex",
-        priority: "medium",
-        count: prRelated.length,
-        relatedCorrections: prRelated,
-        examples: prRelated.slice(0, 3),
-      });
-    }
-  }
 
   // Patrón 7: Free Coverage no detectado o detectado incorrectamente
   // Caso 7a: No se detectó Free Coverage pero debería serlo
@@ -604,8 +581,6 @@ async function applyAdjustment(pattern) {
       case "expand_unsubscribe_regex":
         return await expandRegex(pattern, "unsubscribeRegex", "unsubscribe");
       
-      case "expand_pr_regex":
-        return await expandRegex(pattern, "pressReleaseRegex", "press release");
       
       case "expand_free_coverage_regex":
         return await expandFreeCoverageRegex(pattern);
@@ -777,7 +752,6 @@ async function expandRegex(pattern, regexName, category) {
 function extractTermsFromCorrections(corrections, category) {
   const categoryKeywords = {
     "unsubscribe": ["unsubscribe", "opt-out", "darse de baja", "cancelar", "désabonner", "désinscrire"],
-    "press release": ["press release", "nota de prensa", "ndp", "comunicado de prensa", "comunicado", "press kit", "pr invitation"],
     "free coverage": ["free coverage", "cobertura gratuita", "gratis", "sin costo", "free"],
     "barter": ["barter", "trueque", "intercambio", "invitation", "invitación"],
     "pricing": ["pricing", "precio", "tarifa", "rate", "cost", "coste", "mediakit"],
@@ -1016,7 +990,7 @@ async function refinePricingRegex(pattern) {
   if (configCode.includes("3.d. Media Kit/Pricing Request:")) {
     const pricingSection = configCode.match(/(3\.d\. Media Kit\/Pricing Request:[\s\S]+?)(STEP 4:)/);
     if (pricingSection) {
-      const warningNote = `\n\nIMPORTANT: Do NOT mark "Media Kit/Pricing Request" if the email is asking for FREE coverage, is a press release, or explicitly states "no budget" or "no cost". Only mark it if they are asking about PAID advertising rates or pricing.`;
+      const warningNote = `\n\nIMPORTANT: Do NOT mark "Media Kit/Pricing Request" if the email is asking for FREE coverage (including press releases or shared news) or explicitly states "no budget" or "no cost". Only mark it if they are asking about PAID advertising rates or pricing.`;
       
       if (!pricingSection[1].includes("Do NOT mark")) {
         configCode = configCode.replace(
