@@ -383,7 +383,12 @@ async function classifyIntentHeuristic({
   // Si hay algo a cambio (invitación, servicio), NO es Free Coverage, es Barter
   const isFreeCoverageRequest = 
     (isPressStyle || isCoverageRequest || isEventPrInfo) && !isBarterRequest;
-  const isMediaKitPricingRequest = isPricing;
+  
+  // IMPORTANTE: Si es un press release/media release sin pedir pricing explícitamente, NO es pricing request
+  const isExplicitPricingRequest = isPricing && 
+    !isPressStyle && 
+    !/(media release|press release|nota de prensa|comunicado de prensa)/i.test(mailText);
+  const isMediaKitPricingRequest = isExplicitPricingRequest;
 
   const hasAnyCommercialSignalForUs =
     hasPartnershipCollabAsk ||
@@ -533,7 +538,7 @@ async function classifyIntentHeuristic({
       }
     } 
     // STEP 3: If NO Partnership Intent (standalone pricing request without partnership mention)
-    else if (isMediaKitPricingRequest && !hasPartnershipCollabAsk) {
+    else if (isExplicitPricingRequest && !hasPartnershipCollabAsk) {
       // Pricing request without partnership intent: categorize based on context
       if (bigBrand) {
         intent = "Very High"; // Very large brand asking for pricing
