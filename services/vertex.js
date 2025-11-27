@@ -310,8 +310,9 @@ async function classifyIntentHeuristic({
   const unsubscribeRegex =
     /(unsubscribe|opt[-\s]?out|manage preferences|update your preferences|leave this list|darse de baja|cancelar suscripci[oó]n|si no quieres recibir m[aá]s correos|no deseas recibir estos correos electr[oó]nicos|gestionar preferencias|(se )?d[ée]sabonner|(pour )?vous d[ée]sabonner|pour vous d[ée]sabonner|se d[ée]sinscrire|g[eé]rer vos pr[eé]f[eé]rences|desuscribirte|desuscribirse|(cliquez|click)[^<]*(d[ée]sabonner|unsubscribe)|(d[ée]sabonner|unsubscribe)[^<]*(cliquez|click|ici|here)|link.*unsubscribe|unsubscribe.*link|href.*unsubscribe|d[ée]sinscrire)/i;
 
+  // Detección mejorada de press release - incluye variantes en múltiples idiomas
   const pressReleaseRegex =
-    /(nota de prensa|ndp[\s_:]|ndp\b|press release|news release|comunicado de prensa|press kit)/;
+    /(nota de prensa|ndp[\s_:]|ndp\b|press release|news release|comunicado de prensa|press kit|communiqu[ée] de presse|communiqu[ée] de presse|media release|comunicado|press note|press statement)/i;
 
   const prAssetsRegex =
     /(descarga de im[aá]genes|download (the )?images|download photos|press photos|media assets|descarga de siluetas)/;
@@ -418,11 +419,27 @@ async function classifyIntentHeuristic({
       isPricing: false,
     };
   }
+  // Detección mejorada de press release - múltiples indicadores
   const isPressStyle =
     pressReleaseRegex.test(mailText) ||
     prAssetsRegex.test(mailText) ||
     aboutBrandRegex.test(mailText) ||
-    prFooterRegex.test(mailText);
+    prFooterRegex.test(mailText) ||
+    // Patrones adicionales comunes en press releases
+    /(communiqu[ée] de presse|communiqu[ée] de presse)/i.test(mailText) ||
+    // Si el subject o inicio del body contiene "Press Release" o equivalente
+    /^(press release|communiqu[ée] de presse|nota de prensa|comunicado de prensa)/i.test(subjectLc) ||
+    /^(press release|communiqu[ée] de presse|nota de prensa|comunicado de prensa)/i.test(bodyTextForSearch.slice(0, 200));
+  
+  // Log para debugging
+  if (isPressStyle) {
+    console.log("[mfs] [classify] Press release detectado:", {
+      pressReleaseRegex: pressReleaseRegex.test(mailText),
+      prAssetsRegex: prAssetsRegex.test(mailText),
+      aboutBrandRegex: aboutBrandRegex.test(mailText),
+      prFooterRegex: prFooterRegex.test(mailText),
+    });
+  }
   const mentionsEvent = eventKeywordsRegex.test(mailText);
   const isEventPrInfo = isPressStyle && mentionsEvent;
   const isCoverageRequest = coverageRequestRegex.test(mailText);
