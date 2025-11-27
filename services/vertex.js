@@ -326,9 +326,37 @@ async function classifyIntentHeuristic({
     /(book a (call|meeting)|schedule (a )?(call|meeting)|pick a slot|choose a time|select a time|time slot|drop in anytime between\s+\d|from \d{1,2}(am|pm)\s+to\s+\d{1,2}(am|pm)|agenda (una|una) llamada|concertar una llamada)/;
 
   // Enhanced pricing detection - works in multiple languages
-  // Detects: pricing requests, media kit requests, advertising cost inquiries, publication rates
-  const pricingRegex =
-    /(rate card|ratecard|media kit\b|mediakit|pricing|price list|tariff|tarifs|tarifa|price (catalog|catalogue)|cat[aá]logo de precios|c[oó]mo (cobr[aá]is|factur[aá]is)|how much (do you charge|would it cost)|cost of (a )?(campaign|post|article|placement)|what are your (rates|fees)|precios de (publicidad|campañas|anuncios)|cu[aá]nto cuesta (anunciarse|una campa[nñ]a)|quel serait (le|un) prix|what would be the (price|cost)|discuss (the )?(possibility of )?advertising|article (publication|publications)|banner advertising|guest (post|article|publication)|publish (an|a) (article|guest post)|publication (price|cost|rate)|advertising (price|cost|rate|format)|discuss specifics|discuter (des )?(prix|tarifs)|publication (avec|sans) (lien|link)|dofollow (link|lien)|(precio|prezzo|preço|prix|preis)\s+(de|di|do|du|der|for|por|para|per|pour)\s+(publicaci[oó]n|pubblicazione|publica[çc][aã]o|publication|ver[öo]ffentlichung|anuncio|annuncio|an[úu]ncio|advertising|publicit[ée]|werbung)|(tarifa|tariffa|tarifa|tarif)\s+(de|di|do|du|der|for|por|para|per|pour)|(coste|cost|kosten|costo|custo|co[ûu]t)\s+(de|di|do|du|der|for|por|para|per|pour)\s+(publicaci[oó]n|pubblicazione|publica[çc][aã]o|publication|ver[öo]ffentlichung|anuncio|annuncio|an[úu]ncio|advertising|publicit[ée]|werbung)|(cu[aá]nto|quanto|combien|wie viel|how much)\s+(cuesta|costa|coute|kostet|costs?)\s+(publicar|pubblicare|publicar|publier|ver[öo]ffentlichen|publish)|(presupuesto|budget|or[çc]amento|budget)\s+(de|di|do|du|der|for|por|para|per|pour)\s+(publicidad|advertising|publicit[ée]|werbung|pubblicit[àa])|(solicitar|request|richiedere|solicitar|demander|anfragen)\s+(precio|price|prezzo|preço|prix|preis|tarifa|tariffa|tarifa|tarif)|(informaci[oó]n|information|informazione|informa[çc][aã]o|information)\s+(sobre|about|su|sobre|sur|über)\s+(precio|price|prezzo|preço|prix|preis|tarifa|tariffa|tarifa|tarif)|(qu[ée]|quanto|combien|wie|what)\s+(precio|price|prezzo|preço|prix|preis)\s+(tiene|ha|have|hat|a|hast)|(discutir|discuss|discutere|discuter|diskutieren)\s+(precio|price|prezzo|preço|prix|preis|tarifa|tariffa|tarifa|tarif)|(publicar|publish|pubblicare|publicar|publier|ver[öo]ffentlichen)\s+(art[ií]culo|article|articolo|artigo|article|artikel)\s+(invitado|guest|ospite|convidado|invit[ée]|gast)|(anuncio|ad|annuncio|an[úu]ncio|annonce|anzeige)\s+(en|on|su|no|sur|auf)\s+(tu|your|vostro|seu|votre|ihr)\s+(sitio|site|sito|site|site|website|seite))/i;
+  // IMPORTANT: Only detects EXPLICIT pricing requests, NOT pricing mentioned in press releases or content
+  // Detects: direct pricing requests, media kit requests, advertising cost inquiries, publication rates
+  // Must be in a context where they are ASKING for pricing, not just mentioning it
+  const pricingRequestPhrases = [
+    // Direct requests
+    /(can you (send|share|provide|give) (me|us) (your )?(rate|pricing|price|media kit|press kit))/i,
+    /(could you (send|share|provide|give) (me|us) (your )?(rate|pricing|price|media kit|press kit))/i,
+    /(would you (be able to )?(send|share|provide|give) (me|us) (your )?(rate|pricing|price|media kit|press kit))/i,
+    /(please (send|share|provide|give) (me|us) (your )?(rate|pricing|price|media kit|press kit))/i,
+    /(i (would like|need|want) (to know|to see|to get) (your )?(rate|pricing|price|media kit|press kit))/i,
+    /(we (would like|need|want) (to know|to see|to get) (your )?(rate|pricing|price|media kit|press kit))/i,
+    /(what (are|is) (your )?(rate|pricing|price|fees|costs?|tariff|tarifs|tarifa))/i,
+    /(how much (do you charge|would it cost|does it cost))/i,
+    /(cu[aá]nto (cobr[aá]is|factur[aá]is|costar[ií]a|cuesta))/i,
+    /(qu[ée] (precio|tarifa|prezzo|prix) (tiene|tienen|have|hast|ha|hanno|avez|ont))/i,
+    // Rate card / media kit requests
+    /(rate card|ratecard|media kit\b|mediakit|press kit)/i,
+    // Asking about advertising costs
+    /(cost of (a )?(campaign|post|article|placement|advertising|publicidad))/i,
+    /(precio|price|prezzo|prix|preis|tarifa|tariffa|tarif)\s+(de|di|do|du|der|for|por|para|per|pour)\s+(publicaci[oó]n|pubblicazione|publica[çc][aã]o|publication|anuncio|advertising|publicit[ée]|werbung)/i,
+    /(solicitar|request|richiedere|demander|anfragen)\s+(precio|price|prezzo|preço|prix|preis|tarifa|tariffa|tarifa|tarif|rate card|media kit)/i,
+    /(informaci[oó]n|information|informazione|informa[çc][aã]o)\s+(sobre|about|su|sur|über)\s+(precio|price|prezzo|preço|prix|preis|tarifa|tariffa|tarifa|tarif|rate|pricing)/i,
+    // Budget/presupuesto inquiries
+    /(presupuesto|budget|or[çc]amento)\s+(de|di|do|du|der|for|por|para|per|pour)\s+(publicidad|advertising|publicit[ée]|werbung|pubblicit[àa])/i,
+    /(discutir|discuss|discutere|discuter|diskutieren)\s+(precio|price|prezzo|preço|prix|preis|tarifa|tariffa|tarifa|tarif|rate|pricing)/i,
+  ];
+  
+  // Check if pricing is being REQUESTED (not just mentioned)
+  const isPricing = pricingRequestPhrases.some(regex => regex.test(mailText)) &&
+    // Exclude if it's clearly a press release or content sharing
+    !/(press release|media release|nota de prensa|comunicado de prensa|story for|data study|report|offering.*story|sharing.*story)/i.test(mailText);
 
   const directPartnershipAskRegex =
     /(we (would like|want|are looking|are interested)( to)? (partner|collaborate|work together|explore a partnership|explore collaboration)|would you (like|be interested) (to )?(partner|collaborate)|are you interested in (a )?(partnership|collaboration|media partnership)|partnership proposal (for you|with you)|propuesta de colaboraci[oó]n (con vosotros|con ustedes|contigo)|queremos (colaborar|trabajar) (con vosotros|con ustedes|contigo)|buscamos (colaboradores|partners?|socios comerciales))/;
@@ -385,9 +413,10 @@ async function classifyIntentHeuristic({
     (isPressStyle || isCoverageRequest || isEventPrInfo) && !isBarterRequest;
   
   // IMPORTANTE: Si es un press release/media release sin pedir pricing explícitamente, NO es pricing request
+  // También excluir si están ofreciendo una historia/estudio/datos sin pedir pricing
   const isExplicitPricingRequest = isPricing && 
     !isPressStyle && 
-    !/(media release|press release|nota de prensa|comunicado de prensa)/i.test(mailText);
+    !/(media release|press release|nota de prensa|comunicado de prensa|story for|data study|report|offering.*story|sharing.*story|of interest for|would be of interest)/i.test(mailText);
   const isMediaKitPricingRequest = isExplicitPricingRequest;
 
   const hasAnyCommercialSignalForUs =
