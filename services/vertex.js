@@ -774,12 +774,14 @@ async function classifyIntentHeuristic({
   }
 
   // Low SOLO cuando haya alguna de las 4 columnas
+  // REGLA DURA: Si es press release, NUNCA cambiar a Medium aunque no tenga flags
   const hasAnyAirtableFlag =
     isBarterRequest ||
     isMediaKitPricingRequest ||
-    isFreeCoverageRequest;
+    isFreeCoverageRequest ||
+    isPressStyle; // Press release también cuenta como flag
 
-  if (intent === "Low" && !hasAnyAirtableFlag) {
+  if (intent === "Low" && !hasAnyAirtableFlag && !isPressStyle) {
     intent = "Medium";
     confidence = Math.max(confidence || 0.7, 0.7);
   }
