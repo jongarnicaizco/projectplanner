@@ -107,6 +107,11 @@ STEP 3: If NO Partnership Intent
 - If NOT a Free Coverage Request
 - What they offer in exchange for promoting their event/content is an invitation to their event, a service, or anything else in exchange
 - If there's ANY exchange (invitation, service, etc.), it's a Barter Request, NOT a Free Coverage Request
+- Examples of Barter Request:
+  * "Media Invite" / "Press Invite" / "Media are invited" / "Press are invited"
+  * Offering "Press Passes" / "Press Accreditation" / "Media Passes" for event access
+  * Inviting reporters, photographers, or broadcast media to an event
+  * Any invitation to an event in exchange for coverage
 - Mark checkbox "Barter Request" = true
 - Categorize as "Low"
 - IMPORTANT: Barter Request and Free Coverage Request are MUTUALLY EXCLUSIVE

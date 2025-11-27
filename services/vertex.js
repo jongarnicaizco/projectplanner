@@ -402,9 +402,15 @@ async function classifyIntentHeuristic({
   // Barter Request: Si hay cobertura request Y hay algo a cambio (invitación, servicio, etc.)
   // IMPORTANTE: Si hay algo a cambio, es Barter, NO Free Coverage
   // También: Si hay invitación a evento/prensa, asumir que es Barter (invitación a cambio de cobertura)
+  // Detecta: "media invite", "press invite", "press passes", "press accreditation", "media are invited"
+  const hasPressPassOrAccreditation = /(press pass|press accreditation|media pass|media accreditation|press credential|media credential)/i.test(mailText);
+  const hasMediaInviteLanguage = /(media (are )?invited|press (are )?invited|reporters.*invited|photographers.*invited|broadcast media.*invited|media invite|press invite|media\/press invite)/i.test(mailText);
+  
   const isBarterRequest =
     (isCoverageRequest && hasEventInvite) ||
     (hasEventInvite && (isPressStyle || isCoverageRequest || mentionsEvent)) ||
+    (hasPressPassOrAccreditation && (isPressStyle || mentionsEvent || isCoverageRequest)) ||
+    (hasMediaInviteLanguage && (isPressStyle || mentionsEvent)) ||
     /(in exchange for|a cambio de|in return for|te invitamos|we invite you|invitaci[oó]n|convite (à|a) imprensa)/.test(mailText);
 
   // Free Coverage Request: Incluye press releases, noticias compartidas, y peticiones directas de cobertura gratis
