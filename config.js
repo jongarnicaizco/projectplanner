@@ -61,6 +61,11 @@ STEP 1: Check for Unsubscribe
 - IMPORTANT: Even if the email has other content (press release, partnership, etc.), if it contains unsubscribe language or links, it must be discarded.
 - IMPORTANT: This check must happen FIRST, before any other classification. Unsubscribe emails are never business opportunities.
 
+STEP 1.5: Check for Press Release
+- If the email is a press release (contains "press release", "nota de prensa", "comunicado de prensa", "media release", etc.), it MUST be categorized as "Low" intent ONLY.
+- IMPORTANT: Press releases can NEVER be categorized as "Medium", "High", or "Very High". They are always "Low" intent.
+- IMPORTANT: Even if a press release mentions partnership, pricing, or other commercial terms, it remains "Low" intent because it's informational content, not a direct business opportunity.
+
 STEP 2: Analyze Partnership Intent
 - From the email content, deduce if the client is writing to us to establish some type of partnership with us.
 - Example: Restaurant X writes saying they saw our website and would like us to help promote their restaurant on our social media.

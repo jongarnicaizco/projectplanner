@@ -663,6 +663,10 @@ async function classifyIntentHeuristic({
       if (hasPartnershipCollabAsk || isMediaKitPricingRequest || hasCallOrMeetingInvite) {
         intent = "Medium";
         confidence = 0.7;
+      } else if (isPressStyle) {
+        // REGLA DURA: Press Release → SIEMPRE Low, no Medium
+        intent = "Low";
+        confidence = 0.75;
       } else if (isBarterRequest || isFreeCoverageRequest) {
         // PR, barter, free coverage → Low, no Medium
         intent = "Low";
@@ -699,7 +703,8 @@ async function classifyIntentHeuristic({
       confidence = confidence || 0.7;
     }
 
-    if (intent === "Low" && hasPartnershipCollabAsk) {
+    // REGLA DURA: Si es press release, NUNCA cambiar a Medium aunque tenga partnership signals
+    if (intent === "Low" && hasPartnershipCollabAsk && !isPressStyle) {
       intent = "Medium";
       confidence = 0.72;
     }
@@ -716,6 +721,10 @@ async function classifyIntentHeuristic({
       // Solo Medium si hay señales CLARAS de partnership/comercial
       intent = "Medium";
       confidence = 0.7;
+    } else if (isPressStyle) {
+      // REGLA DURA: Press Release → SIEMPRE Low, no Medium
+      intent = "Low";
+      confidence = 0.75;
     } else if (isBarterRequest || isFreeCoverageRequest) {
       // PR, barter, free coverage → Low, no Medium
       intent = "Low";
@@ -737,15 +746,22 @@ async function classifyIntentHeuristic({
     hasPartnershipCollabAsk;
 
   if (intent === "Discard" && neverDiscard) {
-    if (hasPartnershipCollabAsk || isMediaKitPricingRequest) {
+    // REGLA DURA: Si es press release, SIEMPRE Low (no Medium)
+    if (isPressStyle) {
+      intent = "Low";
+      confidence = Math.max(confidence || 0.75, 0.75);
+      reasoning = "Email is a press release, so it is categorized as Low intent (not Medium or higher).";
+    } else if (hasPartnershipCollabAsk || isMediaKitPricingRequest) {
       intent = "Medium";
       confidence = Math.max(confidence || 0.7, 0.7);
     } else {
       intent = "Low";
       confidence = Math.max(confidence || 0.7, 0.7);
     }
-    reasoning =
-      "Email contains PR, coverage, barter, pricing, meeting or partnership signals, so it is treated as a real opportunity instead of being discarded.";
+    if (!isPressStyle) {
+      reasoning =
+        "Email contains PR, coverage, barter, pricing, meeting or partnership signals, so it is treated as a real opportunity instead of being discarded.";
+    }
   }
 
   // Free Coverage Request (incluye press releases) SIEMPRE debe ser Low
