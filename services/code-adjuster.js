@@ -268,7 +268,8 @@ function analyzeCorrectionPatterns(corrections) {
         reason.includes("press release") ||
         reason.includes("pr invitation") ||
         reason.includes("nota de prensa") ||
-        reason.includes("comunicado de prensa")
+        reason.includes("comunicado de prensa") ||
+        reason.includes("should be press release")
       );
     });
 
@@ -283,53 +284,116 @@ function analyzeCorrectionPatterns(corrections) {
     }
   }
 
-  // Patrón 7: Cualquier corrección → Low (Free Coverage no detectado)
+  // Patrón 7: Free Coverage no detectado o detectado incorrectamente
+  // Caso 7a: No se detectó Free Coverage pero debería serlo
   if (anyToLow.length >= 2) {
-    const freeCoverageRelated = anyToLow.filter((c) => {
+    const freeCoverageNotDetected = anyToLow.filter((c) => {
       const reason = (c.reason || "").toLowerCase();
+      const subject = (c.subject || "").toLowerCase();
+      const text = `${subject} ${reason}`;
       return (
         reason.includes("free coverage") ||
         reason.includes("cobertura gratuita") ||
         reason.includes("gratis") ||
-        reason.includes("sin costo")
+        reason.includes("sin costo") ||
+        reason.includes("no budget") ||
+        reason.includes("sin presupuesto") ||
+        (reason.includes("free") && reason.includes("coverage"))
       );
     });
 
-    if (freeCoverageRelated.length >= 2) {
+    if (freeCoverageNotDetected.length >= 2) {
       patterns.push({
         type: "expand_free_coverage_regex",
-        priority: "medium",
-        count: freeCoverageRelated.length,
-        relatedCorrections: freeCoverageRelated,
-        examples: freeCoverageRelated.slice(0, 3),
+        priority: "high",
+        count: freeCoverageNotDetected.length,
+        relatedCorrections: freeCoverageNotDetected,
+        examples: freeCoverageNotDetected.slice(0, 3),
+        subType: "not_detected",
       });
     }
   }
 
-  // Patrón 8: Cualquier corrección → Low (Barter no detectado)
+  // Caso 7b: Se detectó Barter pero debería ser Free Coverage (no hay nada a cambio)
+  const barterToFreeCoverage = corrections.filter((c) => {
+    const reason = (c.reason || "").toLowerCase();
+    return (
+      reason.includes("should be free coverage") ||
+      reason.includes("no exchange") ||
+      reason.includes("sin intercambio") ||
+      reason.includes("no hay nada a cambio") ||
+      (reason.includes("free coverage") && reason.includes("not barter"))
+    );
+  });
+
+  if (barterToFreeCoverage.length >= 1) {
+    patterns.push({
+      type: "fix_free_coverage_vs_barter",
+      priority: "high",
+      count: barterToFreeCoverage.length,
+      relatedCorrections: barterToFreeCoverage,
+      examples: barterToFreeCoverage.slice(0, 3),
+      subType: "barter_mistaken_for_free",
+    });
+  }
+
+  // Patrón 8: Barter no detectado o detectado incorrectamente
+  // Caso 8a: No se detectó Barter pero debería serlo
   if (anyToLow.length >= 2) {
-    const barterRelated = anyToLow.filter((c) => {
+    const barterNotDetected = anyToLow.filter((c) => {
       const reason = (c.reason || "").toLowerCase();
+      const subject = (c.subject || "").toLowerCase();
+      const text = `${subject} ${reason}`;
       return (
         reason.includes("barter") ||
         reason.includes("trueque") ||
         reason.includes("intercambio") ||
-        reason.includes("invitation to event")
+        reason.includes("invitation to event") ||
+        reason.includes("invitación a evento") ||
+        reason.includes("event invite") ||
+        (reason.includes("invitation") && reason.includes("exchange")) ||
+        (reason.includes("invitación") && reason.includes("intercambio"))
       );
     });
 
-    if (barterRelated.length >= 2) {
+    if (barterNotDetected.length >= 2) {
       patterns.push({
         type: "expand_barter_regex",
-        priority: "medium",
-        count: barterRelated.length,
-        relatedCorrections: barterRelated,
-        examples: barterRelated.slice(0, 3),
+        priority: "high",
+        count: barterNotDetected.length,
+        relatedCorrections: barterNotDetected,
+        examples: barterNotDetected.slice(0, 3),
+        subType: "not_detected",
       });
     }
   }
 
-  // Patrón 9: Cualquier corrección → Medium/High (Partnership no detectado)
+  // Caso 8b: Se detectó Free Coverage pero debería ser Barter (hay algo a cambio)
+  const freeCoverageToBarter = corrections.filter((c) => {
+    const reason = (c.reason || "").toLowerCase();
+    return (
+      reason.includes("should be barter") ||
+      reason.includes("has exchange") ||
+      reason.includes("hay intercambio") ||
+      reason.includes("invitation in exchange") ||
+      reason.includes("invitación a cambio") ||
+      (reason.includes("barter") && reason.includes("not free coverage"))
+    );
+  });
+
+  if (freeCoverageToBarter.length >= 1) {
+    patterns.push({
+      type: "fix_barter_vs_free_coverage",
+      priority: "high",
+      count: freeCoverageToBarter.length,
+      relatedCorrections: freeCoverageToBarter,
+      examples: freeCoverageToBarter.slice(0, 3),
+      subType: "free_mistaken_for_barter",
+    });
+  }
+
+  // Patrón 9: Media Kit/Pricing Request no detectado o detectado incorrectamente
+  // Caso 9a: No se detectó Pricing pero debería serlo
   const anyToMedium = Object.keys(byType)
     .filter(key => key.endsWith("→Medium"))
     .flatMap(key => byType[key] || []);
@@ -338,6 +402,61 @@ function analyzeCorrectionPatterns(corrections) {
     .filter(key => key.endsWith("→High"))
     .flatMap(key => byType[key] || []);
   
+  const anyToVeryHigh = Object.keys(byType)
+    .filter(key => key.endsWith("→Very High"))
+    .flatMap(key => byType[key] || []);
+  
+  const pricingNotDetected = [...anyToMedium, ...anyToHigh, ...anyToVeryHigh].filter((c) => {
+    const reason = (c.reason || "").toLowerCase();
+    const subject = (c.subject || "").toLowerCase();
+    const text = `${subject} ${reason}`;
+    return (
+      reason.includes("pricing") ||
+      reason.includes("media kit") ||
+      reason.includes("rate") ||
+      reason.includes("precio") ||
+      reason.includes("tarifa") ||
+      reason.includes("should be pricing") ||
+      reason.includes("pricing request") ||
+      text.includes("rate card") ||
+      text.includes("mediakit")
+    );
+  });
+
+  if (pricingNotDetected.length >= 2) {
+    patterns.push({
+      type: "expand_pricing_regex",
+      priority: "high",
+      count: pricingNotDetected.length,
+      relatedCorrections: pricingNotDetected,
+      examples: pricingNotDetected.slice(0, 3),
+      subType: "pricing_not_detected",
+    });
+  }
+
+  // Caso 9b: Se detectó Pricing pero no debería serlo (falso positivo)
+  const pricingFalsePositive = corrections.filter((c) => {
+    const reason = (c.reason || "").toLowerCase();
+    return (
+      reason.includes("not pricing") ||
+      reason.includes("no pricing") ||
+      reason.includes("not a pricing request") ||
+      (reason.includes("should not") && reason.includes("pricing"))
+    );
+  });
+
+  if (pricingFalsePositive.length >= 2) {
+    patterns.push({
+      type: "refine_pricing_regex",
+      priority: "medium",
+      count: pricingFalsePositive.length,
+      relatedCorrections: pricingFalsePositive,
+      examples: pricingFalsePositive.slice(0, 3),
+      subType: "pricing_false_positive",
+    });
+  }
+
+  // Patrón 10: Cualquier corrección → Medium/High (Partnership no detectado)
   const partnershipRelated = [...anyToMedium, ...anyToHigh].filter((c) => {
     const reason = (c.reason || "").toLowerCase();
     return (
@@ -489,10 +608,19 @@ async function applyAdjustment(pattern) {
         return await expandRegex(pattern, "pressReleaseRegex", "press release");
       
       case "expand_free_coverage_regex":
-        return await expandRegex(pattern, "coverageRequestRegex", "free coverage");
+        return await expandFreeCoverageRegex(pattern);
       
       case "expand_barter_regex":
-        return await expandRegex(pattern, "barterRequestRegex", "barter");
+        return await expandBarterRegex(pattern);
+      
+      case "fix_free_coverage_vs_barter":
+        return await fixFreeCoverageVsBarter(pattern);
+      
+      case "fix_barter_vs_free_coverage":
+        return await fixBarterVsFreeCoverage(pattern);
+      
+      case "refine_pricing_regex":
+        return await refinePricingRegex(pattern);
       
       case "enhance_partnership_detection":
         return await enhancePartnershipDetection(pattern);
