@@ -115,8 +115,8 @@ function analyzeCorrectionPatterns(corrections) {
   const discardToHigh = byType["Discard→High"] || [];
   const discardToMedium = byType["Discard→Medium"] || [];
   
-  if (discardToHigh.length + discardToMedium.length >= 2) {
-    // Si hay 2+ correcciones de Discard → High/Medium, asumir que son pricing-related
+  if (discardToHigh.length + discardToMedium.length >= 1) {
+    // Si hay 1+ correcciones de Discard → High/Medium, asumir que son pricing-related
     // (a menos que explícitamente digan lo contrario)
     const allDiscardCorrections = [...discardToHigh, ...discardToMedium];
     
@@ -128,13 +128,13 @@ function analyzeCorrectionPatterns(corrections) {
     
     const pricingRelated = allDiscardCorrections.filter((c) => !notPricing.includes(c));
     
-    if (pricingRelated.length >= 2) {
+    if (pricingRelated.length >= 1) {
       // Extraer términos que no están en el regex actual
       const newTerms = extractNewTerms(pricingRelated);
       
-      // Si no hay términos nuevos pero hay 2+ correcciones, aún así aplicar ajuste
+      // Si no hay términos nuevos pero hay 1+ correcciones, aún así aplicar ajuste
       // (puede ser que el regex no esté funcionando bien)
-      if (newTerms.length > 0 || pricingRelated.length >= 2) {
+      if (newTerms.length > 0 || pricingRelated.length >= 1) {
         patterns.push({
           type: "expand_pricing_regex",
           priority: "high",
@@ -175,7 +175,7 @@ function analyzeCorrectionPatterns(corrections) {
 
   // Patrón 3: Medium → High (falta de detección de scope concreto)
   const mediumToHigh = byType["Medium→High"] || [];
-  if (mediumToHigh.length >= 2) {
+  if (mediumToHigh.length >= 1) {
     const hasScope = mediumToHigh.filter((c) => {
       const reason = (c.reason || "").toLowerCase();
       return (
@@ -201,7 +201,7 @@ function analyzeCorrectionPatterns(corrections) {
 
   // Patrón 4: High → Very High (marcas grandes no detectadas)
   const highToVeryHigh = byType["High→Very High"] || [];
-  if (highToVeryHigh.length >= 2) {
+  if (highToVeryHigh.length >= 1) {
     const bigBrands = highToVeryHigh.filter((c) => {
       const reason = (c.reason || "").toLowerCase();
       const from = (c.from || "").toLowerCase();
@@ -231,7 +231,7 @@ function analyzeCorrectionPatterns(corrections) {
     .filter(key => key.endsWith("→Discard"))
     .flatMap(key => byType[key] || []);
   
-  if (anyToDiscard.length >= 2) {
+  if (anyToDiscard.length >= 1) {
     const unsubscribeRelated = anyToDiscard.filter((c) => {
       const reason = (c.reason || "").toLowerCase();
       const subject = (c.subject || "").toLowerCase();
@@ -245,7 +245,7 @@ function analyzeCorrectionPatterns(corrections) {
       );
     });
 
-    if (unsubscribeRelated.length >= 2) {
+    if (unsubscribeRelated.length >= 1) {
       patterns.push({
         type: "expand_unsubscribe_regex",
         priority: "high",
@@ -263,7 +263,7 @@ function analyzeCorrectionPatterns(corrections) {
 
   // Patrón 7: Free Coverage no detectado o detectado incorrectamente
   // Caso 7a: No se detectó Free Coverage pero debería serlo
-  if (anyToLow.length >= 2) {
+  if (anyToLow.length >= 1) {
     const freeCoverageNotDetected = anyToLow.filter((c) => {
       const reason = (c.reason || "").toLowerCase();
       const subject = (c.subject || "").toLowerCase();
@@ -275,11 +275,17 @@ function analyzeCorrectionPatterns(corrections) {
         reason.includes("sin costo") ||
         reason.includes("no budget") ||
         reason.includes("sin presupuesto") ||
-        (reason.includes("free") && reason.includes("coverage"))
+        reason.includes("press release") ||
+        reason.includes("nota de prensa") ||
+        reason.includes("comunicado de prensa") ||
+        reason.includes("news shared") ||
+        reason.includes("noticia compartida") ||
+        (reason.includes("free") && reason.includes("coverage")) ||
+        (reason.includes("press") && reason.includes("release"))
       );
     });
 
-    if (freeCoverageNotDetected.length >= 2) {
+    if (freeCoverageNotDetected.length >= 1) {
       patterns.push({
         type: "expand_free_coverage_regex",
         priority: "high",
@@ -316,7 +322,7 @@ function analyzeCorrectionPatterns(corrections) {
 
   // Patrón 8: Barter no detectado o detectado incorrectamente
   // Caso 8a: No se detectó Barter pero debería serlo
-  if (anyToLow.length >= 2) {
+  if (anyToLow.length >= 1) {
     const barterNotDetected = anyToLow.filter((c) => {
       const reason = (c.reason || "").toLowerCase();
       const subject = (c.subject || "").toLowerCase();
@@ -333,7 +339,7 @@ function analyzeCorrectionPatterns(corrections) {
       );
     });
 
-    if (barterNotDetected.length >= 2) {
+    if (barterNotDetected.length >= 1) {
       patterns.push({
         type: "expand_barter_regex",
         priority: "high",
@@ -400,7 +406,7 @@ function analyzeCorrectionPatterns(corrections) {
     );
   });
 
-  if (pricingNotDetected.length >= 2) {
+  if (pricingNotDetected.length >= 1) {
     patterns.push({
       type: "expand_pricing_regex",
       priority: "high",
@@ -422,7 +428,7 @@ function analyzeCorrectionPatterns(corrections) {
     );
   });
 
-  if (pricingFalsePositive.length >= 2) {
+  if (pricingFalsePositive.length >= 1) {
     patterns.push({
       type: "refine_pricing_regex",
       priority: "medium",
@@ -444,7 +450,7 @@ function analyzeCorrectionPatterns(corrections) {
     );
   });
 
-  if (partnershipRelated.length >= 3) {
+  if (partnershipRelated.length >= 1) {
     patterns.push({
       type: "enhance_partnership_detection",
       priority: "high",
@@ -458,12 +464,12 @@ function analyzeCorrectionPatterns(corrections) {
   // Si hay muchas correcciones del mismo tipo pero no encajan en patrones específicos,
   // intentar extraer términos comunes para mejorar regex o prompts
   const allCorrectionsByType = Object.entries(byType)
-    .filter(([key, corrections]) => corrections.length >= 2)
+    .filter(([key, corrections]) => corrections.length >= 1)
     .map(([key, corrections]) => ({ type: key, corrections }));
 
   for (const { type, corrections } of allCorrectionsByType) {
-    // Si hay 3+ correcciones del mismo tipo, analizar términos comunes
-    if (corrections.length >= 3) {
+    // Si hay 1+ correcciones del mismo tipo, analizar términos comunes
+    if (corrections.length >= 1) {
       const commonTerms = extractCommonTerms(corrections);
       if (commonTerms.length > 0) {
         patterns.push({
@@ -546,17 +552,17 @@ function extractCommonTerms(corrections) {
       "el", "la", "los", "las", "un", "una", "de", "del", "que", "con", "por", "para", "este", "esta", "estos", "estas", "ese", "esa", "eso", "esos", "esas", "aquel", "aquella", "aquello", "aquellos", "aquellas",
       "le", "les", "des", "du", "de", "la", "les", "un", "une", "des", "et", "ou", "mais", "donc", "or", "ni", "car"
     ]);
-    
-    words.forEach((word) => {
-      if (!stopWords.has(word) && word.length >= 3) {
-        terms.set(word, (terms.get(word) || 0) + 1);
-      }
-    });
-  });
-  
-  // Retornar términos que aparecen en al menos 2 correcciones
-  return Array.from(terms.entries())
-    .filter(([word, count]) => count >= 2)
+                                    
+                                    words.forEach((word) => {
+                                    if (!stopWords.has(word) && word.length >= 3) {
+                                        terms.set(word, (terms.get(word) || 0) + 1);
+                                    }
+                                    });
+                                });
+                                
+                                // Retornar términos que aparecen en al menos 2 correcciones
+                                return Array.from(terms.entries())
+                                    .filter(([word, count]) => count >= 2)
     .map(([word]) => word)
     .slice(0, 10); // Limitar a 10 términos más comunes
 }
@@ -1020,3 +1026,4 @@ async function refinePricingRegex(pattern) {
   };
 }
 
+/*                                                                                                                  
