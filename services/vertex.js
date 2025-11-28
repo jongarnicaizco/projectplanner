@@ -759,11 +759,6 @@ async function classifyIntentHeuristic({
       } else {
         reasoning = "Email is a barter request, so it is categorized as Low intent (not Medium or higher).";
       }
-    } else if (!hasAnyCommercialSignalForUs) {
-      intent = "Discard";
-      confidence = 0.9;
-      reasoning =
-        "Email does not fit PR, barter, pricing, free coverage or partnership patterns, so it is discarded.";
     } else if (hasPartnershipCollabAsk || isMediaKitPricingRequest) {
       // Solo Medium si hay señales CLARAS de partnership/comercial Y NO es barter request
       if (isBarterRequest) {
@@ -772,11 +767,18 @@ async function classifyIntentHeuristic({
         reasoning = "Email is a barter request, so it is categorized as Low intent (not Medium or higher).";
       } else {
         intent = "Medium";
-      confidence = 0.7;
+        confidence = 0.7;
+      }
     } else if (isBarterRequest) {
       // Barter → Low, no Medium
       intent = "Low";
       confidence = 0.75;
+    } else if (!hasAnyCommercialSignalForUs) {
+      // REGLA: Discard solo si NO tiene intención comercial (partnership/publicidad) Y además NO es barter, free coverage o pricing request
+      intent = "Discard";
+      confidence = 0.9;
+      reasoning =
+        "Email shows no commercial intent (partnership, advertising, pricing request, barter, or free coverage request), so it is discarded.";
     } else {
       // Otras señales comerciales débiles → Low, no Medium
       intent = "Low";
