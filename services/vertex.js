@@ -498,7 +498,6 @@ async function classifyIntentHeuristic({
 
   console.log("[mfs] [classify] Flags básicos:", {
     modelIntentRaw,
-    containsUnsubscribe,
     isPressStyle,
     isEventPrInfo,
     isCoverageRequest,
