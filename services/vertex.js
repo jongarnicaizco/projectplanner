@@ -721,8 +721,17 @@ async function classifyIntentHeuristic({
         confidence = 0.85;
       } else {
         // Hay señales, no descartar
-        intent = hasPartnershipCollabAsk || isMediaKitPricingRequest ? "Medium" : "Low";
-        confidence = 0.7;
+        // REGLA DURA: Si es press release o free coverage request, SIEMPRE Low (nunca Medium)
+        if (isPressStyle || isFreeCoverageRequest) {
+          intent = "Low";
+          confidence = 0.8;
+          reasoning = isPressStyle 
+            ? "Email is a press release, so it is categorized as Low intent (not Medium or higher)."
+            : "Email is a free coverage request, so it is categorized as Low intent (not Medium or higher).";
+        } else {
+          intent = hasPartnershipCollabAsk || isMediaKitPricingRequest ? "Medium" : "Low";
+          confidence = 0.7;
+        }
       }
     } else {
       // High, Low, Very High: usar directamente pero validar
