@@ -629,14 +629,18 @@ async function classifyIntentHeuristic({
         confidence = 0.8;
       } 
       // 2.c. Medium: partnership intention but nothing clearly defined regarding final scope
-      // REGLA DURA: Si es press release o free coverage request, NO puede ser Medium
+      // REGLA DURA: Si es press release, free coverage request o barter request, NO puede ser Medium
       else {
-        if (isPressStyle || isFreeCoverageRequest) {
+        if (isPressStyle || isFreeCoverageRequest || isBarterRequest) {
           intent = "Low";
           confidence = 0.8;
-          reasoning = isPressStyle 
-            ? "Email is a press release, so it is categorized as Low intent (not Medium or higher)."
-            : "Email is a free coverage request, so it is categorized as Low intent (not Medium or higher).";
+          if (isPressStyle) {
+            reasoning = "Email is a press release, so it is categorized as Low intent (not Medium or higher).";
+          } else if (isFreeCoverageRequest) {
+            reasoning = "Email is a free coverage request, so it is categorized as Low intent (not Medium or higher).";
+          } else {
+            reasoning = "Email is a barter request, so it is categorized as Low intent (not Medium or higher).";
+          }
         } else {
           intent = "Medium";
           confidence = 0.72;
@@ -732,13 +736,17 @@ async function classifyIntentHeuristic({
         confidence = 0.85;
       } else {
         // Hay señales, no descartar
-        // REGLA DURA: Si es press release o free coverage request, SIEMPRE Low (nunca Medium)
-        if (isPressStyle || isFreeCoverageRequest) {
+        // REGLA DURA: Si es press release, free coverage request o barter request, SIEMPRE Low (nunca Medium)
+        if (isPressStyle || isFreeCoverageRequest || isBarterRequest) {
           intent = "Low";
           confidence = 0.8;
-          reasoning = isPressStyle 
-            ? "Email is a press release, so it is categorized as Low intent (not Medium or higher)."
-            : "Email is a free coverage request, so it is categorized as Low intent (not Medium or higher).";
+          if (isPressStyle) {
+            reasoning = "Email is a press release, so it is categorized as Low intent (not Medium or higher).";
+          } else if (isFreeCoverageRequest) {
+            reasoning = "Email is a free coverage request, so it is categorized as Low intent (not Medium or higher).";
+          } else {
+            reasoning = "Email is a barter request, so it is categorized as Low intent (not Medium or higher).";
+          }
         } else {
           intent = hasPartnershipCollabAsk || isMediaKitPricingRequest ? "Medium" : "Low";
           confidence = 0.7;
@@ -819,20 +827,29 @@ async function classifyIntentHeuristic({
     hasPartnershipCollabAsk;
 
   if (intent === "Discard" && neverDiscard) {
-    // REGLA DURA: Si es press release o Free Coverage Request, SIEMPRE Low (no Medium)
-    if (isPressStyle || isFreeCoverageRequest) {
+    // REGLA DURA: Si es press release, Free Coverage Request o Barter Request, SIEMPRE Low (no Medium)
+    if (isPressStyle || isFreeCoverageRequest || isBarterRequest) {
       intent = "Low";
       confidence = Math.max(confidence || 0.8, 0.8);
       if (isPressStyle) {
         reasoning = "Email is a press release, so it is categorized as Low intent (not Medium or higher).";
-      } else {
+      } else if (isFreeCoverageRequest) {
         reasoning = "Email is a free coverage request, so it is categorized as Low intent (not Medium or higher).";
+      } else {
+        reasoning = "Email is a barter request, so it is categorized as Low intent (not Medium or higher).";
       }
     } else if (hasPartnershipCollabAsk || isMediaKitPricingRequest) {
-      intent = "Medium";
-      confidence = Math.max(confidence || 0.7, 0.7);
-      reasoning =
-        "Email contains PR, coverage, barter, pricing, meeting or partnership signals, so it is treated as a real opportunity instead of being discarded.";
+      // REGLA DURA: Si es barter request, NO puede ser Medium
+      if (isBarterRequest) {
+        intent = "Low";
+        confidence = Math.max(confidence || 0.8, 0.8);
+        reasoning = "Email is a barter request, so it is categorized as Low intent (not Medium or higher).";
+      } else {
+        intent = "Medium";
+        confidence = Math.max(confidence || 0.7, 0.7);
+        reasoning =
+          "Email contains PR, coverage, barter, pricing, meeting or partnership signals, so it is treated as a real opportunity instead of being discarded.";
+      }
     } else {
       intent = "Low";
       confidence = Math.max(confidence || 0.7, 0.7);
@@ -863,8 +880,8 @@ async function classifyIntentHeuristic({
     isFreeCoverageRequest ||
     isPressStyle; // Press release también cuenta como flag
 
-  // REGLA DURA: NUNCA cambiar a Medium si es press release o free coverage request
-  if (intent === "Low" && !hasAnyAirtableFlag && !isPressStyle && !isFreeCoverageRequest) {
+  // REGLA DURA: NUNCA cambiar a Medium si es press release, free coverage request o barter request
+  if (intent === "Low" && !hasAnyAirtableFlag && !isPressStyle && !isFreeCoverageRequest && !isBarterRequest) {
     intent = "Medium";
     confidence = Math.max(confidence || 0.7, 0.7);
   }
@@ -997,17 +1014,19 @@ async function classifyIntentHeuristic({
     reasoning = defaultReasoningForIntent(intent);
   }
 
-  // REGLA DURA FINAL: Press Release o Free Coverage Request SIEMPRE Low (última verificación antes de retornar)
+  // REGLA DURA FINAL: Press Release, Free Coverage Request o Barter Request SIEMPRE Low (última verificación antes de retornar)
   // Esta es la verificación más importante - sobrescribe cualquier otra lógica
-  // Usar finalFreeCoverage (combinación de modelo + heurística) para detectar free coverage
-  if ((isPressStyle || isFreeCoverageRequest || finalFreeCoverage) && intent !== "Low" && intent !== "Discard") {
-    console.log("[mfs] [classify] FORZANDO Low para press release/Free Coverage Request (intent actual era:", intent, ", isPressStyle:", isPressStyle, ", isFreeCoverageRequest:", isFreeCoverageRequest, ", finalFreeCoverage:", finalFreeCoverage, ")");
+  // Usar finalFreeCoverage y finalBarter (combinación de modelo + heurística) para detectar
+  if ((isPressStyle || isFreeCoverageRequest || finalFreeCoverage || isBarterRequest || finalBarter) && intent !== "Low" && intent !== "Discard") {
+    console.log("[mfs] [classify] FORZANDO Low para press release/Free Coverage Request/Barter Request (intent actual era:", intent, ", isPressStyle:", isPressStyle, ", isFreeCoverageRequest:", isFreeCoverageRequest, ", finalFreeCoverage:", finalFreeCoverage, ", isBarterRequest:", isBarterRequest, ", finalBarter:", finalBarter, ")");
     intent = "Low";
     confidence = Math.max(confidence || 0.8, 0.8);
     if (isPressStyle) {
       reasoning = "Email is a press release, so it is categorized as Low intent (not Medium, High, or Very High).";
-    } else {
+    } else if (isFreeCoverageRequest || finalFreeCoverage) {
       reasoning = "Email is a free coverage request (press release or news shared), categorized as Low intent (not Medium, High, or Very High).";
+    } else {
+      reasoning = "Email is a barter request (invitation or service in exchange for coverage), categorized as Low intent (not Medium, High, or Very High).";
     }
   }
 
