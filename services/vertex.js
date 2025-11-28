@@ -683,16 +683,19 @@ async function classifyIntentHeuristic({
   if (!intent && normalizedModelIntent) {
     // Ser más estricto con "Medium" del modelo - requiere señales claras
     if (normalizedModelIntent === "Medium") {
-      // Solo aceptar Medium si hay señales claras de partnership/comercial
-      if (hasPartnershipCollabAsk || isMediaKitPricingRequest || hasCallOrMeetingInvite) {
+      // REGLA DURA: Si es press release o free coverage request, SIEMPRE Low (nunca Medium)
+      if (isPressStyle || isFreeCoverageRequest) {
+        intent = "Low";
+        confidence = 0.8;
+        reasoning = isPressStyle 
+          ? "Email is a press release, so it is categorized as Low intent (not Medium or higher)."
+          : "Email is a free coverage request, so it is categorized as Low intent (not Medium or higher).";
+      } else if (hasPartnershipCollabAsk || isMediaKitPricingRequest || hasCallOrMeetingInvite) {
+        // Solo aceptar Medium si hay señales claras de partnership/comercial Y NO es press release/free coverage
         intent = "Medium";
         confidence = 0.7;
-      } else if (isPressStyle) {
-        // REGLA DURA: Press Release → SIEMPRE Low, no Medium
-        intent = "Low";
-        confidence = 0.75;
-      } else if (isBarterRequest || isFreeCoverageRequest) {
-        // PR, barter, free coverage → Low, no Medium
+      } else if (isBarterRequest) {
+        // Barter → Low, no Medium
         intent = "Low";
         confidence = 0.65;
       } else {
