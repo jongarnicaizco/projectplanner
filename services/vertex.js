@@ -758,8 +758,8 @@ async function classifyIntentHeuristic({
       confidence = confidence || 0.7;
     }
 
-    // REGLA DURA: Si es press release o Free Coverage Request, NUNCA cambiar a Medium aunque tenga partnership signals
-    if (intent === "Low" && hasPartnershipCollabAsk && !isPressStyle && !isFreeCoverageRequest) {
+    // REGLA DURA: Si es press release, Free Coverage Request o Barter Request, NUNCA cambiar a Medium aunque tenga partnership signals
+    if (intent === "Low" && hasPartnershipCollabAsk && !isPressStyle && !isFreeCoverageRequest && !isBarterRequest) {
       intent = "Medium";
       confidence = 0.72;
     }
