@@ -518,6 +518,7 @@ async function classifyIntentHeuristic({
   let confidence = null;
 
   // Casos "ruido" claros → Discard
+  // REGLA: Solo descartar si NO tiene intención comercial (partnership/publicidad) Y además NO es barter, free coverage o pricing request
   // Email sin sentido o muy corto (solo saludo, sin contenido)
   const meaningfulContent = normalizedBody.replace(/^(bonjour|hello|hi|hola|buenos d[ií]as|buenas tardes|saludos|greetings|ciao|salut)[\s.,!]*$/i, "").trim();
   const isMeaninglessEmail = meaningfulContent.length < 20 && 
@@ -525,7 +526,9 @@ async function classifyIntentHeuristic({
     !isPricing && 
     !isCoverageRequest && 
     !isPressStyle &&
-    !hasEventInvite;
+    !hasEventInvite &&
+    !isBarterRequest &&
+    !isFreeCoverageRequest;
   
   if (isTestEmail) {
     intent = "Discard";
@@ -537,15 +540,17 @@ async function classifyIntentHeuristic({
     confidence = 0.99;
     reasoning =
       "Automated social network notification with no commercial or partnership intent, so it is discarded.";
-  } else if (isMeaninglessEmail) {
+  } else if (isMeaninglessEmail && !hasAnyCommercialSignalForUs) {
+    // Solo descartar si es muy corto Y además no tiene señales comerciales (partnership, pricing, barter, free coverage)
     intent = "Discard";
     confidence = 0.95;
-    reasoning = "Email contains no meaningful content (only greeting or very short message without business context).";
+    reasoning = "Email contains no meaningful content (only greeting or very short message) and shows no commercial intent (partnership, advertising, pricing request, barter, or free coverage request).";
   } else if (saysNoCommercialIntent && !hasAnyCommercialSignalForUs) {
+    // Solo descartar si el modelo dice que no hay intención comercial Y no hay señales que lo contradigan
     intent = "Discard";
     confidence = 0.96;
     reasoning =
-      "Model reasoning indicates this is not a PR, barter, pricing, free coverage or partnership opportunity and no strong signals contradict that.";
+      "Email shows no commercial intent (partnership, advertising, pricing request, barter, or free coverage request), so it is discarded.";
   }
 
   // REGLA DURA: Press Release o Free Coverage Request SIEMPRE Low (antes de analizar partnership)
@@ -670,9 +675,15 @@ async function classifyIntentHeuristic({
         intent = "Low";
         confidence = 0.65;
       } else {
-        // Sin señales claras → descartar o Low según contexto
-        intent = hasAnyCommercialSignalForUs ? "Low" : "Discard";
-        confidence = hasAnyCommercialSignalForUs ? 0.65 : 0.85;
+        // Sin señales claras → descartar solo si NO tiene intención comercial Y además NO es barter, free coverage o pricing request
+        if (!hasAnyCommercialSignalForUs) {
+          intent = "Discard";
+          confidence = 0.85;
+          reasoning = "Email shows no commercial intent (partnership, advertising, pricing request, barter, or free coverage request), so it is discarded.";
+        } else {
+          intent = "Low";
+          confidence = 0.65;
+        }
       }
     } else if (
       normalizedModelIntent === "Very High" &&
