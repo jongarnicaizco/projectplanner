@@ -764,8 +764,8 @@ async function classifyIntentHeuristic({
       confidence = 0.72;
     }
     
-    // REGLA DURA: Si el modelo dice High/Very High/Medium pero es press release o Free Coverage Request, forzar Low
-    if ((isPressStyle || isFreeCoverageRequest) && (intent === "High" || intent === "Very High" || intent === "Medium")) {
+    // REGLA DURA: Si el modelo dice High/Very High/Medium pero es press release, Free Coverage Request o Barter Request, forzar Low
+    if ((isPressStyle || isFreeCoverageRequest || isBarterRequest) && (intent === "High" || intent === "Very High" || intent === "Medium")) {
       console.log("[mfs] [classify] FORZANDO Low para press release/Free Coverage Request/Barter Request (modelo dijo:", intent, ")");
       intent = "Low";
       confidence = 0.8;
