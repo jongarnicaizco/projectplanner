@@ -149,6 +149,10 @@ export async function createAirtableRecord({
   isFreeCoverage,
   isBarter,
   isPricing,
+  senderName,
+  senderFirstName,
+  language,
+  location,
 }) {
   if (FLAGS.SKIP_AIRTABLE) {
     console.log("[mfs] SKIP_AIRTABLE activado → no escribo en Airtable");
@@ -190,17 +194,49 @@ export async function createAirtableRecord({
 
     const fields = {};
 
-    const putId = (fid, val) => {
-      if (fid && meta.idSet.has(fid)) fields[fid] = val ?? "";
+    // Obtener IDs de campos dinámicamente desde los metadatos
+    const getFieldId = (fieldName) => {
+      return meta.nameToIdMap.get(fieldName) || null;
     };
 
-    putId(FIDS.EMAIL_ID, id);
-    putId(FIDS.FROM, from);
-    putId(FIDS.TO, to);
-    putId(FIDS.CC, cc);
-    putId(FIDS.SUBJECT, subject);
-    putId(FIDS.BODY, SAFE_BODY);
-    putId(FIDS.BUSINESS_OPPT, intentCap);
+    // Intentar usar IDs hardcodeados primero (para compatibilidad), luego nombres
+    const putId = (fid, val) => {
+      if (fid && meta.idSet.has(fid)) {
+        fields[fid] = val ?? "";
+        return true;
+      }
+      return false;
+    };
+
+    // Intentar usar IDs hardcodeados, si no funcionan, usar nombres
+    if (!putId(FIDS.EMAIL_ID, id)) {
+      const emailIdFieldId = getFieldId("Email ID");
+      if (emailIdFieldId) fields[emailIdFieldId] = id;
+    }
+    if (!putId(FIDS.FROM, from)) {
+      const fromFieldId = getFieldId("From");
+      if (fromFieldId) fields[fromFieldId] = from;
+    }
+    if (!putId(FIDS.TO, to)) {
+      const toFieldId = getFieldId("To");
+      if (toFieldId) fields[toFieldId] = to;
+    }
+    if (!putId(FIDS.CC, cc)) {
+      const ccFieldId = getFieldId("CC");
+      if (ccFieldId) fields[ccFieldId] = cc;
+    }
+    if (!putId(FIDS.SUBJECT, subject)) {
+      const subjectFieldId = getFieldId("Subject");
+      if (subjectFieldId) fields[subjectFieldId] = subject;
+    }
+    if (!putId(FIDS.BODY, SAFE_BODY)) {
+      const bodyFieldId = getFieldId("Body");
+      if (bodyFieldId) fields[bodyFieldId] = SAFE_BODY;
+    }
+    if (!putId(FIDS.BUSINESS_OPPT, intentCap)) {
+      const businessOpptFieldId = getFieldId("Business Oppt");
+      if (businessOpptFieldId) fields[businessOpptFieldId] = intentCap;
+    }
 
     const putName = (name, val) => {
       if (!meta.nameSet.has(name)) {
@@ -216,25 +252,33 @@ export async function createAirtableRecord({
       fields[name] = val;
     };
 
-    // Intentar usar el ID del campo directamente para "Body Summary" si está disponible
-    const BODY_SUMMARY_FIELD_ID = "fldx6yJnCtIeVvJqc";
+    // Body Summary: obtener ID dinámicamente
     const MAX_SUMMARY_LENGTH = 1500; // ~150 palabras
     if (bodySummary && bodySummary.trim()) {
       const trimmedSummary = bodySummary.trim().slice(0, MAX_SUMMARY_LENGTH);
+      // Intentar usar por nombre primero (más robusto)
       if (meta.nameSet.has("Body Summary")) {
         fields["Body Summary"] = trimmedSummary;
-      } else if (meta.idSet.has(BODY_SUMMARY_FIELD_ID)) {
-        fields[BODY_SUMMARY_FIELD_ID] = trimmedSummary;
-        console.log("[mfs] Airtable: usando ID del campo Body Summary directamente");
       } else {
-        console.warn("[mfs] Airtable: campo Body Summary no encontrado, recargando cache...");
-        const refreshedMeta = await getAirtableFieldMaps(true);
-        if (refreshedMeta.nameSet.has("Body Summary")) {
-          fields["Body Summary"] = trimmedSummary;
-        } else if (refreshedMeta.idSet.has(BODY_SUMMARY_FIELD_ID)) {
-          fields[BODY_SUMMARY_FIELD_ID] = trimmedSummary;
+        // Si no funciona por nombre, obtener el ID dinámicamente
+        const bodySummaryFieldId = meta.nameToIdMap.get("Body Summary");
+        if (bodySummaryFieldId) {
+          fields[bodySummaryFieldId] = trimmedSummary;
+          console.log("[mfs] Airtable: usando ID dinámico del campo Body Summary:", bodySummaryFieldId);
         } else {
-          console.error("[mfs] Airtable: campo Body Summary no existe en la tabla");
+          // Último intento: recargar cache y buscar de nuevo
+          console.warn("[mfs] Airtable: campo Body Summary no encontrado, recargando cache...");
+          const refreshedMeta = await getAirtableFieldMaps(true);
+          if (refreshedMeta.nameSet.has("Body Summary")) {
+            fields["Body Summary"] = trimmedSummary;
+          } else {
+            const refreshedBodySummaryId = refreshedMeta.nameToIdMap.get("Body Summary");
+            if (refreshedBodySummaryId) {
+              fields[refreshedBodySummaryId] = trimmedSummary;
+            } else {
+              console.error("[mfs] Airtable: campo Body Summary no existe en la tabla");
+            }
+          }
         }
       }
     }
@@ -255,10 +299,28 @@ export async function createAirtableRecord({
     putName("Free Coverage Request", !!isFreeCoverage);
     putName("Barter Request", !!isBarter);
     putName("Media Kits/Pricing Request", !!isPricing);
+    
+    // Nuevos campos: nombre del cliente
+    if (senderName) putName("Client Name", senderName);
+    if (senderFirstName) putName("Client First Name", senderFirstName);
+    
+    // Idioma
+    if (language) putName("Language", language);
+    
+    // Ubicación (basada en email To)
+    if (location) {
+      if (location.city) putName("City", location.city);
+      if (location.country) putName("Country", location.country);
+      if (location.countryCode) putName("Country Code", location.countryCode);
+    }
 
     console.log("[mfs] Airtable: creo nuevo registro para email:", {
       id,
       businessOppt: intentCap,
+      from,
+      to,
+      language,
+      location: location ? `${location.city}, ${location.country}` : null,
     });
 
     const bodyReq = { records: [{ fields }], typecast: true };

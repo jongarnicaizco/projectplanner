@@ -2,7 +2,16 @@
  * Procesador de mensajes de Gmail
  */
 import { getGmailClient } from "./gmail.js";
-import { backoff, logErr, bodyFromMessage } from "../utils/helpers.js";
+import {
+  backoff,
+  logErr,
+  bodyFromMessage,
+  extractCleanEmail,
+  extractSenderName,
+  extractFirstName,
+  detectLanguage,
+  getLocationFromEmail,
+} from "../utils/helpers.js";
 import {
   acquireMessageLock,
   releaseMessageLock,
@@ -82,10 +91,24 @@ export async function processMessageIds(gmail, ids) {
       );
 
       const subject = headers["subject"] || "";
-      const from = headers["from"] || "";
-      const to = headers["to"] || process.env.GMAIL_ADDRESS || "";
+      const fromHeader = headers["from"] || "";
+      const toHeader = headers["to"] || process.env.GMAIL_ADDRESS || "";
       const cc = headers["cc"] || "";
       const body = bodyFromMessage(msg.data);
+      
+      // Extraer emails limpios (sin nombres)
+      const from = extractCleanEmail(fromHeader);
+      const to = extractCleanEmail(toHeader);
+      
+      // Extraer nombre del remitente
+      const senderName = extractSenderName(fromHeader);
+      const senderFirstName = extractFirstName(senderName);
+      
+      // Detectar idioma
+      const language = detectLanguage(subject + " " + body);
+      
+      // Obtener ubicación basada en el email To
+      const location = getLocationFromEmail(toHeader);
       
       // Extraer timestamp del mensaje (internalDate está en milisegundos)
       const internalDate = msg.data.internalDate;
@@ -164,6 +187,10 @@ export async function processMessageIds(gmail, ids) {
         isFreeCoverage,
         isBarter,
         isPricing,
+        senderName,
+        senderFirstName,
+        language,
+        location,
       });
 
       results.push({ id, airtableId: rec?.id, intent, confidence });
