@@ -288,49 +288,44 @@ export async function createAirtableRecord({
 
     const fields = {};
 
-    // Obtener IDs de campos dinámicamente desde los metadatos
-    const getFieldId = (fieldName) => {
-      return meta.nameToIdMap.get(fieldName) || null;
+    // Función para guardar valores usando nombres de campos (más robusto que IDs hardcodeados)
+    const putNameSync = (name, val) => {
+      if (val === undefined || val === null || val === "") return;
+      
+      // Usar el nombre del campo directamente (Airtable acepta nombres)
+      // Si el campo no existe, Airtable lo ignorará
+      fields[name] = val;
     };
 
-    // Intentar usar IDs hardcodeados primero (para compatibilidad), luego nombres
-    const putId = (fid, val) => {
-      if (fid && meta.idSet.has(fid)) {
-        fields[fid] = val ?? "";
-        return true;
-      }
-      return false;
-    };
-
-    // Intentar usar IDs hardcodeados, si no funcionan, usar nombres
-    if (!putId(FIDS.EMAIL_ID, id)) {
-      const emailIdFieldId = getFieldId("Email ID");
-      if (emailIdFieldId) fields[emailIdFieldId] = id;
-    }
-    if (!putId(FIDS.FROM, from)) {
-      const fromFieldId = getFieldId("From");
-      if (fromFieldId) fields[fromFieldId] = from;
-    }
-    if (!putId(FIDS.TO, to)) {
-      const toFieldId = getFieldId("To");
-      if (toFieldId) fields[toFieldId] = to;
-    }
-    if (!putId(FIDS.CC, cc)) {
-      const ccFieldId = getFieldId("CC");
-      if (ccFieldId) fields[ccFieldId] = cc;
-    }
-    if (!putId(FIDS.SUBJECT, subject)) {
-      const subjectFieldId = getFieldId("Subject");
-      if (subjectFieldId) fields[subjectFieldId] = subject;
-    }
-    if (!putId(FIDS.BODY, SAFE_BODY)) {
-      const bodyFieldId = getFieldId("Body");
-      if (bodyFieldId) fields[bodyFieldId] = SAFE_BODY;
-    }
-    if (!putId(FIDS.BUSINESS_OPPT, intentCap)) {
-      const businessOpptFieldId = getFieldId("Business Oppt");
-      if (businessOpptFieldId) fields[businessOpptFieldId] = intentCap;
-    }
+    // Log crítico antes de guardar From y To
+    console.log("[mfs] ===== AIRTABLE: VALORES ANTES DE GUARDAR =====");
+    console.log("[mfs] from (recibido):", JSON.stringify(from));
+    console.log("[mfs] to (recibido):", JSON.stringify(to));
+    console.log("[mfs] from type:", typeof from);
+    console.log("[mfs] to type:", typeof to);
+    console.log("[mfs] from !== to?", from !== to);
+    
+    // Guardar campos básicos usando nombres (más robusto)
+    // Asegurar que from y to son strings y diferentes
+    const fromValue = String(from || "").trim();
+    const toValue = String(to || "").trim();
+    
+    console.log("[mfs] fromValue (limpio):", JSON.stringify(fromValue));
+    console.log("[mfs] toValue (limpio):", JSON.stringify(toValue));
+    console.log("[mfs] fromValue !== toValue?", fromValue !== toValue);
+    
+    putNameSync("Email ID", id);
+    putNameSync("From", fromValue);
+    putNameSync("To", toValue);
+    putNameSync("CC", cc);
+    putNameSync("Subject", subject);
+    putNameSync("Body", SAFE_BODY);
+    putNameSync("Business Oppt", intentCap);
+    
+    // Log después de guardar
+    console.log("[mfs] ===== AIRTABLE: VALORES GUARDADOS EN FIELDS =====");
+    console.log("[mfs] fields['From']:", JSON.stringify(fields["From"]));
+    console.log("[mfs] fields['To']:", JSON.stringify(fields["To"]));
 
     const putName = async (name, val) => {
       if (val === undefined || val === null || val === "") return;
@@ -392,15 +387,31 @@ export async function createAirtableRecord({
       }
     }
 
-    // Usar await para putName ya que ahora es async
-    await putName("Email ID", id);
-    await putName("From", from);
-    await putName("To", to);
-    await putName("CC", cc);
-    await putName("Subject", subject);
-    await putName("Body", SAFE_BODY);
+    // Log crítico antes de guardar en Airtable
+    console.log("[mfs] Airtable: Valores que se van a guardar:", {
+      from: from,
+      to: to,
+      fromLength: from?.length || 0,
+      toLength: to?.length || 0,
+      fromIsEmpty: !from || from === "",
+      toIsEmpty: !to || to === "",
+      fromEqualsTo: from === to,
+    });
+    
+    // Verificación crítica: asegurar que from y to son diferentes
+    if (from === to && from) {
+      console.error("[mfs] Airtable: ERROR - from y to son iguales! No se guardará hasta corregir.", {
+        from,
+        to,
+        emailId: id,
+      });
+      // No continuar si hay este error crítico
+      return { id: null };
+    }
+    
+    // Campos básicos ya guardados arriba con putNameSync
+    // Solo guardar campos adicionales con putName (async)
     await putName("Timestamp", timestamp);
-    await putName("Business Oppt", intentCap);
     await putName("Classification Scoring", scoreVal);
     await putName("Classification Reasoning", reasoningStr);
     await putName("MEDDIC Analysis", meddicStr);

@@ -7,8 +7,11 @@ import {
   logErr,
   bodyFromMessage,
   extractCleanEmail,
+  extractFromEmail,
+  extractToEmail,
   extractSenderName,
   extractFirstName,
+  extractSenderNameWithAI,
   detectLanguage,
   getLocationFromEmail,
 } from "../utils/helpers.js";
@@ -17,7 +20,7 @@ import {
   releaseMessageLock,
   saveToGCS,
 } from "./storage.js";
-import { classifyIntent, generateBodySummary } from "./vertex.js";
+import { classifyIntent, generateBodySummary, callModelText } from "./vertex.js";
 import {
   airtableFindByEmailId,
   createAirtableRecord,
@@ -101,24 +104,253 @@ export async function processMessageIds(gmail, ids) {
       }
       console.log("[mfs] Mensaje no existe en Airtable, continuando con el procesamiento");
 
-      const headersArr = msg.data.payload.headers || [];
-      const headers = Object.fromEntries(
-        headersArr.map((h) => [h.name.toLowerCase(), h.value])
-      );
+      // Función helper para buscar headers en todas las partes del mensaje
+      const getAllHeaders = (payload) => {
+        const allHeaders = [];
+        
+        // Headers del payload principal
+        if (payload.headers && Array.isArray(payload.headers)) {
+          allHeaders.push(...payload.headers);
+        }
+        
+        // Buscar headers en partes anidadas (para mensajes multipart)
+        const searchParts = (parts) => {
+          if (!parts || !Array.isArray(parts)) return;
+          for (const part of parts) {
+            if (part.headers && Array.isArray(part.headers)) {
+              allHeaders.push(...part.headers);
+            }
+            if (part.parts) {
+              searchParts(part.parts);
+            }
+          }
+        };
+        
+        if (payload.parts) {
+          searchParts(payload.parts);
+        }
+        
+        return allHeaders;
+      };
+      
+      // Obtener todos los headers del mensaje
+      const allHeaders = getAllHeaders(msg.data.payload);
+      
+      // Log completo de headers RAW para diagnóstico
+      console.log("[mfs] ===== HEADERS RAW DEL EMAIL =====");
+      console.log("[mfs] Total headers encontrados:", allHeaders.length);
+      console.log("[mfs] Headers disponibles:", allHeaders.map(h => h.name).join(", "));
+      console.log("[mfs] Array completo:", JSON.stringify(allHeaders.map(h => ({ 
+        name: h.name, 
+        value: h.value?.substring(0, 150) 
+      })), null, 2));
 
-      const subject = headers["subject"] || "";
-      const fromHeader = headers["from"] || "";
-      const toHeader = headers["to"] || process.env.GMAIL_ADDRESS || "";
-      const cc = headers["cc"] || "";
+      // Función para buscar header específico (case-insensitive)
+      const findHeader = (headerName) => {
+        const lowerName = headerName.toLowerCase();
+        for (const h of allHeaders) {
+          if (h && h.name && h.name.toLowerCase() === lowerName) {
+            return h.value || "";
+          }
+        }
+        return "";
+      };
+      
+      // Extraer FROM: debe ser el remitente (quien envía el email)
+      let fromHeader = findHeader("From");
+      
+      if (!fromHeader) {
+        console.error("[mfs] ERROR: No se encontró header 'From' en el email");
+        console.error("[mfs] Headers disponibles:", allHeaders.map(h => h.name).join(", "));
+      } else {
+        console.log("[mfs] ✓ Header 'From' encontrado:", fromHeader.substring(0, 100));
+      }
+      
+      // Extraer TO: debe ser el destinatario (a quién se envía el email)
+      // Prioridad: To > Delivered-To > Envelope-To > X-Original-To
+      let toHeader = findHeader("To");
+      
+      if (!toHeader) {
+        toHeader = findHeader("Delivered-To");
+        if (toHeader) console.log("[mfs] ✓ Usando 'Delivered-To':", toHeader.substring(0, 100));
+      }
+      
+      if (!toHeader) {
+        toHeader = findHeader("Envelope-To");
+        if (toHeader) console.log("[mfs] ✓ Usando 'Envelope-To':", toHeader.substring(0, 100));
+      }
+      
+      if (!toHeader) {
+        toHeader = findHeader("X-Original-To");
+        if (toHeader) console.log("[mfs] ✓ Usando 'X-Original-To':", toHeader.substring(0, 100));
+      }
+      
+      // Si aún no hay "to", usar el email de Gmail configurado como último recurso
+      if (!toHeader && process.env.GMAIL_ADDRESS) {
+        console.warn("[mfs] ADVERTENCIA: No se encontró header 'to', usando GMAIL_ADDRESS como fallback");
+        toHeader = process.env.GMAIL_ADDRESS;
+      }
+      
+      const subject = findHeader("Subject") || "";
+      const cc = findHeader("CC") || "";
+      const bcc = findHeader("BCC") || findHeader("Bcc") || "";
+      // Buscar Reply-To (findHeader ya es case-insensitive)
+      const replyTo = findHeader("Reply-To") || "";
+      
+      // Log para debug
+      console.log("[mfs] ===== BÚSQUEDA DE REPLY-TO =====");
+      console.log("[mfs] Reply-To encontrado:", replyTo ? "SÍ" : "NO");
+      if (replyTo) {
+        console.log("[mfs] Reply-To valor:", replyTo);
+      } else {
+        // Listar todos los headers disponibles para debug
+        const replyHeaders = allHeaders.filter(h => h.name && h.name.toLowerCase().includes("reply"));
+        console.log("[mfs] Headers disponibles que contienen 'reply':", 
+          replyHeaders.length > 0 ? replyHeaders.map(h => `${h.name}=${h.value?.substring(0, 50)}`).join(", ") : "NINGUNO");
+      }
+      
+      // Buscar headers de mailing list que puedan contener el email del destinatario
+      const listId = findHeader("List-Id") || "";
+      const listPost = findHeader("List-Post") || "";
+      const listUnsubscribe = findHeader("List-Unsubscribe") || "";
+      const xGoogleOriginalTo = findHeader("X-Google-Original-To") || "";
+      const xOriginalTo = findHeader("X-Original-To") || "";
+      
+      // Función helper para convertir formato "ciudad.dominio.com" a "ciudad@dominio.com"
+      const convertMailingListToEmail = (text) => {
+        if (!text) return "";
+        
+        // Primero buscar emails completos (formato estándar)
+        const emailMatch = text.match(/([a-zA-Z0-9._%+-]+@secretmedianetwork\.com|[a-zA-Z0-9._%+-]+@feverup\.com|[a-zA-Z0-9._%+-]+@secretldn\.com)/i);
+        if (emailMatch) {
+          return emailMatch[1].toLowerCase();
+        }
+        
+        // Si no hay email completo, buscar formato "ciudad.secretmedianetwork.com" o "ciudad.feverup.com" o "ciudad.secretldn.com"
+        // y convertirlo a "ciudad@secretmedianetwork.com"
+        const domainPatterns = [
+          { pattern: /([a-zA-Z0-9._-]+)\.secretmedianetwork\.com/i, replacement: (match, ciudad) => `${ciudad}@secretmedianetwork.com` },
+          { pattern: /([a-zA-Z0-9._-]+)\.feverup\.com/i, replacement: (match, ciudad) => `${ciudad}@feverup.com` },
+          { pattern: /([a-zA-Z0-9._-]+)\.secretldn\.com/i, replacement: (match, ciudad) => `${ciudad}@secretldn.com` },
+        ];
+        
+        for (const { pattern, replacement } of domainPatterns) {
+          const match = text.match(pattern);
+          if (match) {
+            const email = replacement(match, match[1]).toLowerCase();
+            console.log("[mfs] Convertido mailing list de formato 'ciudad.dominio.com' a email:", email);
+            return email;
+          }
+        }
+        
+        return "";
+      };
+      
+      // Extraer email de mailing list de estos headers si están disponibles
+      let mailingListEmail = "";
+      if (listId) {
+        mailingListEmail = convertMailingListToEmail(listId);
+        if (mailingListEmail) {
+          console.log("[mfs] Email de mailing list encontrado en List-Id:", mailingListEmail);
+        }
+      }
+      if (!mailingListEmail && listPost) {
+        mailingListEmail = convertMailingListToEmail(listPost);
+        if (mailingListEmail) {
+          console.log("[mfs] Email de mailing list encontrado en List-Post:", mailingListEmail);
+        }
+      }
+      if (!mailingListEmail && (xGoogleOriginalTo || xOriginalTo)) {
+        const originalTo = xGoogleOriginalTo || xOriginalTo;
+        mailingListEmail = convertMailingListToEmail(originalTo);
+        if (mailingListEmail) {
+          console.log("[mfs] Email de mailing list encontrado en X-Google-Original-To/X-Original-To:", mailingListEmail);
+        }
+      }
+      
       const body = bodyFromMessage(msg.data);
       
-      // Extraer emails limpios (sin nombres)
-      const from = extractCleanEmail(fromHeader);
-      const to = extractCleanEmail(toHeader);
+      // Log de headers extraídos para diagnóstico
+      console.log("[mfs] ===== HEADERS EXTRAÍDOS =====");
+      console.log("[mfs] fromHeader (RAW):", JSON.stringify(fromHeader));
+      console.log("[mfs] toHeader (RAW):", JSON.stringify(toHeader));
+      console.log("[mfs] ccHeader (RAW):", JSON.stringify(cc));
+      console.log("[mfs] subject (RAW):", JSON.stringify(subject.substring(0, 100)));
+      
+      // Extraer email FROM (remitente) - debe ser DISTINTO a secretmedianetwork.com o feverup.com
+      // Si el From tiene uno de esos dominios, busca en Reply-To, CC, BCC
+      // Log para debug
+      console.log("[mfs] ===== EXTRACCIÓN DE FROM =====");
+      console.log("[mfs] ANTES de llamar a extractFromEmail");
+      console.log("[mfs] fromHeader (RAW):", JSON.stringify(fromHeader));
+      console.log("[mfs] replyTo (RAW):", JSON.stringify(replyTo));
+      console.log("[mfs] cc (RAW):", JSON.stringify(cc));
+      console.log("[mfs] bcc (RAW):", JSON.stringify(bcc));
+      
+      console.log("[mfs] LLAMANDO a extractFromEmail ahora...");
+      const fromEmailRaw = extractFromEmail(fromHeader, cc, bcc, replyTo);
+      console.log("[mfs] extractFromEmail RETORNÓ:", JSON.stringify(fromEmailRaw));
+      const from = String(fromEmailRaw || "").trim().toLowerCase();
+      
+      console.log("[mfs] fromEmailRaw resultado:", JSON.stringify(fromEmailRaw));
+      console.log("[mfs] from final:", JSON.stringify(from));
+      
+      // Extraer email TO (destinatario) - debe ser secretmedianetwork.com o feverup.com
+      // Si el To no tiene uno de esos dominios, busca en mailing list, CC, BCC, Reply-To
+      // Log para debug
+      console.log("[mfs] ===== EXTRACCIÓN DE TO =====");
+      console.log("[mfs] toHeader (RAW):", JSON.stringify(toHeader));
+      console.log("[mfs] bcc (RAW):", JSON.stringify(bcc));
+      console.log("[mfs] cc (RAW):", JSON.stringify(cc));
+      console.log("[mfs] replyTo (RAW):", JSON.stringify(replyTo));
+      console.log("[mfs] mailingListEmail:", JSON.stringify(mailingListEmail));
+      
+      const toEmailRaw = extractToEmail(toHeader || "", cc || "", bcc || "", replyTo || "", mailingListEmail || "");
+      const to = String(toEmailRaw || "").trim().toLowerCase();
+      
+      console.log("[mfs] toEmailRaw resultado:", JSON.stringify(toEmailRaw));
+      console.log("[mfs] to final:", JSON.stringify(to));
+      
+      // Log de emails extraídos
+      console.log("[mfs] ===== EMAILS EXTRAÍDOS =====");
+      console.log("[mfs] from (limpio):", JSON.stringify(from));
+      console.log("[mfs] to (limpio):", JSON.stringify(to));
+      console.log("[mfs] from length:", from.length);
+      console.log("[mfs] to length:", to.length);
+      console.log("[mfs] from !== to?", from !== to);
+      console.log("[mfs] from es válido?", /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from));
+      console.log("[mfs] to es válido?", /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to));
+      
+      // Validación crítica: asegurar que from y to son diferentes y no están vacíos
+      if (!from) {
+        console.error("[mfs] ERROR CRÍTICO: No se pudo extraer email del remitente (from)", {
+          fromHeader,
+        });
+      }
+      if (!to) {
+        console.error("[mfs] ERROR CRÍTICO: No se pudo extraer email del destinatario (to)", {
+          toHeader,
+        });
+      }
       
       // Extraer nombre del remitente
-      const senderName = extractSenderName(fromHeader);
-      const senderFirstName = extractFirstName(senderName);
+      let senderName = extractSenderName(fromHeader);
+      
+      // Si el nombre extraído tiene problemas (comillas, caracteres extra, etc.), usar IA
+      if (senderName && (senderName.includes('"') || senderName.includes("'") || senderName.includes("`") || 
+          /[<>{}|\\]/.test(senderName) || senderName.length > 100)) {
+        console.log("[mfs] Nombre extraído tiene problemas, intentando con IA:", senderName);
+        const aiName = await extractSenderNameWithAI(fromHeader, callModelText);
+        if (aiName && aiName.length > 0) {
+          console.log("[mfs] IA extrajo nombre limpio:", aiName);
+          senderName = aiName;
+        } else {
+          console.warn("[mfs] IA no pudo extraer nombre mejor, usando el extraído básico");
+        }
+      }
+      
+      // Extraer primer nombre del nombre limpio usando IA para determinar si es empresa o persona
+      const senderFirstName = await extractFirstName(senderName, callModelText);
       
       // Detectar idioma
       const language = detectLanguage(subject + " " + body);
@@ -137,6 +369,47 @@ export async function processMessageIds(gmail, ids) {
         language: language || "(no detectado)",
         location: location ? `${location.city}, ${location.country} (${location.countryCode})` : "(no encontrada)",
       });
+      
+      // Verificación crítica antes de pasar a Airtable
+      if (from === to && from) {
+        console.error("[mfs] ===== ERROR CRÍTICO: from y to son iguales =====");
+        console.error("[mfs] from:", JSON.stringify(from));
+        console.error("[mfs] to:", JSON.stringify(to));
+        console.error("[mfs] fromHeader original:", JSON.stringify(fromHeader));
+        console.error("[mfs] toHeader original:", JSON.stringify(toHeader));
+        console.error("[mfs] emailId:", id);
+        
+        // Si from y to son iguales, no podemos procesar correctamente este email
+        // Usar el email de Gmail configurado como "to" si está disponible
+        if (process.env.GMAIL_ADDRESS) {
+          const correctedTo = extractCleanEmail(process.env.GMAIL_ADDRESS);
+          if (correctedTo && correctedTo !== from) {
+            console.warn("[mfs] CORRECCIÓN: Usando GMAIL_ADDRESS como 'to' porque from y to eran iguales", {
+              originalTo: to,
+              correctedTo: correctedTo,
+            });
+            to = correctedTo;
+          } else {
+            console.error("[mfs] ERROR: No se puede corregir 'to' porque GMAIL_ADDRESS también coincide con 'from'");
+            // Continuar de todas formas, pero el registro tendrá datos incorrectos
+          }
+        }
+      }
+      
+      // Validación final: asegurar que from y to son diferentes antes de continuar
+      if (!from || !to) {
+        console.error("[mfs] ERROR: from o to están vacíos, no se puede procesar", {
+          from: from || "(vacío)",
+          to: to || "(vacío)",
+          emailId: id,
+        });
+      }
+      
+      // Log final antes de pasar a Airtable
+      console.log("[mfs] ===== VALORES FINALES PARA AIRTABLE =====");
+      console.log("[mfs] from (final):", JSON.stringify(from));
+      console.log("[mfs] to (final):", JSON.stringify(to));
+      console.log("[mfs] from !== to?", from !== to);
       
       // Extraer timestamp del mensaje (internalDate está en milisegundos)
       const internalDate = msg.data.internalDate;
@@ -197,42 +470,48 @@ export async function processMessageIds(gmail, ids) {
         preview: bodySummary?.slice(0, 100) || "(vacío)",
       });
 
-      // Crear registro en Airtable
-      console.log("[mfs] Preparando datos para Airtable:", {
-        id,
-        intent,
-        confidence,
-        hasSenderName: !!senderName,
-        hasLanguage: !!language,
-        hasLocation: !!location,
-      });
+      // Crear objeto explícito para pasar a Airtable (evitar problemas de referencia)
+      // Convertir todos los valores a strings para evitar problemas de tipo
+      const airtableData = {
+        id: String(id || ""),
+        from: String(from || ""),
+        to: String(to || ""),
+        cc: String(cc || ""),
+        subject: String(subject || ""),
+        body: String(body || ""),
+        bodySummary: String(bodySummary || ""),
+        timestamp: String(timestamp || ""),
+        intent: String(intent || "Discard"),
+        confidence: typeof confidence === "number" ? confidence : 0,
+        reasoning: String(reasoning || ""),
+        meddicMetrics: String(meddicMetrics || ""),
+        meddicEconomicBuyer: String(meddicEconomicBuyer || ""),
+        meddicDecisionCriteria: String(meddicDecisionCriteria || ""),
+        meddicDecisionProcess: String(meddicDecisionProcess || ""),
+        meddicIdentifyPain: String(meddicIdentifyPain || ""),
+        meddicChampion: String(meddicChampion || ""),
+        isFreeCoverage: Boolean(isFreeCoverage),
+        isBarter: Boolean(isBarter),
+        isPricing: Boolean(isPricing),
+        senderName: String(senderName || ""),
+        senderFirstName: String(senderFirstName || ""),
+        language: String(language || "en"),
+        location: location ? {
+          city: String(location.city || ""),
+          country: String(location.country || ""),
+          countryCode: String(location.countryCode || ""),
+        } : null,
+      };
       
-      const rec = await createAirtableRecord({
-        id,
-        from,
-        to,
-        cc,
-        subject,
-        body,
-        bodySummary,
-        timestamp,
-        intent,
-        confidence,
-        reasoning,
-        meddicMetrics,
-        meddicEconomicBuyer,
-        meddicDecisionCriteria,
-        meddicDecisionProcess,
-        meddicIdentifyPain,
-        meddicChampion,
-        isFreeCoverage,
-        isBarter,
-        isPricing,
-        senderName,
-        senderFirstName,
-        language,
-        location,
-      });
+      // Log final antes de crear registro - CRÍTICO para debugging
+      console.log("[mfs] ===== DATOS PARA AIRTABLE (ANTES DE CREAR) =====");
+      console.log("[mfs] from:", JSON.stringify(airtableData.from));
+      console.log("[mfs] to:", JSON.stringify(airtableData.to));
+      console.log("[mfs] from !== to?", airtableData.from !== airtableData.to);
+      console.log("[mfs] from length:", airtableData.from.length);
+      console.log("[mfs] to length:", airtableData.to.length);
+      
+      const rec = await createAirtableRecord(airtableData);
 
       if (rec?.id) {
         console.log("[mfs] ✓ Registro creado exitosamente en Airtable:", {

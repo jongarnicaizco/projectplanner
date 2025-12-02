@@ -2,6 +2,7 @@
  * Utilidades y funciones auxiliares
  */
 import { htmlToText } from "html-to-text";
+import { CFG } from "../config.js";
 
 /**
  * Decodifica base64
@@ -139,25 +140,360 @@ export function isNotFound(err) {
 
 /**
  * Extrae el email limpio de un header (From/To)
- * Formato esperado: "Name <email@domain.com>" o "email@domain.com"
+ * Formato esperado: "Name <email@domain.com>" o "email@domain.com" o múltiples emails separados por comas
  */
 export function extractCleanEmail(headerValue) {
   if (!headerValue) return "";
   
-  // Si contiene < >, extraer el email de dentro
-  const match = headerValue.match(/<([^>]+)>/);
-  if (match) {
-    return match[1].trim().toLowerCase();
+  // Limpiar el valor primero
+  const cleaned = String(headerValue).trim();
+  if (!cleaned) return "";
+  
+  // Si contiene < >, extraer TODOS los emails de dentro
+  const bracketMatches = cleaned.matchAll(/<([^>]+)>/g);
+  const emailsFromBrackets = [];
+  for (const match of bracketMatches) {
+    const email = match[1].trim().toLowerCase();
+    if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      emailsFromBrackets.push(email);
+    }
   }
   
-  // Si no tiene < >, puede ser solo el email o "Name email@domain.com"
-  // Buscar patrón de email
-  const emailMatch = headerValue.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-  if (emailMatch) {
-    return emailMatch[1].trim().toLowerCase();
+  // Si encontramos emails en brackets, usar el primero (o el único)
+  if (emailsFromBrackets.length > 0) {
+    return emailsFromBrackets[0];
   }
   
-  return headerValue.trim().toLowerCase();
+  // Si no tiene < >, buscar patrón de email directamente
+  // Buscar el primer email válido en el string
+  const emailPattern = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
+  const emailMatches = cleaned.matchAll(emailPattern);
+  
+  for (const match of emailMatches) {
+    const email = match[1].trim().toLowerCase();
+    // Validar que es un email válido
+    if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return email;
+    }
+  }
+  
+  // Si no encontramos un email válido, intentar limpiar y usar el valor completo
+  // pero solo si parece un email
+  const trimmed = cleaned.toLowerCase().trim();
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+    return trimmed;
+  }
+  
+  // Si nada funciona, retornar vacío
+  return "";
+}
+
+/**
+ * Extrae el email "From" correcto (debe ser DISTINTO a secretmedianetwork.com o feverup.com)
+ * Si el From tiene uno de esos dominios, busca en Reply-To, CC, BCC para encontrar el email real del remitente
+ */
+export function extractFromEmail(fromHeader, ccHeader, bccHeader, replyToHeader) {
+  console.log("[mfs] ===== extractFromEmail INICIADO =====");
+  console.log("[mfs] extractFromEmail - Parámetros recibidos:", {
+    fromHeader: fromHeader ? fromHeader.substring(0, 100) : "VACÍO",
+    ccHeader: ccHeader ? ccHeader.substring(0, 50) : "VACÍO",
+    bccHeader: bccHeader ? bccHeader.substring(0, 50) : "VACÍO",
+    replyToHeader: replyToHeader ? replyToHeader.substring(0, 50) : "VACÍO",
+  });
+  
+  const INVALID_DOMAINS = ["secretmedianetwork.com", "feverup.com"];
+  
+  // Función helper para extraer todos los emails de un header
+  const extractAllEmails = (headerValue) => {
+    if (!headerValue) return [];
+    // Primero intentar extraer emails de brackets <email@domain.com>
+    const bracketMatches = Array.from(headerValue.matchAll(/<([^>]+)>/g));
+    if (bracketMatches.length > 0) {
+      const emails = bracketMatches.map(m => {
+        const email = m[1].trim().toLowerCase();
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          return email;
+        }
+        return null;
+      }).filter(e => e !== null);
+      if (emails.length > 0) return emails;
+    }
+    // Si no hay brackets, buscar emails directamente
+    const emailPattern = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
+    const matches = Array.from(headerValue.matchAll(emailPattern));
+    return matches.map(m => m[1].trim().toLowerCase()).filter(e => e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+  };
+  
+  // Función helper para verificar si un email tiene un dominio inválido (nuestros dominios)
+  const hasInvalidDomain = (email) => {
+    if (!email) return false;
+    const domain = email.split("@")[1];
+    const isInvalid = domain && INVALID_DOMAINS.includes(domain);
+    if (isInvalid) {
+      console.log("[mfs] extractFromEmail - Email tiene dominio inválido:", email, "| Dominio:", domain);
+    }
+    return isInvalid;
+  };
+  
+  // Función helper para encontrar el primer email válido (sin dominio inválido) en una lista
+  const findValidEmail = (emails) => {
+    console.log("[mfs] extractFromEmail - Buscando email válido en lista:", emails);
+    for (const email of emails) {
+      const isInvalid = hasInvalidDomain(email);
+      console.log("[mfs] extractFromEmail - Verificando email:", email, "| Tiene dominio inválido?", isInvalid);
+      if (!isInvalid) {
+        console.log("[mfs] extractFromEmail - Email válido encontrado:", email);
+        return email;
+      }
+    }
+    console.log("[mfs] extractFromEmail - No se encontró email válido en la lista");
+    return null;
+  };
+  
+  // 1. Verificar el From original
+  const fromEmail = extractCleanEmail(fromHeader);
+  console.log("[mfs] extractFromEmail - From extraído:", fromEmail, "| Header:", fromHeader || "");
+  
+  // Si el From tiene dominio inválido, buscar en Reply-To PRIMERO (antes de verificar si el From es válido)
+  // Esto es importante porque si el From tiene dominio inválido, el Reply-To probablemente tiene el email real
+  if (fromEmail && hasInvalidDomain(fromEmail)) {
+    console.log("[mfs] Email 'From' tiene dominio inválido:", fromEmail, "| Buscando en Reply-To primero...");
+    
+    if (replyToHeader && replyToHeader.trim()) {
+      console.log("[mfs] extractFromEmail - Reply-To header encontrado:", replyToHeader);
+      const replyToEmails = extractAllEmails(replyToHeader);
+      console.log("[mfs] extractFromEmail - Emails extraídos de Reply-To:", replyToEmails, "| Cantidad:", replyToEmails.length);
+      
+      if (replyToEmails.length === 0) {
+        console.warn("[mfs] extractFromEmail - ADVERTENCIA: No se pudieron extraer emails del Reply-To:", replyToHeader);
+        // Intentar usar extractCleanEmail como fallback
+        const fallbackEmail = extractCleanEmail(replyToHeader);
+        if (fallbackEmail && !hasInvalidDomain(fallbackEmail)) {
+          console.log("[mfs] extractFromEmail - Usando extractCleanEmail como fallback:", fallbackEmail);
+          return fallbackEmail;
+        }
+      } else {
+        const validReplyTo = findValidEmail(replyToEmails);
+        if (validReplyTo) {
+          console.log("[mfs] Email 'From' tenía dominio inválido, usando Reply-To:", validReplyTo);
+          return validReplyTo;
+        } else {
+          console.log("[mfs] No se encontró email válido en Reply-To. Emails extraídos:", replyToEmails);
+          if (replyToEmails.length > 0) {
+            console.log("[mfs] Todos los emails del Reply-To tienen dominio inválido o no son válidos");
+          }
+        }
+      }
+    } else {
+      console.log("[mfs] extractFromEmail - No hay Reply-To header o está vacío, buscando en CC/BCC...");
+    }
+  }
+  
+  // 2. Si el From no tiene dominio inválido, usarlo directamente
+  if (fromEmail && !hasInvalidDomain(fromEmail)) {
+    console.log("[mfs] Email 'From' válido (sin dominio inválido):", fromEmail);
+    return fromEmail;
+  }
+  
+  // 3. Si el From tiene dominio inválido y no encontramos Reply-To válido, buscar en CC
+  if (ccHeader) {
+    console.log("[mfs] extractFromEmail - CC header encontrado:", ccHeader);
+    const ccEmails = extractAllEmails(ccHeader);
+    console.log("[mfs] extractFromEmail - Emails extraídos de CC:", ccEmails);
+    const validCC = findValidEmail(ccEmails);
+    if (validCC) {
+      console.log("[mfs] Email 'From' tenía dominio inválido, usando CC:", validCC);
+      return validCC;
+    }
+  }
+  
+  // 4. Buscar en BCC
+  if (bccHeader) {
+    const bccEmails = extractAllEmails(bccHeader);
+    const validBCC = findValidEmail(bccEmails);
+    if (validBCC) {
+      console.log("[mfs] Email 'From' tenía dominio inválido, usando BCC:", validBCC);
+      return validBCC;
+    }
+  }
+  
+  // 5. Si no encontramos nada válido, usar el From por defecto (aunque tenga dominio inválido)
+  if (fromEmail) {
+    console.warn("[mfs] No se encontró email 'From' válido en otros campos, usando From por defecto:", fromEmail);
+    return fromEmail;
+  }
+  
+  // 6. Si no hay nada, retornar vacío
+  console.warn("[mfs] No se pudo extraer email 'From' de ningún header");
+  return "";
+}
+
+/**
+ * Extrae el email "To" correcto (debe ser secretmedianetwork.com o feverup.com)
+ * Si el To no tiene uno de esos dominios, busca en CC, BCC, Reply-To para encontrar el email con esos dominios
+ */
+export function extractToEmail(toHeader, ccHeader, bccHeader, replyToHeader, mailingListEmail = "") {
+  const VALID_DOMAINS = ["secretmedianetwork.com", "feverup.com", "secretldn.com"];
+  
+  // Función helper para extraer todos los emails de un header
+  const extractAllEmails = (headerValue) => {
+    if (!headerValue) return [];
+    // Primero intentar extraer emails de brackets <email@domain.com>
+    const bracketMatches = Array.from(headerValue.matchAll(/<([^>]+)>/g));
+    if (bracketMatches.length > 0) {
+      const emails = bracketMatches.map(m => {
+        const email = m[1].trim().toLowerCase();
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          return email;
+        }
+        return null;
+      }).filter(e => e !== null);
+      if (emails.length > 0) return emails;
+    }
+    // Si no hay brackets, buscar emails directamente
+    const emailPattern = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
+    const matches = Array.from(headerValue.matchAll(emailPattern));
+    return matches.map(m => m[1].trim().toLowerCase()).filter(e => e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+  };
+  
+  // Función helper para verificar si un email tiene un dominio válido (nuestros dominios)
+  const hasValidDomain = (email) => {
+    if (!email) return false;
+    const domain = email.split("@")[1];
+    return domain && VALID_DOMAINS.includes(domain);
+  };
+  
+  // Función helper para encontrar el primer email válido (con dominio válido) en una lista
+  const findValidEmail = (emails) => {
+    for (const email of emails) {
+      if (hasValidDomain(email)) {
+        return email;
+      }
+    }
+    return null;
+  };
+  
+  // 0. Si hay un email de mailing list, usarlo primero (prioridad más alta)
+  if (mailingListEmail && hasValidDomain(mailingListEmail)) {
+    console.log("[mfs] Email 'To' de mailing list encontrado, usando:", mailingListEmail);
+    return mailingListEmail;
+  }
+  
+  // 1. Verificar el To original
+  const toEmail = extractCleanEmail(toHeader);
+  console.log("[mfs] extractToEmail - To extraído:", toEmail, "| Header:", toHeader || "");
+  
+  // Si el To tiene un email válido con dominio válido, usarlo
+  if (toEmail && hasValidDomain(toEmail)) {
+    console.log("[mfs] Email 'To' válido (con dominio válido):", toEmail);
+    return toEmail;
+  }
+  
+  // Si el To está vacío o no tiene dominio válido, buscar en otros campos
+  if (!toEmail) {
+    console.log("[mfs] Email 'To' está vacío, buscando en CC, BCC, Reply-To...");
+  } else if (!hasValidDomain(toEmail)) {
+    console.log("[mfs] Email 'To' no tiene dominio válido:", toEmail, "| Buscando en CC, BCC, Reply-To...");
+  }
+  
+  // 2. Si el To no tiene dominio válido, buscar en CC
+  if (ccHeader) {
+    console.log("[mfs] extractToEmail - CC header encontrado:", ccHeader);
+    const ccEmails = extractAllEmails(ccHeader);
+    console.log("[mfs] extractToEmail - Emails extraídos de CC:", ccEmails);
+    const validCC = findValidEmail(ccEmails);
+    if (validCC) {
+      console.log("[mfs] Email 'To' no tenía dominio válido, usando CC:", validCC);
+      return validCC;
+    } else {
+      console.log("[mfs] No se encontró email válido en CC");
+    }
+  } else {
+    console.log("[mfs] extractToEmail - No hay CC header");
+  }
+  
+  // 3. Buscar en BCC
+  if (bccHeader) {
+    console.log("[mfs] extractToEmail - BCC header encontrado:", bccHeader);
+    const bccEmails = extractAllEmails(bccHeader);
+    console.log("[mfs] extractToEmail - Emails extraídos de BCC:", bccEmails);
+    const validBCC = findValidEmail(bccEmails);
+    if (validBCC) {
+      console.log("[mfs] Email 'To' no tenía dominio válido, usando BCC:", validBCC);
+      return validBCC;
+    } else {
+      console.log("[mfs] No se encontró email válido en BCC");
+    }
+  } else {
+    console.log("[mfs] extractToEmail - No hay BCC header");
+  }
+  
+  // 4. Buscar en Reply-To
+  if (replyToHeader) {
+    const replyToEmails = extractAllEmails(replyToHeader);
+    const validReplyTo = findValidEmail(replyToEmails);
+    if (validReplyTo) {
+      console.log("[mfs] Email 'To' no tenía dominio válido, usando Reply-To:", validReplyTo);
+      return validReplyTo;
+    }
+  }
+  
+  // 5. Si no encontramos nada válido, usar el To por defecto (aunque no tenga dominio válido)
+  // Solo si el To original tenía algún email
+  if (toEmail) {
+    console.warn("[mfs] No se encontró email 'To' válido en otros campos, usando To por defecto:", toEmail);
+    return toEmail;
+  }
+  
+  // 6. Si el To estaba vacío y no encontramos nada válido en otros campos, retornar vacío
+  console.warn("[mfs] No se pudo extraer email 'To' de ningún header (To estaba vacío y no se encontró en CC/BCC/Reply-To)");
+  return "";
+}
+
+/**
+ * Limpia un nombre de caracteres no deseados, comillas, espacios extra, etc.
+ * Versión mejorada para Client Name: solo permite letras, números, espacios y algunos caracteres especiales básicos
+ */
+function cleanName(name) {
+  if (!name) return "";
+  
+  // Eliminar comillas simples y dobles al inicio y final
+  let cleaned = name.replace(/^["'`]+|["'`]+$/g, "");
+  
+  // Eliminar paréntesis y su contenido (ej: "John (CEO)" -> "John")
+  cleaned = cleaned.replace(/\s*\([^)]*\)/g, "");
+  
+  // Eliminar corchetes y su contenido
+  cleaned = cleaned.replace(/\s*\[[^\]]*\]/g, "");
+  
+  // Eliminar caracteres especiales comunes que no deberían estar en nombres
+  cleaned = cleaned.replace(/[<>{}|\\]/g, "");
+  
+  // Eliminar múltiples espacios y espacios al inicio/final
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
+  
+  // Eliminar prefijos comunes no deseados
+  cleaned = cleaned.replace(/^(via|from|re|fwd|fw):\s*/i, "");
+  
+  // Eliminar sufijos comunes no deseados
+  cleaned = cleaned.replace(/\s*(via|from|re|fwd|fw)$/i, "");
+  
+  // Eliminar caracteres especiales que no son letras, números, espacios o guiones
+  // Permitir: letras (incluyendo acentos), números, espacios, guiones, puntos, comas, y apóstrofes
+  cleaned = cleaned.replace(/[^a-zA-ZÀ-ÿ0-9\s\-.,']/g, "");
+  
+  // Limpiar espacios nuevamente después de las eliminaciones
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
+  
+  // Eliminar puntos y comas al inicio/final (no deberían estar ahí)
+  cleaned = cleaned.replace(/^[.,]+|[.,]+$/g, "");
+  
+  // Si después de limpiar queda vacío o solo tiene caracteres especiales, retornar vacío
+  if (!cleaned || cleaned.length < 1 || /^[^a-zA-ZÀ-ÿ]+$/.test(cleaned)) {
+    return "";
+  }
+  
+  return cleaned;
 }
 
 /**
@@ -167,34 +503,142 @@ export function extractCleanEmail(headerValue) {
 export function extractSenderName(headerValue) {
   if (!headerValue) return "";
   
+  let namePart = "";
+  
   // Si tiene formato "Name <email@domain.com>"
   const matchWithBrackets = headerValue.match(/^([^<]+)</);
   if (matchWithBrackets) {
-    return matchWithBrackets[1].trim();
-  }
-  
-  // Si tiene formato "Name email@domain.com" (sin < >)
-  const emailMatch = headerValue.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-  if (emailMatch) {
-    const emailIndex = headerValue.indexOf(emailMatch[1]);
-    if (emailIndex > 0) {
-      const namePart = headerValue.substring(0, emailIndex).trim();
-      // Limpiar comillas si las hay
-      return namePart.replace(/^["']|["']$/g, "");
+    namePart = matchWithBrackets[1].trim();
+  } else {
+    // Si tiene formato "Name email@domain.com" (sin < >)
+    const emailMatch = headerValue.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+    if (emailMatch) {
+      const emailIndex = headerValue.indexOf(emailMatch[1]);
+      if (emailIndex > 0) {
+        namePart = headerValue.substring(0, emailIndex).trim();
+      }
+    } else {
+      // Si no hay email, puede ser solo nombre
+      namePart = headerValue.trim();
     }
   }
   
-  // Si no hay email, devolver el valor completo (puede ser solo nombre)
-  return headerValue.trim();
+  // Limpiar el nombre extraído
+  return cleanName(namePart);
+}
+
+/**
+ * Usa IA para determinar si un nombre es de una empresa o de una persona
+ * Retorna: "company" si es empresa, "person" si es persona, null si no se puede determinar
+ */
+export async function detectNameTypeWithAI(fullName, vertexCallFn) {
+  if (!fullName || !vertexCallFn) return null;
+  
+  try {
+    const prompt = `Analiza el siguiente nombre y determina si es una EMPRESA/ORGANIZACIÓN o una PERSONA.
+
+Nombre: "${fullName}"
+
+Responde SOLO con una de estas opciones:
+- "company" si es una empresa, organización, marca, o entidad comercial
+- "person" si es el nombre de una persona
+- "unknown" si no puedes determinarlo
+
+Ejemplos:
+- "John Smith" -> "person"
+- "Acme Corporation" -> "company"
+- "Maria Garcia" -> "person"
+- "Tech Solutions Inc." -> "company"
+- "noreply@example.com" -> "company"
+- "Marketing Team" -> "company"
+
+Responde SOLO con: company, person, o unknown`;
+
+    const response = await vertexCallFn(CFG.VERTEX_MODEL || "gemini-2.5-flash", prompt);
+    const result = (response || "").trim().toLowerCase();
+    
+    if (result === "company" || result === "person") {
+      return result;
+    }
+    
+    return null;
+  } catch (e) {
+    console.warn("[mfs] Error usando IA para detectar tipo de nombre:", e?.message);
+    return null;
+  }
 }
 
 /**
  * Extrae el primer nombre de un nombre completo
+ * Si es una empresa, devuelve el nombre completo
+ * Si es una persona, devuelve solo el primer nombre
+ * Usa IA para determinar si es empresa o persona
  */
-export function extractFirstName(fullName) {
+export async function extractFirstName(fullName, vertexCallFn = null) {
   if (!fullName) return "";
-  const parts = fullName.trim().split(/\s+/);
-  return parts[0] || "";
+  
+  // Limpiar primero el nombre completo
+  const cleaned = cleanName(fullName);
+  if (!cleaned) return "";
+  
+  // Si no hay función de IA, usar lógica básica (asumir persona)
+  if (!vertexCallFn) {
+    const parts = cleaned.split(/\s+/);
+    return cleanName(parts[0] || "");
+  }
+  
+  // Usar IA para determinar si es empresa o persona
+  const nameType = await detectNameTypeWithAI(cleaned, vertexCallFn);
+  
+  if (nameType === "company") {
+    // Si es empresa, devolver el nombre completo
+    console.log("[mfs] Nombre detectado como empresa, usando nombre completo:", cleaned);
+    return cleaned;
+  } else if (nameType === "person") {
+    // Si es persona, devolver solo el primer nombre
+    const parts = cleaned.split(/\s+/);
+    const firstName = parts[0] || "";
+    console.log("[mfs] Nombre detectado como persona, usando primer nombre:", firstName);
+    return cleanName(firstName);
+  } else {
+    // Si no se puede determinar, usar lógica básica (asumir persona y tomar primer nombre)
+    const parts = cleaned.split(/\s+/);
+    const firstName = parts[0] || "";
+    console.log("[mfs] Tipo de nombre no determinado, usando primer nombre por defecto:", firstName);
+    return cleanName(firstName);
+  }
+}
+
+/**
+ * Usa IA (Gemini) para extraer y limpiar el nombre de un header From complejo
+ * Solo se usa si el nombre después de la limpieza básica sigue siendo problemático
+ */
+export async function extractSenderNameWithAI(headerValue, vertexCallFn) {
+  if (!headerValue || !vertexCallFn) return null;
+  
+  try {
+    const prompt = `Extrae el nombre de la persona del siguiente header de email. 
+Solo devuelve el nombre limpio, sin comillas, sin caracteres especiales, sin títulos, sin información adicional.
+Si no puedes identificar un nombre claro, devuelve "NONE".
+
+Header: "${headerValue}"
+
+Responde SOLO con el nombre limpio o "NONE" si no hay nombre válido.`;
+
+    const response = await vertexCallFn(CFG.VERTEX_MODEL || "gemini-2.5-flash", prompt);
+    const aiName = (response || "").trim();
+    
+    // Si la IA devolvió "NONE" o algo vacío, retornar null
+    if (!aiName || aiName.toLowerCase() === "none" || aiName.length < 2) {
+      return null;
+    }
+    
+    // Limpiar el resultado de la IA también
+    return cleanName(aiName);
+  } catch (e) {
+    console.warn("[mfs] Error usando IA para extraer nombre:", e?.message);
+    return null;
+  }
 }
 
 /**

@@ -32,6 +32,7 @@ steps:
     id: 'push-image-latest'
 
   # Paso 3: Desplegar a Cloud Run
+  # IMPORTANTE: Usar --image para desplegar solo contenedor Docker, NO --source
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -73,8 +74,8 @@ options:
   #   name: 'projects/${PROJECT_ID}/locations/${_REGION}/workerPools/my-pool'
 
 # Sustituciones (variables que se pueden sobrescribir)
-# _IMAGE_TAG: Por defecto usa BUILD_ID (siempre disponible)
-#             En builds desde GitHub, se puede sobrescribir con SHORT_SHA
+# _IMAGE_TAG: Por defecto usa BUILD_ID (siempre disponible en builds automáticos)
+#             En builds manuales, se puede sobrescribir con --substitutions=_IMAGE_TAG=manual-YYYYMMDD-HHMMSS
 substitutions:
   _SERVICE_NAME: 'mfs-lead-generation-ai'
   _REGION: 'us-central1'
