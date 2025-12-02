@@ -33,7 +33,6 @@ export const CFG = {
 
 export const FLAGS = {
   SKIP_VERTEX: (process.env.SKIP_VERTEX || "false").toLowerCase() === "true",
-  SKIP_AIRTABLE: (process.env.SKIP_AIRTABLE || "false").toLowerCase() === "true",
 };
 
 export const DEBUG_SCAN_MAX = parseInt(process.env.DEBUG_SCAN_MAX || "20", 10);

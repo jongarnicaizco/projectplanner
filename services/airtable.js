@@ -21,38 +21,71 @@ export function clearAirtableFieldCache() {
 export async function getAirtableFieldMaps(forceRefresh = false) {
   if (airtableMetaCache && !forceRefresh) return airtableMetaCache;
 
-  const token = await getAirtableToken();
-  const metaUrl = `https://api.airtable.com/v0/meta/bases/${CFG.AIRTABLE_BASE_ID}/tables`;
+  try {
+    if (!CFG.AIRTABLE_BASE_ID) {
+      console.error("[mfs] Airtable: AIRTABLE_BASE_ID no está configurado");
+      return { nameSet: new Set(), idSet: new Set(), nameToIdMap: new Map() };
+    }
 
-  const r = await axios.get(metaUrl, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+    const token = await getAirtableToken();
+    if (!token) {
+      console.error("[mfs] Airtable: No se pudo obtener el token");
+      return { nameSet: new Set(), idSet: new Set(), nameToIdMap: new Map() };
+    }
 
-  const tables = r.data?.tables || [];
-  const table =
-    (CFG.AIRTABLE_TABLE?.startsWith("tbl")
-      ? tables.find((t) => t.id === CFG.AIRTABLE_TABLE)
-      : tables.find((t) => t.name === CFG.AIRTABLE_TABLE)) || null;
+    const metaUrl = `https://api.airtable.com/v0/meta/bases/${CFG.AIRTABLE_BASE_ID}/tables`;
 
-  const nameSet = new Set();
-  const idSet = new Set();
-  const nameToIdMap = new Map();
+    const r = await axios.get(metaUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-  (table?.fields || []).forEach((f) => {
-    nameSet.add(f.name);
-    idSet.add(f.id);
-    nameToIdMap.set(f.name, f.id);
-  });
+    const tables = r.data?.tables || [];
+    const table =
+      (CFG.AIRTABLE_TABLE?.startsWith("tbl")
+        ? tables.find((t) => t.id === CFG.AIRTABLE_TABLE)
+        : tables.find((t) => t.name === CFG.AIRTABLE_TABLE)) || null;
 
-  airtableMetaCache = { nameSet, idSet, nameToIdMap };
+    if (!table) {
+      console.error("[mfs] Airtable: Tabla no encontrada", {
+        baseId: CFG.AIRTABLE_BASE_ID,
+        tableId: CFG.AIRTABLE_TABLE,
+        availableTables: tables.map(t => ({ id: t.id, name: t.name })),
+      });
+      return { nameSet: new Set(), idSet: new Set(), nameToIdMap: new Map() };
+    }
 
-  console.log("[mfs] Airtable: campos cargados para la tabla:", {
-    table: table?.name || table?.id,
-    fieldCount: nameSet.size,
-    hasBodySummary: nameSet.has("Body Summary"),
-  });
+    const nameSet = new Set();
+    const idSet = new Set();
+    const nameToIdMap = new Map();
 
-  return airtableMetaCache;
+    (table?.fields || []).forEach((f) => {
+      nameSet.add(f.name);
+      idSet.add(f.id);
+      nameToIdMap.set(f.name, f.id);
+    });
+
+    airtableMetaCache = { nameSet, idSet, nameToIdMap };
+
+    console.log("[mfs] Airtable: campos cargados para la tabla:", {
+      table: table?.name || table?.id,
+      fieldCount: nameSet.size,
+      hasBodySummary: nameSet.has("Body Summary"),
+    });
+
+    return airtableMetaCache;
+  } catch (e) {
+    const status = e?.response?.status;
+    const errorCode = e?.response?.data?.error?.code;
+    console.error("[mfs] Airtable: Error obteniendo campos de la tabla", {
+      status: status,
+      errorCode: errorCode,
+      message: e?.message,
+      baseId: CFG.AIRTABLE_BASE_ID,
+      tableId: CFG.AIRTABLE_TABLE,
+    });
+    // Retornar estructura vacía para que el código pueda continuar
+    return { nameSet: new Set(), idSet: new Set(), nameToIdMap: new Map() };
+  }
 }
 
 /**
@@ -109,20 +142,61 @@ export async function getAirtableRecords(date) {
 }
 
 export async function airtableFindByEmailId(emailId) {
-  const token = await getAirtableToken();
-  const url = `https://api.airtable.com/v0/${CFG.AIRTABLE_BASE_ID}/${encodeURIComponent(
-    CFG.AIRTABLE_TABLE
-  )}`;
+  try {
+    const token = await getAirtableToken();
+    if (!token) {
+      console.warn("[mfs] Airtable: No se pudo obtener el token de Airtable. Continuando sin verificar duplicados.");
+      return null;
+    }
 
-  const formula = `({Email ID} = "${emailId.replace(/"/g, '\\"')}")`;
-  console.log("[mfs] Airtable: busco si ya existe registro para Email ID", emailId);
+    if (!CFG.AIRTABLE_BASE_ID || !CFG.AIRTABLE_TABLE) {
+      console.warn("[mfs] Airtable: Base ID o Table ID no configurados. Continuando sin verificar duplicados.", {
+        baseId: CFG.AIRTABLE_BASE_ID,
+        table: CFG.AIRTABLE_TABLE,
+      });
+      return null;
+    }
 
-  const res = await axios.get(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    params: { maxRecords: 1, filterByFormula: formula },
-  });
+    const url = `https://api.airtable.com/v0/${CFG.AIRTABLE_BASE_ID}/${encodeURIComponent(
+      CFG.AIRTABLE_TABLE
+    )}`;
 
-  return res.data.records?.[0] || null;
+    const formula = `({Email ID} = "${emailId.replace(/"/g, '\\"')}")`;
+    console.log("[mfs] Airtable: Verificando si existe registro para Email ID", emailId);
+
+    const res = await axios.get(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      params: { maxRecords: 1, filterByFormula: formula },
+    });
+
+    return res.data.records?.[0] || null;
+  } catch (e) {
+    // 404 significa que la tabla/base no existe o no hay acceso
+    // Esto es un error de configuración, pero no debería detener el procesamiento
+    const status = e?.response?.status;
+    const errorCode = e?.response?.data?.error?.code;
+    
+    if (status === 404 || errorCode === "NOT_FOUND") {
+      // No loguear como error, solo como warning. El procesamiento continúa normalmente.
+      console.warn("[mfs] Airtable: No se pudo verificar duplicados (404). Continuando con el procesamiento.", {
+        baseId: CFG.AIRTABLE_BASE_ID,
+        table: CFG.AIRTABLE_TABLE,
+        emailId: emailId,
+        note: "Esto puede indicar que la base/tabla no existe o no hay acceso. El email se procesará de todas formas."
+      });
+      // Retornar null para continuar el procesamiento (asumir que no existe)
+      return null;
+    }
+    
+    // Para otros errores, loguear como warning (no error) y continuar
+    console.warn("[mfs] Airtable: Error al verificar duplicados. Continuando con el procesamiento.", {
+      emailId: emailId,
+      status: status,
+      errorCode: errorCode,
+      message: e?.message?.substring(0, 100), // Limitar longitud del mensaje
+    });
+    return null;
+  }
 }
 
 /**
@@ -154,13 +228,33 @@ export async function createAirtableRecord({
   language,
   location,
 }) {
-  if (FLAGS.SKIP_AIRTABLE) {
-    console.log("[mfs] SKIP_AIRTABLE activado → no escribo en Airtable");
+  // Verificar configuración básica antes de intentar crear
+  if (!CFG.AIRTABLE_BASE_ID || !CFG.AIRTABLE_TABLE) {
+    console.error("[mfs] Airtable: Configuración incompleta - no se puede crear registro", {
+      baseId: CFG.AIRTABLE_BASE_ID,
+      table: CFG.AIRTABLE_TABLE,
+      emailId: id,
+    });
     return { id: null };
   }
 
   try {
+    console.log("[mfs] Airtable: Iniciando creación de registro", {
+      emailId: id,
+      baseId: CFG.AIRTABLE_BASE_ID,
+      table: CFG.AIRTABLE_TABLE,
+      hasFrom: !!from,
+      hasTo: !!to,
+      hasSubject: !!subject,
+      hasSenderName: !!senderName,
+      hasLanguage: !!language,
+      hasLocation: !!location,
+    });
     const token = await getAirtableToken();
+    if (!token) {
+      console.error("[mfs] Airtable: No se pudo obtener el token de Airtable");
+      return { id: null };
+    }
     const baseUrl = `https://api.airtable.com/v0/${CFG.AIRTABLE_BASE_ID}/${encodeURIComponent(
       CFG.AIRTABLE_TABLE
     )}`;
@@ -238,17 +332,32 @@ export async function createAirtableRecord({
       if (businessOpptFieldId) fields[businessOpptFieldId] = intentCap;
     }
 
-    const putName = (name, val) => {
+    const putName = async (name, val) => {
+      if (val === undefined || val === null || val === "") return;
+      
+      // Si el campo no está en el cache, intentar recargar el cache
       if (!meta.nameSet.has(name)) {
-        // Si el campo no está en el cache, intentar recargar el cache una vez
         if (!meta._reloadAttempted) {
           console.log(`[mfs] Airtable: campo "${name}" no encontrado en cache, recargando...`);
           meta._reloadAttempted = true;
-          return; // Se reintentará en el siguiente intento
+          meta = await getAirtableFieldMaps(true);
         }
-        return;
+        
+        // Después de recargar, verificar de nuevo
+        if (!meta.nameSet.has(name)) {
+          // Intentar usar el ID directamente si está en el mapa
+          const fieldId = meta.nameToIdMap.get(name);
+          if (fieldId) {
+            console.log(`[mfs] Airtable: usando ID directo para "${name}": ${fieldId}`);
+            fields[fieldId] = val;
+            return;
+          }
+          console.warn(`[mfs] Airtable: campo "${name}" no existe en la tabla. Valor: ${val}`);
+          return;
+        }
       }
-      if (val === undefined) return;
+      
+      // Usar el nombre del campo directamente (Airtable acepta nombres)
       fields[name] = val;
     };
 
@@ -283,47 +392,59 @@ export async function createAirtableRecord({
       }
     }
 
-    putName("Email ID", id);
-    putName("From", from);
-    putName("To", to);
-    putName("CC", cc);
-    putName("Subject", subject);
-    putName("Body", SAFE_BODY);
-    putName("Timestamp", timestamp);
-    putName("Business Oppt", intentCap);
-    putName("Classification Scoring", scoreVal);
-    putName("Classification Reasoning", reasoningStr);
-    putName("MEDDIC Analysis", meddicStr);
+    // Usar await para putName ya que ahora es async
+    await putName("Email ID", id);
+    await putName("From", from);
+    await putName("To", to);
+    await putName("CC", cc);
+    await putName("Subject", subject);
+    await putName("Body", SAFE_BODY);
+    await putName("Timestamp", timestamp);
+    await putName("Business Oppt", intentCap);
+    await putName("Classification Scoring", scoreVal);
+    await putName("Classification Reasoning", reasoningStr);
+    await putName("MEDDIC Analysis", meddicStr);
 
     // checkboxes
-    putName("Free Coverage Request", !!isFreeCoverage);
-    putName("Barter Request", !!isBarter);
-    putName("Media Kits/Pricing Request", !!isPricing);
+    await putName("Free Coverage Request", !!isFreeCoverage);
+    await putName("Barter Request", !!isBarter);
+    await putName("Media Kits/Pricing Request", !!isPricing);
     
     // Nuevos campos: nombre del cliente
-    if (senderName) putName("Client Name", senderName);
-    if (senderFirstName) putName("Client First Name", senderFirstName);
+    console.log("[mfs] Airtable: valores extraídos:", {
+      senderName: senderName || "(vacío)",
+      senderFirstName: senderFirstName || "(vacío)",
+      language: language || "(vacío)",
+      location: location ? `${location.city}, ${location.country} (${location.countryCode})` : "(no encontrada)",
+    });
+    
+    await putName("Client Name", senderName);
+    await putName("Client First Name", senderFirstName);
     
     // Idioma
-    if (language) putName("Language", language);
+    await putName("Language", language);
     
     // Ubicación (basada en email To)
     if (location) {
-      if (location.city) putName("City", location.city);
-      if (location.country) putName("Country", location.country);
-      if (location.countryCode) putName("Country Code", location.countryCode);
+      await putName("City", location.city);
+      await putName("Country", location.country);
+      await putName("Country Code", location.countryCode);
     }
 
-    console.log("[mfs] Airtable: creo nuevo registro para email:", {
+    console.log("[mfs] Airtable: Preparando registro final:", {
       id,
       businessOppt: intentCap,
       from,
       to,
       language,
       location: location ? `${location.city}, ${location.country}` : null,
+      camposCount: Object.keys(fields).length,
+      campos: Object.keys(fields).slice(0, 10), // Primeros 10 campos
     });
 
     const bodyReq = { records: [{ fields }], typecast: true };
+    
+    console.log("[mfs] Airtable: Enviando request a Airtable API...");
     const res = await axios.post(baseUrl, bodyReq, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -332,14 +453,29 @@ export async function createAirtableRecord({
     });
 
     const created = res.data.records?.[0];
-    console.log("[mfs] Airtable: registro creado correctamente", {
-      emailId: id,
-      airtableId: created?.id,
-    });
+    if (created?.id) {
+      console.log("[mfs] Airtable: ✓ Registro creado exitosamente", {
+        emailId: id,
+        airtableId: created.id,
+        businessOppt: intentCap,
+      });
+    } else {
+      console.warn("[mfs] Airtable: ⚠ Respuesta inesperada de Airtable", {
+        emailId: id,
+        responseData: res.data,
+      });
+    }
 
     return created;
   } catch (e) {
-    console.error("[mfs] Error creando registro en Airtable:", e);
+    console.error("[mfs] Airtable: ✗ ERROR creando registro", {
+      emailId: id,
+      errorMessage: e?.message,
+      errorResponse: e?.response?.data,
+      errorStatus: e?.response?.status,
+      errorStatusText: e?.response?.statusText,
+    });
+    console.error("[mfs] Airtable: Stack trace:", e?.stack);
     return { id: null };
   }
 }

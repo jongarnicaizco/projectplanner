@@ -27,6 +27,11 @@ import {
  * Procesa una lista de IDs de mensajes
  */
 export async function processMessageIds(gmail, ids) {
+  console.log("[mfs] ========================================");
+  console.log("[mfs] INICIO: Procesando lote de mensajes", {
+    totalMensajes: ids.length,
+    ids: ids.slice(0, 5), // Mostrar primeros 5 IDs
+  });
   const results = [];
 
   for (const id of ids) {
@@ -76,14 +81,19 @@ export async function processMessageIds(gmail, ids) {
       }
 
       // Verificar si ya existe en Airtable
-      const existing = await airtableFindByEmailId(id);
+      // Nota: airtableFindByEmailId ya maneja todos los errores internamente y retorna null
+      // No necesitamos try-catch aquí porque nunca lanzará excepciones
+      let existing = null;
+      existing = await airtableFindByEmailId(id);
+      
       if (existing) {
-        console.log("[mfs] Ya existe registro en Airtable, no duplico fila:", {
+        console.log("[mfs] Mensaje ya existe en Airtable, saltando:", {
           emailId: id,
           airtableId: existing.id,
         });
         continue;
       }
+      console.log("[mfs] Mensaje no existe en Airtable, continuando con el procesamiento");
 
       const headersArr = msg.data.payload.headers || [];
       const headers = Object.fromEntries(
@@ -110,6 +120,18 @@ export async function processMessageIds(gmail, ids) {
       // Obtener ubicación basada en el email To
       const location = getLocationFromEmail(toHeader);
       
+      // Log detallado de extracción
+      console.log("[mfs] Datos extraídos del email:", {
+        fromHeader: fromHeader.slice(0, 100),
+        toHeader: toHeader.slice(0, 100),
+        from: from,
+        to: to,
+        senderName: senderName || "(vacío)",
+        senderFirstName: senderFirstName || "(vacío)",
+        language: language || "(no detectado)",
+        location: location ? `${location.city}, ${location.country} (${location.countryCode})` : "(no encontrada)",
+      });
+      
       // Extraer timestamp del mensaje (internalDate está en milisegundos)
       const internalDate = msg.data.internalDate;
       const timestamp = internalDate 
@@ -121,6 +143,10 @@ export async function processMessageIds(gmail, ids) {
         from,
         to,
         subject: subject.slice(0, 120),
+        senderName: senderName || "(no extraído)",
+        senderFirstName: senderFirstName || "(no extraído)",
+        language: language || "(no detectado)",
+        location: location ? `${location.city}, ${location.country}` : "(no encontrada)",
       });
 
       // Guardar en GCS
@@ -166,6 +192,15 @@ export async function processMessageIds(gmail, ids) {
       });
 
       // Crear registro en Airtable
+      console.log("[mfs] Preparando datos para Airtable:", {
+        id,
+        intent,
+        confidence,
+        hasSenderName: !!senderName,
+        hasLanguage: !!language,
+        hasLocation: !!location,
+      });
+      
       const rec = await createAirtableRecord({
         id,
         from,
@@ -193,6 +228,19 @@ export async function processMessageIds(gmail, ids) {
         location,
       });
 
+      if (rec?.id) {
+        console.log("[mfs] ✓ Registro creado exitosamente en Airtable:", {
+          emailId: id,
+          airtableId: rec.id,
+          intent,
+        });
+      } else {
+        console.error("[mfs] ✗ Error: No se pudo crear el registro en Airtable", {
+          emailId: id,
+          intent,
+        });
+      }
+
       results.push({ id, airtableId: rec?.id, intent, confidence });
 
       console.log("[mfs] Fin de procesado para mensaje:", {
@@ -205,7 +253,9 @@ export async function processMessageIds(gmail, ids) {
       // Pequeño delay para evitar picos
       await new Promise((r) => setTimeout(r, 200));
     } catch (e) {
+      console.error("[mfs] ✗ ERROR procesando mensaje:", id);
       logErr("[mfs] Error en el bucle de processMessageIds:", e);
+      console.error("[mfs] Stack trace:", e?.stack);
     } finally {
       if (lockAcquired) {
         await releaseMessageLock(id);
@@ -213,7 +263,17 @@ export async function processMessageIds(gmail, ids) {
     }
   }
 
-  console.log("[mfs] Fin de lote de mensajes. Resumen:", results);
+  console.log("[mfs] ========================================");
+  console.log("[mfs] FIN: Resumen del lote procesado", {
+    totalProcesados: results.length,
+    exitosos: results.filter(r => r.airtableId).length,
+    fallidos: results.filter(r => !r.airtableId).length,
+    resultados: results.map(r => ({
+      id: r.id,
+      intent: r.intent,
+      tieneAirtableId: !!r.airtableId,
+    })),
+  });
   return results;
 }
 

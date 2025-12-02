@@ -17,6 +17,7 @@ import {
   handleLabels,
   handleMessage,
   handleScan,
+  handleAirtableTest,
 } from "./handlers/debug.js";
 import {
   handleDailyMetrics,
@@ -111,6 +112,7 @@ app.post("/_pubsub", handlePubSub);
 app.get("/debug/labels", handleLabels);
 app.get("/debug/msg", handleMessage);
 app.post("/debug/scan", handleScan);
+app.get("/debug/airtable", handleAirtableTest);
 
 // Endpoints de métricas
 app.post("/metrics/daily", handleDailyMetrics);

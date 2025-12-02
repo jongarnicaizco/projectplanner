@@ -348,8 +348,12 @@ async function classifyIntentHeuristic({
     /(how much (do you charge|would it cost|does it cost))/i,
     /(cu[aá]nto (cobr[aá]is|factur[aá]is|costar[ií]a|cuesta))/i,
     /(qu[ée] (precio|tarifa|prezzo|prix) (tiene|tienen|have|hast|ha|hanno|avez|ont))/i,
-    // Rate card / media kit requests
-    /(rate card|ratecard|media kit\b|mediakit|press kit)/i,
+    // Rate card / media kit requests - only when explicitly asking for ours
+    // Exclude when they're sharing their own media kit (e.g., "Media Kit: https://drive.google.com")
+    /(rate card|ratecard)/i,
+    // Media kit/press kit only when in a request context (asking for ours, not sharing theirs)
+    /(your (media kit|press kit|mediakit))/i,
+    /((send|share|provide|give|need|want|request|solicitar|pedir).*?(media kit|press kit|mediakit))/i,
     // Asking about advertising costs
     /(cost of (a )?(campaign|post|article|placement|advertising|publicidad))/i,
     /(precio|price|prezzo|prix|preis|tarifa|tariffa|tarif)\s+(de|di|do|du|der|for|por|para|per|pour)\s+(publicaci[oó]n|pubblicazione|publica[çc][aã]o|publication|anuncio|advertising|publicit[ée]|werbung)/i,
@@ -369,7 +373,7 @@ async function classifyIntentHeuristic({
     /(we (would like|want|are looking|are interested)( to)? (partner|collaborate|work together|explore a partnership|explore collaboration)|would you (like|be interested) (to )?(partner|collaborate)|are you interested in (a )?(partnership|collaboration|media partnership)|partnership proposal (for you|with you)|propuesta de colaboraci[oó]n (con vosotros|con ustedes|contigo)|queremos (colaborar|trabajar) (con vosotros|con ustedes|contigo)|buscamos (colaboradores|partners?|socios comerciales))/;
 
   const platformCollabRegex =
-    /(advertise (with you|on your (site|app|platform))|run (a )?campaign with you|use your (platform|app|site) to (sell tickets|promote our events)|ticketing partner for our events|use your ticketing solution|use your services for (ticketing|marketing|promotion))/;
+    /(advertise (with you|on your (site|app|platform|page))|run (a )?campaign with you|use your (platform|app|site) to (sell tickets|promote our events)|ticketing partner for our events|use your ticketing solution|use your services for (ticketing|marketing|promotion)|(solicitar|solicitamos|pedir|pedimos|queremos|quisi[ée]ramos) (informaci[oó]n|info) (para|sobre|acerca de) (publicitar|publicidad|advertise|advertising|anunciar|anuncio)|(informaci[oó]n|info) (para|sobre|acerca de) (publicitar|publicidad|advertise|advertising|anunciar|anuncio) (en|on) (su|vuestra|vuestro|your) (p[aá]gina|site|platform|app|medio|publicaci[oó]n)|publicitar (mi|nuestro|nuestra|my|our) (restaurante|negocio|empresa|business|brand|marca) (en|on) (su|vuestra|vuestro|your) (p[aá]gina|site|platform|app|medio|publicaci[oó]n))/;
 
   const contentCollabRegex =
     /(pitch (some )?content\b|creat(e|ing) (a )?post (for|on) your (site|blog|website|page)|guest post\b|write a guest post|guest article|creat(e|ing) (some )?content for your (site|blog|website|publication|magazine|channels|audience)|we('?d)? love [^.!?\n]{0,80} to create (some )?content\b|shoot (some )?content (together|with you)|content (collab|collaboration|partnership))/;
@@ -413,9 +417,9 @@ async function classifyIntentHeuristic({
       mailText
     );
 
-  // Detect concrete scope: volume, frequency, quantity
+  // Detect concrete scope: volume, frequency, quantity, specific deliverables, duration, revisions
   const hasConcreteScope =
-    /(\d+\s+(articles?|posts?|pieces?|placements?|campaigns?|collaborations?))\s+(per\s+(month|week|year)|monthly|weekly|annually|ongoing)|(up to|up to|minimum|at least|around|approximately)\s+\d+\s+(articles?|posts?|pieces?|placements?)|(ongoing|regular|monthly|weekly)\s+(collaborations?|partnerships?|campaigns?)|(package|deal|discount)/.test(
+    /(\d+\s+(articles?|posts?|pieces?|placements?|campaigns?|collaborations?|videos?|rounds?))\s+(per\s+(month|week|year)|monthly|weekly|annually|ongoing)|(up to|up to|minimum|at least|around|approximately)\s+\d+\s+(articles?|posts?|pieces?|placements?|videos?|rounds?)|(ongoing|regular|monthly|weekly)\s+(collaborations?|partnerships?|campaigns?)|(package|deal|discount)|(\d+[-\s]?\d+\s+(minute|min|hour|day|week|month|year)[-\s]?(video|draft|content|post|article))|(\d+[-\s]?\d+\s+rounds?\s+(of\s+)?(revisions?|edits?|changes?))|(\d+[-\s]?\d+[-\s]?day\s+(ad\s+)?code)|(specific\s+(deliverables?|requirements?|scope))/.test(
       mailText
     );
 
@@ -463,9 +467,9 @@ async function classifyIntentHeuristic({
 
   const bigBrand = bigBrandsRegex.test(mailText);
 
-  // Updated to detect >50k USD (per new specification)
+  // Updated to detect >20k EUR/USD (per new specification)
   const largeBudgetRegex =
-    /(50k|60k|70k|80k|90k|100k|200k|250k|300k|400k|500k|\b50\,000\b|\b60\,000\b|\b70\,000\b|\b80\,000\b|\b90\,000\b|\b100\,000\b|\b200\,000\b|\b250\,000\b|\b300\,000\b|\b50\.000\b|\b60\.000\b|\b70\.000\b|\b80\.000\b|\b90\.000\b|\b100\.000\b|\b200\.000\b|\b250\.000\b|\b300\.000\b|\€\s?50 ?000|\€\s?60 ?000|\€\s?70 ?000|\€\s?80 ?000|\€\s?90 ?000|\€\s?100 ?000|\$50,000|\$60,000|\$70,000|\$80,000|\$90,000|\$100,000|£50,000|£60,000|£70,000|£80,000|£90,000|£100,000|more than 50|m[aá]s de 50|over 50|above 50)/;
+    /(20k|25k|30k|35k|40k|45k|50k|60k|70k|80k|90k|100k|200k|250k|300k|400k|500k|\b20\,000\b|\b25\,000\b|\b30\,000\b|\b35\,000\b|\b40\,000\b|\b45\,000\b|\b50\,000\b|\b60\,000\b|\b70\,000\b|\b80\,000\b|\b90\,000\b|\b100\,000\b|\b200\,000\b|\b250\,000\b|\b300\,000\b|\b20\.000\b|\b25\.000\b|\b30\.000\b|\b35\.000\b|\b40\.000\b|\b45\.000\b|\b50\.000\b|\b60\.000\b|\b70\.000\b|\b80\.000\b|\b90\.000\b|\b100\.000\b|\b200\.000\b|\b250\.000\b|\b300\.000\b|\€\s?20 ?000|\€\s?25 ?000|\€\s?30 ?000|\€\s?35 ?000|\€\s?40 ?000|\€\s?45 ?000|\€\s?50 ?000|\€\s?60 ?000|\€\s?70 ?000|\€\s?80 ?000|\€\s?90 ?000|\€\s?100 ?000|\$20,000|\$25,000|\$30,000|\$35,000|\$40,000|\$45,000|\$50,000|\$60,000|\$70,000|\$80,000|\$90,000|\$100,000|£20,000|£25,000|£30,000|£35,000|£40,000|£45,000|£50,000|£60,000|£70,000|£80,000|£90,000|£100,000|more than 20|m[aá]s de 20|over 20|above 20)/;
 
   const largeBudgetMention = largeBudgetRegex.test(mailText);
 
@@ -529,7 +533,12 @@ async function classifyIntentHeuristic({
     !isBarterRequest &&
     !isFreeCoverageRequest;
   
-  if (isTestEmail) {
+  // REGLA DURA: Barter Request SIEMPRE Low (verificación temprana antes de cualquier Discard)
+  if (isBarterRequest) {
+    intent = "Low";
+    confidence = 0.8;
+    reasoning = "Email is a barter request (invitation or service in exchange for coverage), categorized as Low intent (not Discard, Medium, High, or Very High).";
+  } else if (isTestEmail) {
     intent = "Discard";
     confidence = 0.99;
     reasoning =
@@ -552,8 +561,8 @@ async function classifyIntentHeuristic({
       "Email shows no commercial intent (partnership, advertising, pricing request, barter, or free coverage request), so it is discarded.";
   }
 
-  // REGLA DURA: Press Release o Free Coverage Request SIEMPRE Low (antes de analizar partnership)
-  if (!intent && (isPressStyle || isFreeCoverageRequest)) {
+  // REGLA DURA: Press Release, Free Coverage Request o Barter Request SIEMPRE Low (antes de analizar partnership)
+  if (!intent && (isPressStyle || isFreeCoverageRequest || isBarterRequest)) {
     intent = "Low";
     confidence = 0.8;
     if (isPressStyle) {
@@ -571,7 +580,7 @@ async function classifyIntentHeuristic({
       confidence = 0.8;
       reasoning = "Email is a press release, so it is categorized as Low intent (not Medium or higher).";
     } else if (hasPartnershipCollabAsk || (isMediaKitPricingRequest && hasPartnershipCollabAsk)) {
-      // 2.a. Very High: long-term partnership OR very large brand OR >50k USD upfront
+      // 2.a. Very High: long-term partnership OR very large brand OR >20k EUR/USD upfront
       if (
         multiYearRegex.test(mailText) ||
         multiMarketRegex.test(mailText) ||
@@ -983,18 +992,20 @@ async function classifyIntentHeuristic({
   }
 
   // REGLA DURA FINAL: Press Release, Free Coverage Request o Barter Request SIEMPRE Low (última verificación antes de retornar)
-  // Esta es la verificación más importante - sobrescribe cualquier otra lógica
+  // Esta es la verificación más importante - sobrescribe cualquier otra lógica, INCLUYENDO Discard
   // Usar finalFreeCoverage y finalBarter (combinación de modelo + heurística) para detectar
-  if ((isPressStyle || isFreeCoverageRequest || finalFreeCoverage || isBarterRequest || finalBarter) && intent !== "Low" && intent !== "Discard") {
-    console.log("[mfs] [classify] FORZANDO Low para press release/Free Coverage Request/Barter Request (intent actual era:", intent, ", isPressStyle:", isPressStyle, ", isFreeCoverageRequest:", isFreeCoverageRequest, ", finalFreeCoverage:", finalFreeCoverage, ", isBarterRequest:", isBarterRequest, ", finalBarter:", finalBarter, ")");
-    intent = "Low";
-    confidence = Math.max(confidence || 0.8, 0.8);
-    if (isPressStyle) {
-      reasoning = "Email is a press release, so it is categorized as Low intent (not Medium, High, or Very High).";
-    } else if (isFreeCoverageRequest || finalFreeCoverage) {
-      reasoning = "Email is a free coverage request (press release or news shared), categorized as Low intent (not Medium, High, or Very High).";
-    } else {
-      reasoning = "Email is a barter request (invitation or service in exchange for coverage), categorized as Low intent (not Medium, High, or Very High).";
+  if (isPressStyle || isFreeCoverageRequest || finalFreeCoverage || isBarterRequest || finalBarter) {
+    if (intent === "Discard" || intent !== "Low") {
+      console.log("[mfs] [classify] FORZANDO Low para press release/Free Coverage Request/Barter Request (intent actual era:", intent, ", isPressStyle:", isPressStyle, ", isFreeCoverageRequest:", isFreeCoverageRequest, ", finalFreeCoverage:", finalFreeCoverage, ", isBarterRequest:", isBarterRequest, ", finalBarter:", finalBarter, ")");
+      intent = "Low";
+      confidence = Math.max(confidence || 0.8, 0.8);
+      if (isPressStyle) {
+        reasoning = "Email is a press release, so it is categorized as Low intent (not Discard, Medium, High, or Very High).";
+      } else if (isFreeCoverageRequest || finalFreeCoverage) {
+        reasoning = "Email is a free coverage request (press release or news shared), categorized as Low intent (not Discard, Medium, High, or Very High).";
+      } else {
+        reasoning = "Email is a barter request (invitation or service in exchange for coverage), categorized as Low intent (not Discard, Medium, High, or Very High).";
+      }
     }
   }
 

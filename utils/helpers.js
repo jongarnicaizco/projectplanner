@@ -432,7 +432,13 @@ export function getLocationFromEmail(toEmail) {
   // Buscar en el mapa (case-insensitive)
   const normalizedEmail = firstEmail.toLowerCase();
   
-  return EMAIL_LOCATION_MAP[normalizedEmail] || null;
+  const location = EMAIL_LOCATION_MAP[normalizedEmail] || null;
+  
+  if (!location) {
+    console.log(`[mfs] No se encontró ubicación para email: ${normalizedEmail}`);
+  }
+  
+  return location;
 }
 
 

@@ -8,7 +8,7 @@ steps:
     args:
       - 'build'
       - '--tag'
-      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${COMMIT_SHA}'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${_IMAGE_TAG}'
       - '--tag'
       - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:latest'
       - '--cache-from'
@@ -22,7 +22,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${COMMIT_SHA}'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${_IMAGE_TAG}'
     id: 'push-image-sha'
 
   - name: 'gcr.io/cloud-builders/docker'
@@ -39,14 +39,14 @@ steps:
       - 'deploy'
       - '${_SERVICE_NAME}'
       - '--image'
-      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${COMMIT_SHA}'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${_IMAGE_TAG}'
       - '--region'
       - '${_REGION}'
       - '--platform'
       - 'managed'
-      - '--no-allow-unauthenticated'
+      - '--allow-unauthenticated'
       - '--set-env-vars'
-      - 'GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=True,GENAI_MODEL=gemini-2.5-flash,GMAIL_ADDRESS=media.manager@feverup.com,GMAIL_LABEL_FILTER=INBOX,AUTH_MODE=oauth,GCS_BUCKET=mfs_automatic_email_lead_classification,AIRTABLE_BASE_ID=appaleRB8wz8qWJGX,AIRTABLE_TABLE=tblZRNpEUJ8yXTPKw,AIRTABLE_TOKEN_SECRET=AIRTABLE_API_KEY,PUBSUB_TOPIC=mfs-gmail-leads,PUBSUB_PROJECT_ID=check-in-sf'
+      - 'GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=True,GENAI_MODEL=gemini-2.5-flash,GMAIL_ADDRESS=media.manager@feverup.com,GMAIL_LABEL_FILTER=INBOX,AUTH_MODE=oauth,GCS_BUCKET=mfs_automatic_email_lead_classification,AIRTABLE_BASE_ID=appT0vQS4arJ3dQ6w,AIRTABLE_TABLE=tblPIUeGJWqOtqage,AIRTABLE_TOKEN_SECRET=AIRTABLE_API_KEY,PUBSUB_TOPIC=mfs-gmail-leads,PUBSUB_PROJECT_ID=check-in-sf'
       - '--memory'
       - '512Mi'
       - '--cpu'
@@ -59,7 +59,7 @@ steps:
 
 # Configuración de imágenes a almacenar
 images:
-  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${COMMIT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${_IMAGE_TAG}'
   - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:latest'
 
 # Opciones de build
@@ -73,10 +73,13 @@ options:
   #   name: 'projects/${PROJECT_ID}/locations/${_REGION}/workerPools/my-pool'
 
 # Sustituciones (variables que se pueden sobrescribir)
+# _IMAGE_TAG: Por defecto usa BUILD_ID (siempre disponible)
+#             En builds desde GitHub, se puede sobrescribir con SHORT_SHA
 substitutions:
   _SERVICE_NAME: 'mfs-lead-generation-ai'
   _REGION: 'us-central1'
   _REPOSITORY: 'cloud-run-source-deploy'
+  _IMAGE_TAG: '${BUILD_ID}'
 
 # Timeout del build (en segundos)
 timeout: '1200s'
