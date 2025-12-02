@@ -82,9 +82,15 @@ export async function processMessageIds(gmail, ids) {
 
       // Verificar si ya existe en Airtable
       // Nota: airtableFindByEmailId ya maneja todos los errores internamente y retorna null
-      // No necesitamos try-catch aquí porque nunca lanzará excepciones
+      // Añadimos try-catch adicional como medida de seguridad
       let existing = null;
-      existing = await airtableFindByEmailId(id);
+      try {
+        existing = await airtableFindByEmailId(id);
+      } catch (e) {
+        // Si por alguna razón el error se propaga, lo capturamos aquí
+        console.warn("[mfs] Error al verificar duplicados en Airtable (capturado en processor). Continuando:", e?.message?.substring(0, 100));
+        existing = null;
+      }
       
       if (existing) {
         console.log("[mfs] Mensaje ya existe en Airtable, saltando:", {
