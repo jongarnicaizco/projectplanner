@@ -123,4 +123,27 @@ export async function releaseMessageLock(messageId) {
   }
 }
 
+/**
+ * Verifica la edad de un lock (en milisegundos)
+ * Retorna null si el lock no existe
+ */
+export async function checkLockAge(messageId) {
+  if (!CFG.GCS_BUCKET) return null;
+
+  const file = storage
+    .bucket(CFG.GCS_BUCKET)
+    .file(`locks/gmail_${messageId}.lock`);
+
+  try {
+    const [metadata] = await file.getMetadata();
+    const created = new Date(metadata.timeCreated);
+    const age = Date.now() - created.getTime();
+    return age;
+  } catch (e) {
+    if (e?.code === 404) return null;
+    console.warn("[mfs] Error verificando edad del lock:", e?.message || e);
+    return null;
+  }
+}
+
 

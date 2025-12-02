@@ -2,7 +2,7 @@
  * mfs-lead-generation-ai
  * 
  * Procesa correos de INBOX usando Gmail History + locks en GCS
- * Clasifica con Vertex AI 2.x y guarda en Airtable
+ * Clasifica con Vertex AI 2.x y envía email con los datos del lead
  * 
  * CI/CD: GitHub -> Cloud Build -> Cloud Run (solo contenedores)
  */
@@ -17,7 +17,6 @@ import {
   handleLabels,
   handleMessage,
   handleScan,
-  handleAirtableTest,
 } from "./handlers/debug.js";
 import {
   handleDailyMetrics,
@@ -82,6 +81,115 @@ app.post("/reset", async (_req, res) => {
   }
 });
 
+// Endpoint de diagnóstico rápido
+app.get("/diagnostico", async (_req, res) => {
+  try {
+    const gmail = await getGmailClient();
+    const historyId = await readHistoryState();
+    
+    // Verificar mensajes recientes en INBOX
+    const list = await gmail.users.messages.list({
+      userId: "me",
+      q: "in:inbox",
+      maxResults: 10,
+    });
+    
+    const recentMessages = (list.data.messages || []).slice(0, 5);
+    const messageDetails = [];
+    
+    for (const msg of recentMessages) {
+      try {
+        const full = await gmail.users.messages.get({
+          userId: "me",
+          id: msg.id,
+          format: "metadata",
+          metadataHeaders: ["From", "To", "Subject", "Date"],
+        });
+        const headers = full.data.payload?.headers || [];
+        const getHeader = (name) => headers.find(h => h.name === name)?.value || "";
+        messageDetails.push({
+          id: msg.id,
+          from: getHeader("From"),
+          to: getHeader("To"),
+          subject: getHeader("Subject"),
+          date: getHeader("Date"),
+        });
+      } catch (e) {
+        messageDetails.push({ id: msg.id, error: e.message });
+      }
+    }
+    
+    res.json({
+      ok: true,
+      historyId: historyId || "no configurado",
+      mensajesRecientesEnINBOX: list.data.messages?.length || 0,
+      detalles: messageDetails,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (e) {
+    logErr("diagnostico error:", e);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+// Endpoint para forzar procesamiento directo de INBOX (ignora historyId)
+app.post("/force-process", async (_req, res) => {
+  try {
+    console.log("[mfs] /force-process → Procesando mensajes directamente de INBOX");
+    const gmail = await getGmailClient();
+    
+    // Obtener mensajes recientes de INBOX (últimas 2 horas)
+    const twoHoursAgo = Math.floor(Date.now() / 1000) - (2 * 60 * 60);
+    const query = `in:inbox after:${twoHoursAgo}`;
+    
+    const list = await gmail.users.messages.list({
+      userId: "me",
+      q: query,
+      maxResults: 100,
+    });
+    
+    const messageIds = (list.data.messages || []).map(m => m.id);
+    console.log(`[mfs] /force-process → Encontrados ${messageIds.length} mensajes en INBOX`);
+    
+    if (messageIds.length === 0) {
+      return res.json({
+        ok: true,
+        message: "No hay mensajes nuevos en INBOX (últimas 2 horas)",
+        procesados: 0,
+      });
+    }
+    
+    // Procesar los mensajes
+    const { processMessageIds } = await import("./services/processor.js");
+    const results = await processMessageIds(gmail, messageIds);
+    
+    // Actualizar historyId al actual para sincronizar
+    try {
+      const prof = await gmail.users.getProfile({ userId: "me" });
+      const currentHistoryId = String(prof.data.historyId || "");
+      if (currentHistoryId) {
+        const { writeHistoryState } = await import("./services/storage.js");
+        await writeHistoryState(currentHistoryId);
+        console.log("[mfs] /force-process → historyId actualizado a:", currentHistoryId);
+      }
+    } catch (e) {
+      console.warn("[mfs] /force-process → No se pudo actualizar historyId:", e.message);
+    }
+    
+    res.json({
+      ok: true,
+      message: `Procesados ${results.length} mensajes`,
+      totalEncontrados: messageIds.length,
+      procesados: results.filter(r => r.success).length,
+      fallidos: results.filter(r => !r.success).length,
+      resultados: results.slice(0, 10), // Primeros 10 resultados
+    });
+  } catch (e) {
+    logErr("force-process error:", e);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
 app.post("/watch", async (_req, res) => {
   try {
     console.log("[mfs] /watch → configurando watch en Gmail");
@@ -112,7 +220,6 @@ app.post("/_pubsub", handlePubSub);
 app.get("/debug/labels", handleLabels);
 app.get("/debug/msg", handleMessage);
 app.post("/debug/scan", handleScan);
-app.get("/debug/airtable", handleAirtableTest);
 
 // Endpoints de métricas
 app.post("/metrics/daily", handleDailyMetrics);

@@ -19,12 +19,10 @@ import {
   acquireMessageLock,
   releaseMessageLock,
   saveToGCS,
+  checkLockAge,
 } from "./storage.js";
 import { classifyIntent, generateBodySummary, callModelText } from "./vertex.js";
-import {
-  airtableFindByEmailId,
-  createAirtableRecord,
-} from "./airtable.js";
+import { sendLeadEmail } from "./email.js";
 
 /**
  * Procesa una lista de IDs de mensajes
@@ -39,19 +37,38 @@ export async function processMessageIds(gmail, ids) {
 
   for (const id of ids) {
     let lockAcquired = false;
+    // Declarar allHeaders al inicio del scope para evitar problemas de referencia
+    let allHeaders = [];
+    let getAllHeaders = null;
 
     try {
       console.log("––––––––––––––––––––––––––––––––––––––––––");
       console.log("[mfs] Empiezo a procesar mensaje:", id);
 
       // Lock por messageId para evitar duplicados
+      // Si el lock existe pero tiene más de 10 minutos, asumimos que falló y lo liberamos
       lockAcquired = await acquireMessageLock(id);
       if (!lockAcquired) {
-        console.log(
-          "[mfs] Mensaje saltado porque otra instancia ya lo está tratando:",
-          id
-        );
-        continue;
+        // Verificar si el lock es muy antiguo (más de 10 minutos = posible fallo)
+        try {
+          const lockAge = await checkLockAge(id);
+          if (lockAge !== null && lockAge > 600000) { // 10 minutos en ms
+            console.warn(`[mfs] Lock antiguo detectado (${Math.round(lockAge/1000)}s), liberando y reprocesando:`, id);
+            await releaseMessageLock(id);
+            lockAcquired = await acquireMessageLock(id);
+          }
+        } catch (e) {
+          console.warn("[mfs] Error verificando edad del lock:", e.message);
+        }
+        
+        if (!lockAcquired) {
+          console.log(
+            "[mfs] Mensaje saltado porque otra instancia ya lo está tratando:",
+            id
+          );
+          results.push({ id, success: false, skipped: true, reason: "lock_exists" });
+          continue;
+        }
       }
 
       let msg;
@@ -83,58 +100,45 @@ export async function processMessageIds(gmail, ids) {
         continue;
       }
 
-      // Verificar si ya existe en Airtable
-      // Nota: airtableFindByEmailId ya maneja todos los errores internamente y retorna null
-      // Añadimos try-catch adicional como medida de seguridad
-      let existing = null;
-      try {
-        existing = await airtableFindByEmailId(id);
-      } catch (e) {
-        // Si por alguna razón el error se propaga, lo capturamos aquí
-        console.warn("[mfs] Error al verificar duplicados en Airtable (capturado en processor). Continuando:", e?.message?.substring(0, 100));
-        existing = null;
-      }
-      
-      if (existing) {
-        console.log("[mfs] Mensaje ya existe en Airtable, saltando:", {
-          emailId: id,
-          airtableId: existing.id,
-        });
-        continue;
-      }
-      console.log("[mfs] Mensaje no existe en Airtable, continuando con el procesamiento");
+      // No verificamos duplicados, procesamos todos los emails
+      console.log("[mfs] Procesando mensaje:", id);
 
       // Función helper para buscar headers en todas las partes del mensaje
-      const getAllHeaders = (payload) => {
-        const allHeaders = [];
+      getAllHeaders = (payload) => {
+        const headersArray = [];
         
         // Headers del payload principal
-        if (payload.headers && Array.isArray(payload.headers)) {
-          allHeaders.push(...payload.headers);
+        if (payload && payload.headers && Array.isArray(payload.headers)) {
+          headersArray.push(...payload.headers);
         }
         
         // Buscar headers en partes anidadas (para mensajes multipart)
         const searchParts = (parts) => {
           if (!parts || !Array.isArray(parts)) return;
           for (const part of parts) {
-            if (part.headers && Array.isArray(part.headers)) {
-              allHeaders.push(...part.headers);
+            if (part && part.headers && Array.isArray(part.headers)) {
+              headersArray.push(...part.headers);
             }
-            if (part.parts) {
+            if (part && part.parts) {
               searchParts(part.parts);
             }
           }
         };
         
-        if (payload.parts) {
+        if (payload && payload.parts) {
           searchParts(payload.parts);
         }
         
-        return allHeaders;
+        return headersArray;
       };
       
       // Obtener todos los headers del mensaje
-      const allHeaders = getAllHeaders(msg.data.payload);
+      if (msg && msg.data && msg.data.payload) {
+        allHeaders = getAllHeaders(msg.data.payload);
+      } else {
+        console.error("[mfs] ERROR: msg.data.payload no está disponible");
+        allHeaders = [];
+      }
       
       // Log completo de headers RAW para diagnóstico
       console.log("[mfs] ===== HEADERS RAW DEL EMAIL =====");
@@ -306,10 +310,30 @@ export async function processMessageIds(gmail, ids) {
       console.log("[mfs] mailingListEmail:", JSON.stringify(mailingListEmail));
       
       const toEmailRaw = extractToEmail(toHeader || "", cc || "", bcc || "", replyTo || "", mailingListEmail || "");
-      const to = String(toEmailRaw || "").trim().toLowerCase();
+      let to = String(toEmailRaw || "").trim().toLowerCase();
       
       console.log("[mfs] toEmailRaw resultado:", JSON.stringify(toEmailRaw));
-      console.log("[mfs] to final:", JSON.stringify(to));
+      console.log("[mfs] to final (antes de corrección):", JSON.stringify(to));
+      
+      // CORRECCIÓN CRÍTICA: Si el toHeader tiene un email válido, usarlo directamente
+      // Esto evita que extractToEmail busque en otros campos y encuentre el mismo email que from
+      if (toHeader && toHeader.trim()) {
+        const toHeaderEmail = extractCleanEmail(toHeader);
+        if (toHeaderEmail && toHeaderEmail.trim() !== "") {
+          // Si extractToEmail retornó algo diferente o si from y to son iguales, usar toHeader
+          if (toHeaderEmail !== to || (from && from === to)) {
+            console.log("[mfs] CORRECCIÓN: Usando email del toHeader directamente");
+            console.log("[mfs]   toHeader email:", toHeaderEmail);
+            console.log("[mfs]   extractToEmail retornó:", to);
+            console.log("[mfs]   from actual:", from);
+            console.log("[mfs]   from === to?", from === to);
+            to = toHeaderEmail.toLowerCase();
+            console.log("[mfs]   to corregido:", to);
+          }
+        }
+      }
+      
+      console.log("[mfs] to final (después de corrección):", JSON.stringify(to));
       
       // Log de emails extraídos
       console.log("[mfs] ===== EMAILS EXTRAÍDOS =====");
@@ -370,7 +394,7 @@ export async function processMessageIds(gmail, ids) {
         location: location ? `${location.city}, ${location.country} (${location.countryCode})` : "(no encontrada)",
       });
       
-      // Verificación crítica antes de pasar a Airtable
+      // Verificación crítica antes de enviar email
       if (from === to && from) {
         console.error("[mfs] ===== ERROR CRÍTICO: from y to son iguales =====");
         console.error("[mfs] from:", JSON.stringify(from));
@@ -379,20 +403,37 @@ export async function processMessageIds(gmail, ids) {
         console.error("[mfs] toHeader original:", JSON.stringify(toHeader));
         console.error("[mfs] emailId:", id);
         
-        // Si from y to son iguales, no podemos procesar correctamente este email
-        // Usar el email de Gmail configurado como "to" si está disponible
-        if (process.env.GMAIL_ADDRESS) {
+        // INTENTO 1: Usar el email del toHeader directamente si es diferente a from
+        if (toHeader && toHeader.trim()) {
+          const toHeaderEmail = extractCleanEmail(toHeader);
+          if (toHeaderEmail && toHeaderEmail.toLowerCase() !== from) {
+            console.warn("[mfs] CORRECCIÓN 1: Usando email del toHeader directamente", {
+              originalTo: to,
+              correctedTo: toHeaderEmail,
+            });
+            to = toHeaderEmail.toLowerCase();
+          }
+        }
+        
+        // INTENTO 2: Si aún son iguales, usar el email de Gmail configurado como "to"
+        if (from === to && process.env.GMAIL_ADDRESS) {
           const correctedTo = extractCleanEmail(process.env.GMAIL_ADDRESS);
           if (correctedTo && correctedTo !== from) {
-            console.warn("[mfs] CORRECCIÓN: Usando GMAIL_ADDRESS como 'to' porque from y to eran iguales", {
+            console.warn("[mfs] CORRECCIÓN 2: Usando GMAIL_ADDRESS como 'to' porque from y to eran iguales", {
               originalTo: to,
               correctedTo: correctedTo,
             });
             to = correctedTo;
           } else {
             console.error("[mfs] ERROR: No se puede corregir 'to' porque GMAIL_ADDRESS también coincide con 'from'");
-            // Continuar de todas formas, pero el registro tendrá datos incorrectos
           }
+        }
+        
+        // Si después de las correcciones aún son iguales, loguear pero continuar
+        if (from === to) {
+          console.error("[mfs] ERROR: No se pudo corregir 'to'. from y to siguen siendo iguales.");
+          console.error("[mfs] Este email NO se enviará debido a esta validación.");
+          // NO retornar aquí, dejar que el código continúe para que se loguee el error completo
         }
       }
       
@@ -405,8 +446,8 @@ export async function processMessageIds(gmail, ids) {
         });
       }
       
-      // Log final antes de pasar a Airtable
-      console.log("[mfs] ===== VALORES FINALES PARA AIRTABLE =====");
+      // Log final antes de enviar email
+      console.log("[mfs] ===== VALORES FINALES PARA ENVIAR POR EMAIL =====");
       console.log("[mfs] from (final):", JSON.stringify(from));
       console.log("[mfs] to (final):", JSON.stringify(to));
       console.log("[mfs] from !== to?", from !== to);
@@ -429,13 +470,40 @@ export async function processMessageIds(gmail, ids) {
       });
 
       // Guardar en GCS
+      // Asegurar que allHeaders está definido y es un array antes de usarlo
+      if (!allHeaders || !Array.isArray(allHeaders)) {
+        console.error("[mfs] ERROR CRÍTICO: allHeaders no está definido o no es un array");
+        console.error("[mfs] allHeaders type:", typeof allHeaders);
+        console.error("[mfs] allHeaders value:", allHeaders);
+        // Re-obtener headers como fallback
+        try {
+          if (msg && msg.data && msg.data.payload && getAllHeaders) {
+            const fallbackHeaders = getAllHeaders(msg.data.payload);
+            console.log("[mfs] Re-obteniendo headers como fallback, encontrados:", fallbackHeaders.length);
+            allHeaders = fallbackHeaders;
+          } else {
+            console.error("[mfs] No se puede re-obtener headers: msg o getAllHeaders no disponible");
+            allHeaders = []; // Array vacío como último recurso
+          }
+        } catch (e) {
+          console.error("[mfs] ERROR: No se pudo re-obtener headers:", e.message);
+          allHeaders = []; // Array vacío como último recurso
+        }
+      }
+      
+      // Validación final antes de usar allHeaders
+      if (!Array.isArray(allHeaders)) {
+        console.error("[mfs] ERROR: allHeaders no es un array después de todos los intentos, usando array vacío");
+        allHeaders = [];
+      }
+      
       const baseName = `${new Date()
         .toISOString()
         .replace(/[:.]/g, "-")}_${id}`;
 
       await saveToGCS(
         `${baseName}_meta.json`,
-        JSON.stringify({ headers }, null, 2),
+        JSON.stringify({ headers: allHeaders }, null, 2),
         "application/json"
       );
 
@@ -470,9 +538,9 @@ export async function processMessageIds(gmail, ids) {
         preview: bodySummary?.slice(0, 100) || "(vacío)",
       });
 
-      // Crear objeto explícito para pasar a Airtable (evitar problemas de referencia)
+      // Crear objeto explícito para enviar por email
       // Convertir todos los valores a strings para evitar problemas de tipo
-      const airtableData = {
+      const emailData = {
         id: String(id || ""),
         from: String(from || ""),
         to: String(to || ""),
@@ -503,34 +571,42 @@ export async function processMessageIds(gmail, ids) {
         } : null,
       };
       
-      // Log final antes de crear registro - CRÍTICO para debugging
-      console.log("[mfs] ===== DATOS PARA AIRTABLE (ANTES DE CREAR) =====");
-      console.log("[mfs] from:", JSON.stringify(airtableData.from));
-      console.log("[mfs] to:", JSON.stringify(airtableData.to));
-      console.log("[mfs] from !== to?", airtableData.from !== airtableData.to);
-      console.log("[mfs] from length:", airtableData.from.length);
-      console.log("[mfs] to length:", airtableData.to.length);
+      // Log final antes de enviar email
+      console.log("[mfs] ===== DATOS PARA ENVIAR POR EMAIL =====");
+      console.log("[mfs] from:", JSON.stringify(emailData.from));
+      console.log("[mfs] to:", JSON.stringify(emailData.to));
+      console.log("[mfs] from !== to?", emailData.from !== emailData.to);
+      console.log("[mfs] subject:", emailData.subject?.substring(0, 100));
       
-      const rec = await createAirtableRecord(airtableData);
+      // Enviar email con todos los datos
+      const emailResult = await sendLeadEmail(emailData);
 
-      if (rec?.id) {
-        console.log("[mfs] ✓ Registro creado exitosamente en Airtable:", {
+      if (emailResult.success) {
+        console.log("[mfs] ✓ Email enviado exitosamente:", {
           emailId: id,
-          airtableId: rec.id,
+          messageId: emailResult.messageId,
           intent,
         });
       } else {
-        console.error("[mfs] ✗ Error: No se pudo crear el registro en Airtable", {
+        console.error("[mfs] ✗ Error: No se pudo enviar el email", {
           emailId: id,
           intent,
+          error: emailResult.error,
         });
       }
 
-      results.push({ id, airtableId: rec?.id, intent, confidence });
+      results.push({ 
+        id, 
+        emailSent: emailResult.success, 
+        messageId: emailResult.messageId,
+        intent, 
+        confidence 
+      });
 
       console.log("[mfs] Fin de procesado para mensaje:", {
         id,
-        airtableId: rec?.id,
+        emailSent: emailResult.success,
+        messageId: emailResult.messageId,
         intent,
         confidence,
       });
@@ -551,12 +627,13 @@ export async function processMessageIds(gmail, ids) {
   console.log("[mfs] ========================================");
   console.log("[mfs] FIN: Resumen del lote procesado", {
     totalProcesados: results.length,
-    exitosos: results.filter(r => r.airtableId).length,
-    fallidos: results.filter(r => !r.airtableId).length,
+    exitosos: results.filter(r => r.emailSent).length,
+    fallidos: results.filter(r => !r.emailSent).length,
     resultados: results.map(r => ({
       id: r.id,
       intent: r.intent,
-      tieneAirtableId: !!r.airtableId,
+      emailSent: r.emailSent,
+      messageId: r.messageId,
     })),
   });
   return results;

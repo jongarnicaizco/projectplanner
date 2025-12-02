@@ -5,7 +5,7 @@ import { readHistoricalMetrics, writeDailyMetrics } from "./sheets.js";
 import { CFG } from "../config.js";
 
 /**
- * Recopila métricas del día actual desde Airtable
+ * Recopila métricas del día actual (ya no usa Airtable, se envía por email)
  */
 export async function collectDailyMetrics() {
   // Esta función se llamará desde un endpoint o scheduler

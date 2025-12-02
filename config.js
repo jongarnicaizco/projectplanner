@@ -25,10 +25,9 @@ export const CFG = {
     .toLowerCase()
     .includes("true"),
 
-  // Airtable
-  AIRTABLE_BASE_ID: process.env.AIRTABLE_BASE_ID,
-  AIRTABLE_TABLE: process.env.AIRTABLE_TABLE,
-  AIRTABLE_TOKEN_SECRET: process.env.AIRTABLE_TOKEN_SECRET || "AIRTABLE_API_KEY",
+  // Email notifications
+  EMAIL_FROM: process.env.EMAIL_FROM || "media.manager@feverup.com",
+  EMAIL_TO: process.env.EMAIL_TO || "jongarnicaizco@gmail.com",
 };
 
 export const FLAGS = {

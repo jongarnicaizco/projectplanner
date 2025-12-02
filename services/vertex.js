@@ -851,14 +851,14 @@ async function classifyIntentHeuristic({
 
   // Low SOLO cuando haya alguna de las 4 columnas
   // REGLA DURA: Si es press release o Free Coverage Request, NUNCA cambiar a Medium aunque no tenga flags
-  const hasAnyAirtableFlag =
+  const hasAnyCheckboxFlag =
     isBarterRequest ||
     isMediaKitPricingRequest ||
     isFreeCoverageRequest ||
     isPressStyle; // Press release también cuenta como flag
 
   // REGLA DURA: NUNCA cambiar a Medium si es press release, free coverage request o barter request
-  if (intent === "Low" && !hasAnyAirtableFlag && !isPressStyle && !isFreeCoverageRequest && !isBarterRequest) {
+  if (intent === "Low" && !hasAnyCheckboxFlag && !isPressStyle && !isFreeCoverageRequest && !isBarterRequest) {
     intent = "Medium";
     confidence = Math.max(confidence || 0.7, 0.7);
   }

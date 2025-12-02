@@ -3,11 +3,11 @@
  */
 import { writeDailyMetrics, readHistoricalMetrics, writeCorrection } from "../services/sheets.js";
 import { analyzeMetricsAndSuggestAdjustments } from "../services/metrics.js";
-import { getAirtableRecords } from "../services/airtable.js";
+// Airtable removido - ya no se usa
 import { logErr } from "../utils/helpers.js";
 
 /**
- * Recopila métricas del día desde Airtable y las escribe a Google Sheets
+ * Recopila métricas del día (ya no usa Airtable - deshabilitado)
  */
 export async function handleDailyMetrics(req, res) {
   try {
@@ -15,8 +15,9 @@ export async function handleDailyMetrics(req, res) {
     
     console.log("[mfs] [metrics] Recopilando métricas del día:", date);
 
-    // Obtener todos los registros de Airtable del día
-    const records = await getAirtableRecords(date);
+    // Airtable removido - ya no se obtienen registros de Airtable
+    // Esta funcionalidad está deshabilitada ya que ahora se envía por email
+    const records = [];
     
     // Calcular métricas
     const metrics = {
@@ -128,7 +129,7 @@ export async function handleAnalyzeMetrics(req, res) {
 }
 
 /**
- * Registra una corrección manual desde Airtable
+ * Registra una corrección manual (ya no usa Airtable)
  */
 export async function handleCorrection(req, res) {
   try {

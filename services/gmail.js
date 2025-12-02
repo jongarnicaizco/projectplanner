@@ -96,19 +96,36 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId) {
 
   startHistoryId = String(startHistoryId);
 
-  // Si la notificación trae historyId <= ya procesado, no hay nada nuevo
+  // Si la notificación trae historyId <= ya procesado, verificar si realmente no hay mensajes
+  // o si el historyId está desincronizado (diferencia muy pequeña)
   if (notifHistoryId) {
     try {
       const last = BigInt(startHistoryId);
       const notif = BigInt(String(notifHistoryId));
-      if (notif <= last) {
+      const diferencia = notif - last;
+      
+      console.log("[mfs] [history] Comparando historyId:", {
+        startHistoryId: String(startHistoryId),
+        notifHistoryId: String(notifHistoryId),
+        diferencia: String(diferencia),
+      });
+      
+      // Si la diferencia es muy pequeña (menos de 10), podría ser desincronización
+      // En ese caso, hacer fallback para verificar si hay mensajes en INBOX
+      if (diferencia <= 0) {
         console.log(
           "[mfs] [history] Notificación con historyId <= al ya procesado:",
-          { startHistoryId, notifHistoryId }
+          { startHistoryId, notifHistoryId, diferencia: String(diferencia) }
         );
-        return { ids: [], newHistoryId: startHistoryId, usedFallback: false };
+        // Aún así, intentar consultar history.list por si hay mensajes que no se detectaron
+        // No retornar inmediatamente, continuar con la consulta
+      } else if (diferencia < 10n) {
+        console.warn("[mfs] [history] Diferencia muy pequeña entre historyId. Podría haber desincronización. Continuando con consulta...");
+      } else {
+        console.log("[mfs] [history] Notificación tiene historyId mayor, hay mensajes nuevos potenciales");
       }
-    } catch {
+    } catch (e) {
+      console.warn("[mfs] [history] Error comparando historyId con BigInt:", e);
       // Si falla BigInt, seguimos la lógica normal
     }
   }
@@ -182,7 +199,44 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId) {
     nuevosMensajes: idsSet.size,
     startHistoryId,
     notifHistoryId,
+    idsEncontrados: Array.from(idsSet).slice(0, 10),
   });
+
+  // Si no encontramos mensajes pero hay notificación, hacer fallback automático
+  // para verificar si hay mensajes en INBOX que no se detectaron
+  if (idsSet.size === 0 && notifHistoryId) {
+    try {
+      const last = BigInt(startHistoryId);
+      const notif = BigInt(String(notifHistoryId));
+      const diferencia = notif - last;
+      
+      // Si hay notificación pero no encontramos mensajes, y la diferencia es pequeña o negativa,
+      // hacer fallback para obtener mensajes recientes de INBOX
+      if (diferencia <= 10n) {
+        console.warn("[mfs] [history] No se encontraron mensajes en history.list pero hay notificación. Haciendo fallback a INBOX...");
+        const list = await backoff(
+          () =>
+            gmail.users.messages.list({
+              userId: "me",
+              q: "in:inbox",
+              maxResults: 50, // Aumentar a 50 para capturar más mensajes
+            }),
+          "messages.list.fallback_desync"
+        );
+        const fallbackIds = (list.data.messages || []).map((m) => m.id);
+        console.log("[mfs] [history] Fallback: mensajes encontrados en INBOX:", fallbackIds.length);
+        
+        if (fallbackIds.length > 0) {
+          console.warn("[mfs] [history] ADVERTENCIA: Desincronización detectada. Usando mensajes de INBOX como fallback.");
+          // Actualizar historyId al de la notificación para sincronizar
+          const newHistoryId = notifHistoryId || startHistoryId;
+          return { ids: fallbackIds, newHistoryId, usedFallback: true };
+        }
+      }
+    } catch (e) {
+      console.warn("[mfs] [history] Error en fallback de desincronización:", e?.message);
+    }
+  }
 
   const newHistoryId = notifHistoryId || startHistoryId;
   return { ids: [...idsSet], newHistoryId, usedFallback: false };

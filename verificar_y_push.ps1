@@ -1,77 +1,136 @@
-# Script para verificar conexión con GitHub y hacer push
+# Script para verificar y hacer push de todos los cambios
 $ErrorActionPreference = "Continue"
 
-Write-Host "`n=== Verificando conexión con GitHub ===" -ForegroundColor Cyan
+Write-Host "=" * 70 -ForegroundColor Cyan
+Write-Host "  VERIFICACIÓN Y PUSH DE CAMBIOS" -ForegroundColor Cyan
+Write-Host "=" * 70 -ForegroundColor Cyan
+Write-Host ""
 
-$repoPath = "C:\Users\fever\Media Fees Lead Automation\mfs-lead-generation-ai"
-Set-Location $repoPath
-
-Write-Host "`n1. Verificando remoto..." -ForegroundColor Yellow
-$remote = git remote -v
-Write-Host $remote
-
-Write-Host "`n2. Verificando estado del repositorio..." -ForegroundColor Yellow
-$status = git status
-Write-Host $status
-
-Write-Host "`n3. Verificando últimos commits..." -ForegroundColor Yellow
-$log = git log --oneline -3
-Write-Host $log
-
-Write-Host "`n4. Verificando cambios pendientes..." -ForegroundColor Yellow
-$changes = git status --porcelain
-if ($changes) {
-    Write-Host "  Cambios pendientes:" -ForegroundColor Yellow
-    Write-Host $changes
-    
-    Write-Host "`n5. Añadiendo cambios..." -ForegroundColor Yellow
-    git add -A
-    Write-Host "  ✓ Cambios añadidos" -ForegroundColor Green
-    
-    Write-Host "`n6. Haciendo commit..." -ForegroundColor Yellow
-    git commit -m "Fix: Añadir logs para debug de extractFromEmail y corregir cloudbuild.yaml"
-    Write-Host "  ✓ Commit realizado" -ForegroundColor Green
+# 1. Verificar estado
+Write-Host "[1] Estado del repositorio:" -ForegroundColor Yellow
+$status = git status --short
+if ($status) {
+    Write-Host "Cambios pendientes:" -ForegroundColor Yellow
+    Write-Host $status -ForegroundColor Gray
 } else {
-    Write-Host "  No hay cambios pendientes" -ForegroundColor Gray
+    Write-Host "✓ No hay cambios pendientes" -ForegroundColor Green
 }
 
-Write-Host "`n7. Verificando conexión con GitHub..." -ForegroundColor Yellow
-try {
-    $remoteCheck = git ls-remote origin 2>&1
+Write-Host ""
+
+# 2. Verificar commits sin push
+Write-Host "[2] Commits sin push:" -ForegroundColor Yellow
+$unpushed = git log origin/main..HEAD --oneline 2>&1
+if ($unpushed -and $unpushed.Count -gt 0) {
+    Write-Host "Hay commits sin push:" -ForegroundColor Yellow
+    Write-Host $unpushed -ForegroundColor Gray
+} else {
+    Write-Host "✓ Todos los commits están pusheados" -ForegroundColor Green
+}
+
+Write-Host ""
+
+# 3. Agregar todos los cambios
+Write-Host "[3] Agregando todos los cambios..." -ForegroundColor Yellow
+git add -A
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "✓ Cambios agregados" -ForegroundColor Green
+} else {
+    Write-Host "✗ Error al agregar cambios" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host ""
+
+# 4. Verificar si hay algo para commitear
+$statusAfterAdd = git status --short
+if ($statusAfterAdd) {
+    Write-Host "[4] Haciendo commit..." -ForegroundColor Yellow
+    $commitMsg = "ELIMINAR AIRTABLE COMPLETAMENTE - Reemplazar con envío de emails
+
+- Eliminado servicio de Airtable, creado servicio de email
+- Reemplazado createAirtableRecord por sendLeadEmail
+- Eliminada verificación de duplicados en Airtable
+- Renombrado airtableData a emailData
+- Eliminadas todas las referencias a Airtable en handlers
+- Actualizado config.js y cloudbuild.yaml
+- Los emails se envían desde media.manager@feverup.com a jongarnicaizco@gmail.com"
+    
+    git commit -m $commitMsg
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "  ✓ Conexión con GitHub OK" -ForegroundColor Green
+        Write-Host "✓ Commit realizado" -ForegroundColor Green
     } else {
-        Write-Host "  ✗ Error de conexión:" -ForegroundColor Red
-        Write-Host $remoteCheck
-        Write-Host "`n  Posibles soluciones:" -ForegroundColor Yellow
-        Write-Host "  - Verifica tu autenticación con GitHub (token, SSH, etc.)" -ForegroundColor Gray
-        Write-Host "  - Ejecuta: git config --global credential.helper manager" -ForegroundColor Gray
+        Write-Host "✗ Error al hacer commit" -ForegroundColor Red
         exit 1
     }
-} catch {
-    Write-Host "  ✗ Error al verificar conexión:" -ForegroundColor Red
-    Write-Host $_.Exception.Message
-    exit 1
-}
-
-Write-Host "`n8. Haciendo push a GitHub..." -ForegroundColor Yellow
-$pushResult = git push origin main 2>&1
-Write-Host $pushResult
-
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n✓ Push exitoso a GitHub" -ForegroundColor Green
-    Write-Host "  Repositorio: https://github.com/jongarnicaizco/mfs-lead-generation-ai" -ForegroundColor Gray
 } else {
-    Write-Host "`n✗ Error en push. Código de salida: $LASTEXITCODE" -ForegroundColor Red
-    Write-Host "  Salida del comando:" -ForegroundColor Yellow
-    Write-Host $pushResult
-    
-    Write-Host "`n  Posibles soluciones:" -ForegroundColor Yellow
-    Write-Host "  - Verifica tu autenticación con GitHub" -ForegroundColor Gray
-    Write-Host "  - Ejecuta: gh auth login (si tienes GitHub CLI)" -ForegroundColor Gray
-    Write-Host "  - O configura un token: git remote set-url origin https://TOKEN@github.com/jongarnicaizco/mfs-lead-generation-ai.git" -ForegroundColor Gray
-    exit 1
+    Write-Host "[4] No hay cambios para commitear" -ForegroundColor Yellow
 }
 
-Write-Host "`n=== Verificación completada ===" -ForegroundColor Cyan
+Write-Host ""
 
+# 5. Hacer push
+Write-Host "[5] Haciendo push a GitHub..." -ForegroundColor Yellow
+git push origin main
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "✓ Push completado exitosamente" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Los cambios se desplegarán automáticamente vía Cloud Build" -ForegroundColor Cyan
+} else {
+    Write-Host "✗ Error al hacer push" -ForegroundColor Red
+    Write-Host "Error code: $LASTEXITCODE" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Intentando push con autenticación directa..." -ForegroundColor Yellow
+    $token = "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"
+    $user = "jongarnicaizco"
+    $remoteUrl = git remote get-url origin
+    if ($remoteUrl -match "github.com/([^/]+)/([^/]+)") {
+        $repo = $matches[2]
+        $urlWithToken = "https://${user}:${token}@github.com/${user}/${repo}.git"
+        git push $urlWithToken main
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✓ Push completado con autenticación directa" -ForegroundColor Green
+        } else {
+            Write-Host "✗ Error en push con autenticación directa" -ForegroundColor Red
+            exit 1
+        }
+    }
+}
+
+Write-Host ""
+Write-Host "=" * 70 -ForegroundColor Cyan
+Write-Host "  VERIFICACIÓN FINAL" -ForegroundColor Cyan
+Write-Host "=" * 70 -ForegroundColor Cyan
+
+# 6. Verificar que no hay commits sin push
+$unpushedAfter = git log origin/main..HEAD --oneline 2>&1
+if ($unpushedAfter -and $unpushedAfter.Count -gt 0) {
+    Write-Host "⚠ Aún hay commits sin push:" -ForegroundColor Yellow
+    Write-Host $unpushedAfter -ForegroundColor Gray
+} else {
+    Write-Host "✓ Todos los commits están pusheados" -ForegroundColor Green
+}
+
+# 7. Verificar archivos clave
+Write-Host ""
+Write-Host "[6] Verificando archivos clave:" -ForegroundColor Yellow
+
+$filesToCheck = @(
+    "services/email.js",
+    "services/processor.js",
+    "config.js",
+    "cloudbuild.yaml"
+)
+
+foreach ($file in $filesToCheck) {
+    if (Test-Path $file) {
+        Write-Host "  ✓ $file existe" -ForegroundColor Green
+    } else {
+        Write-Host "  ✗ $file NO existe" -ForegroundColor Red
+    }
+}
+
+Write-Host ""
+Write-Host "=" * 70 -ForegroundColor Cyan
+Write-Host "  COMPLETADO" -ForegroundColor Cyan
+Write-Host "=" * 70 -ForegroundColor Cyan

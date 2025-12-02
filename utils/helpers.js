@@ -389,11 +389,17 @@ export function extractToEmail(toHeader, ccHeader, bccHeader, replyToHeader, mai
     return toEmail;
   }
   
-  // Si el To está vacío o no tiene dominio válido, buscar en otros campos
-  if (!toEmail) {
+  // IMPORTANTE: Si el To tiene un email válido (aunque no tenga dominio válido), usarlo primero
+  // Solo buscar en otros campos si el To está completamente vacío
+  if (toEmail && toEmail.trim() !== "") {
+    console.log("[mfs] Email 'To' tiene un email válido aunque no tenga dominio válido:", toEmail);
+    console.log("[mfs] Usando el email del To original (prioridad sobre otros campos)");
+    return toEmail;
+  }
+  
+  // Si el To está vacío, buscar en otros campos
+  if (!toEmail || toEmail.trim() === "") {
     console.log("[mfs] Email 'To' está vacío, buscando en CC, BCC, Reply-To...");
-  } else if (!hasValidDomain(toEmail)) {
-    console.log("[mfs] Email 'To' no tiene dominio válido:", toEmail, "| Buscando en CC, BCC, Reply-To...");
   }
   
   // 2. Si el To no tiene dominio válido, buscar en CC
