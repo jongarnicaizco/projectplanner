@@ -21,7 +21,11 @@ export async function getGmailClient() {
     const clientSecret = await accessSecret("GMAIL_CLIENT_SECRET");
     const refreshToken = await accessSecret("GMAIL_REFRESH_TOKEN");
     
-    const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret);
+    // El redirect URI debe coincidir con el configurado en OAuth Client
+    // Si no está configurado, usa el default
+    const redirectUri = process.env.GMAIL_REDIRECT_URI || "http://localhost:3000/oauth2callback";
+    
+    const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
     oAuth2Client.setCredentials({ refresh_token: refreshToken });
     
     console.log("[mfs] Cliente Gmail OAuth listo");
@@ -33,7 +37,10 @@ export async function getGmailClient() {
     process.env.GOOGLE_CLIENT_EMAIL,
     null,
     (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
-    ["https://www.googleapis.com/auth/gmail.readonly"],
+    [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.send"
+    ],
     CFG.GMAIL_ADDRESS
   );
   

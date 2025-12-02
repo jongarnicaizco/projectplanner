@@ -22,7 +22,7 @@ import {
   checkLockAge,
 } from "./storage.js";
 import { classifyIntent, generateBodySummary, callModelText } from "./vertex.js";
-import { sendLeadEmail } from "./email.js";
+import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
 
 /**
  * Procesa una lista de IDs de mensajes
@@ -446,8 +446,8 @@ export async function processMessageIds(gmail, ids) {
         });
       }
       
-      // Log final antes de enviar email
-      console.log("[mfs] ===== VALORES FINALES PARA ENVIAR POR EMAIL =====");
+      // Log final antes de crear en Airtable
+      console.log("[mfs] ===== VALORES FINALES PARA AIRTABLE =====");
       console.log("[mfs] from (final):", JSON.stringify(from));
       console.log("[mfs] to (final):", JSON.stringify(to));
       console.log("[mfs] from !== to?", from !== to);
@@ -538,75 +538,81 @@ export async function processMessageIds(gmail, ids) {
         preview: bodySummary?.slice(0, 100) || "(vacío)",
       });
 
-      // Crear objeto explícito para enviar por email
-      // Convertir todos los valores a strings para evitar problemas de tipo
-      const emailData = {
-        id: String(id || ""),
-        from: String(from || ""),
-        to: String(to || ""),
-        cc: String(cc || ""),
-        subject: String(subject || ""),
-        body: String(body || ""),
-        bodySummary: String(bodySummary || ""),
-        timestamp: String(timestamp || ""),
-        intent: String(intent || "Discard"),
-        confidence: typeof confidence === "number" ? confidence : 0,
-        reasoning: String(reasoning || ""),
-        meddicMetrics: String(meddicMetrics || ""),
-        meddicEconomicBuyer: String(meddicEconomicBuyer || ""),
-        meddicDecisionCriteria: String(meddicDecisionCriteria || ""),
-        meddicDecisionProcess: String(meddicDecisionProcess || ""),
-        meddicIdentifyPain: String(meddicIdentifyPain || ""),
-        meddicChampion: String(meddicChampion || ""),
-        isFreeCoverage: Boolean(isFreeCoverage),
-        isBarter: Boolean(isBarter),
-        isPricing: Boolean(isPricing),
-        senderName: String(senderName || ""),
-        senderFirstName: String(senderFirstName || ""),
-        language: String(language || "en"),
-        location: location ? {
-          city: String(location.city || ""),
-          country: String(location.country || ""),
-          countryCode: String(location.countryCode || ""),
-        } : null,
-      };
-      
-      // Log final antes de enviar email
-      console.log("[mfs] ===== DATOS PARA ENVIAR POR EMAIL =====");
-      console.log("[mfs] from:", JSON.stringify(emailData.from));
-      console.log("[mfs] to:", JSON.stringify(emailData.to));
-      console.log("[mfs] from !== to?", emailData.from !== emailData.to);
-      console.log("[mfs] subject:", emailData.subject?.substring(0, 100));
-      
-      // Enviar email con todos los datos
-      const emailResult = await sendLeadEmail(emailData);
-
-      if (emailResult.success) {
-        console.log("[mfs] ✓ Email enviado exitosamente:", {
+      // Verificar si ya existe en Airtable (evitar duplicados)
+      const existingRecord = await airtableFindByEmailId(id);
+      if (existingRecord) {
+        console.log("[mfs] Email ya existe en Airtable, saltando:", {
           emailId: id,
-          messageId: emailResult.messageId,
+          airtableId: existingRecord.id,
+        });
+        results.push({
+          id,
+          airtableId: existingRecord.id,
+          intent,
+          confidence,
+          skipped: true,
+        });
+        await releaseMessageLock(id);
+        continue;
+      }
+
+      // Log final antes de crear en Airtable
+      console.log("[mfs] ===== VALORES FINALES PARA AIRTABLE =====");
+      console.log("[mfs] from (final):", JSON.stringify(from));
+      console.log("[mfs] to (final):", JSON.stringify(to));
+      console.log("[mfs] from !== to?", from !== to);
+
+      // Crear registro en Airtable
+      const airtableRecord = await createAirtableRecord({
+        id,
+        from,
+        to,
+        cc,
+        subject,
+        body,
+        bodySummary,
+        timestamp,
+        intent,
+        confidence,
+        reasoning,
+        meddicMetrics,
+        meddicEconomicBuyer,
+        meddicDecisionCriteria,
+        meddicDecisionProcess,
+        meddicIdentifyPain,
+        meddicChampion,
+        isFreeCoverage,
+        isBarter,
+        isPricing,
+        senderName,
+        senderFirstName,
+        language,
+        location,
+      });
+
+      if (airtableRecord?.id) {
+        console.log("[mfs] ✓ Registro creado en Airtable:", {
+          emailId: id,
+          airtableId: airtableRecord.id,
           intent,
         });
       } else {
-        console.error("[mfs] ✗ Error: No se pudo enviar el email", {
+        console.error("[mfs] ✗ Error: No se pudo crear registro en Airtable", {
           emailId: id,
           intent,
-          error: emailResult.error,
         });
       }
 
-      results.push({ 
-        id, 
-        emailSent: emailResult.success, 
-        messageId: emailResult.messageId,
-        intent, 
-        confidence 
+      results.push({
+        id,
+        airtableId: airtableRecord?.id || null,
+        intent,
+        confidence,
       });
 
       console.log("[mfs] Fin de procesado para mensaje:", {
         id,
-        emailSent: emailResult.success,
-        messageId: emailResult.messageId,
+        airtableId: airtableRecord?.id || null,
         intent,
         confidence,
       });

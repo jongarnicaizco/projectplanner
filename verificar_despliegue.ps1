@@ -1,98 +1,90 @@
-# Script para verificar que el despliegue está configurado correctamente desde GitHub
-Write-Host "`n=== Verificando configuración de despliegue ===" -ForegroundColor Cyan
+# Script para verificar el despliegue en Google Cloud
+$ErrorActionPreference = "Continue"
 
-$project = "check-in-sf"
-$service = "mfs-lead-generation-ai"
+Write-Host "=" * 70 -ForegroundColor Cyan
+Write-Host "  VERIFICACIÓN DE DESPLIEGUE" -ForegroundColor Cyan
+Write-Host "=" * 70 -ForegroundColor Cyan
+Write-Host ""
 
-# 1. Verificar repositorio Git
-Write-Host "`n1. Verificando repositorio Git..." -ForegroundColor Yellow
-$remoteUrl = git remote get-url origin 2>&1
-if ($remoteUrl -match "github") {
-    Write-Host "  ✓ Repositorio remoto: $remoteUrl" -ForegroundColor Green
+# 1. Verificar push a GitHub
+Write-Host "[1] Verificando push a GitHub..." -ForegroundColor Yellow
+git fetch origin 2>&1 | Out-Null
+$localCommit = git log --oneline -1 2>&1
+$remoteCommit = git log origin/main --oneline -1 2>&1
+
+Write-Host "Commit local:  $localCommit" -ForegroundColor Cyan
+Write-Host "Commit remoto: $remoteCommit" -ForegroundColor Cyan
+
+if ($localCommit -eq $remoteCommit) {
+    Write-Host "✓ Push completado" -ForegroundColor Green
 } else {
-    Write-Host "  ✗ Repositorio remoto no es GitHub: $remoteUrl" -ForegroundColor Red
+    Write-Host "⚠ Push pendiente - Los commits no coinciden" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Ejecuta primero: git push origin main" -ForegroundColor Yellow
+    exit 1
 }
 
-# 2. Verificar últimos commits
-Write-Host "`n2. Últimos commits:" -ForegroundColor Yellow
-$commits = git log --oneline -5 2>&1
-$commits | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+Write-Host ""
 
-# 3. Verificar si hay cambios sin commitear
-Write-Host "`n3. Verificando cambios pendientes..." -ForegroundColor Yellow
-$status = git status --short 2>&1
-if ($status) {
-    Write-Host "  ⚠ Hay cambios sin commitear:" -ForegroundColor Yellow
-    $status | ForEach-Object { Write-Host "    $_" -ForegroundColor Gray }
-} else {
-    Write-Host "  ✓ No hay cambios pendientes" -ForegroundColor Green
-}
+# 2. Verificar Cloud Build
+Write-Host "[2] Verificando builds de Cloud Build..." -ForegroundColor Yellow
+$builds = gcloud builds list --limit=5 --format="table(id,status,createTime,source.repoSource.commitSha)" 2>&1
 
-# 4. Verificar Cloud Build Triggers
-Write-Host "`n4. Verificando Cloud Build Triggers..." -ForegroundColor Yellow
-$triggers = gcloud builds triggers list --project=$project --format=json 2>&1 | ConvertFrom-Json
-
-if ($triggers) {
-    $mfsTriggers = $triggers | Where-Object { 
-        $_.name -like "*mfs*" -or 
-        ($_.github -and ($_.github.name -like "*mfs*" -or $_.github.name -like "*lead*"))
-    }
+if ($LASTEXITCODE -eq 0) {
+    Write-Host $builds
+    Write-Host ""
+    Write-Host "Buscando build más reciente..." -ForegroundColor Cyan
     
-    if ($mfsTriggers) {
-        Write-Host "  ✓ Triggers encontrados:" -ForegroundColor Green
-        $mfsTriggers | ForEach-Object {
-            Write-Host "    - $($_.name)" -ForegroundColor Gray
-            if ($_.github) {
-                Write-Host "      Repo: $($_.github.owner)/$($_.github.name)" -ForegroundColor Gray
-                Write-Host "      Branch: $($_.github.push.branch)" -ForegroundColor Gray
-                Write-Host "      Config: $($_.filename)" -ForegroundColor Gray
-            }
-        }
-    } else {
-        Write-Host "  ⚠ No se encontraron triggers para mfs-lead-generation-ai" -ForegroundColor Yellow
-        Write-Host "  Todos los triggers:" -ForegroundColor Gray
-        $triggers | ForEach-Object { Write-Host "    - $($_.name)" -ForegroundColor Gray }
+    $latestBuild = gcloud builds list --limit=1 --format="json" 2>&1 | ConvertFrom-Json
+    if ($latestBuild) {
+        Write-Host "Estado del build más reciente: $($latestBuild[0].status)" -ForegroundColor Cyan
+        Write-Host "Commit: $($latestBuild[0].source.repoSource.commitSha)" -ForegroundColor Gray
     }
 } else {
-    Write-Host "  ⚠ No se pudieron obtener los triggers" -ForegroundColor Yellow
+    Write-Host "⚠ Error obteniendo builds: $builds" -ForegroundColor Yellow
 }
 
-# 5. Verificar Cloud Run service
-Write-Host "`n5. Verificando servicio Cloud Run..." -ForegroundColor Yellow
-$serviceInfo = gcloud run services describe $service --region=us-central1 --project=$project --format=json 2>&1 | ConvertFrom-Json
+Write-Host ""
 
-if ($serviceInfo) {
-    Write-Host "  ✓ Servicio encontrado: $service" -ForegroundColor Green
-    Write-Host "    URL: $($serviceInfo.status.url)" -ForegroundColor Gray
-    Write-Host "    Última revisión: $($serviceInfo.status.latestReadyRevisionName)" -ForegroundColor Gray
-    Write-Host "    Imagen: $($serviceInfo.spec.template.spec.containers[0].image)" -ForegroundColor Gray
+# 3. Verificar estado del servicio Cloud Run
+Write-Host "[3] Verificando estado del servicio Cloud Run..." -ForegroundColor Yellow
+$service = gcloud run services describe mfs-lead-generation-ai --region=europe-west1 --format="json" 2>&1 | ConvertFrom-Json
+
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "✓ Servicio encontrado" -ForegroundColor Green
+    Write-Host "  URL: $($service.status.url)" -ForegroundColor Cyan
+    Write-Host "  Estado: $($service.status.conditions[0].status)" -ForegroundColor Cyan
+    Write-Host "  Revisión: $($service.status.latestReadyRevisionName)" -ForegroundColor Gray
+    Write-Host "  Imagen: $($service.spec.template.spec.containers[0].image)" -ForegroundColor Gray
 } else {
-    Write-Host "  ✗ Servicio no encontrado" -ForegroundColor Red
+    Write-Host "⚠ Error obteniendo información del servicio" -ForegroundColor Yellow
 }
 
-# 6. Verificar últimos builds
-Write-Host "`n6. Últimos builds de Cloud Build..." -ForegroundColor Yellow
-$builds = gcloud builds list --project=$project --limit=5 --format=json 2>&1 | ConvertFrom-Json
+Write-Host ""
 
-if ($builds) {
-    $mfsBuilds = $builds | Where-Object { $_.source.repoSource.repoName -like "*mfs*" -or $_.substitutions._SERVICE_NAME -eq "mfs-lead-generation-ai" }
-    if ($mfsBuilds) {
-        $mfsBuilds | ForEach-Object {
-            Write-Host "  [$($_.createTime)] $($_.status) - $($_.id)" -ForegroundColor Gray
-            if ($_.source.repoSource) {
-                Write-Host "    Repo: $($_.source.repoSource.repoName)" -ForegroundColor Gray
-                Write-Host "    Branch: $($_.source.repoSource.branchName)" -ForegroundColor Gray
-            }
+# 4. Verificar variables de entorno
+Write-Host "[4] Verificando variables de entorno..." -ForegroundColor Yellow
+$envVars = gcloud run services describe mfs-lead-generation-ai --region=europe-west1 --format="value(spec.template.spec.containers[0].env)" 2>&1
+
+if ($envVars) {
+    Write-Host "Variables de entorno configuradas:" -ForegroundColor Cyan
+    $envVars | ForEach-Object {
+        if ($_ -match "EMAIL_FROM|EMAIL_TO") {
+            Write-Host "  ✓ $_" -ForegroundColor Green
+        } elseif ($_ -match "AIRTABLE") {
+            Write-Host "  ✗ $_ (debe ser eliminada)" -ForegroundColor Red
         }
-    } else {
-        Write-Host "  ⚠ No se encontraron builds recientes para mfs-lead-generation-ai" -ForegroundColor Yellow
     }
+} else {
+    Write-Host "⚠ No se pudieron obtener las variables de entorno" -ForegroundColor Yellow
 }
 
-Write-Host "`n=== Resumen ===" -ForegroundColor Cyan
-Write-Host "Para desplegar desde GitHub:" -ForegroundColor Yellow
-Write-Host "1. Asegúrate de que los cambios están en GitHub (git push origin main)" -ForegroundColor White
-Write-Host "2. Verifica que hay un Cloud Build Trigger configurado para el repositorio" -ForegroundColor White
-Write-Host "3. El trigger debe apuntar a cloudbuild.yaml en la rama main" -ForegroundColor White
-Write-Host "`n=== Fin ===" -ForegroundColor Cyan
-
+Write-Host ""
+Write-Host "=" * 70 -ForegroundColor Cyan
+Write-Host "  RESUMEN" -ForegroundColor Cyan
+Write-Host "=" * 70 -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Si Cloud Build detectó el push, debería estar desplegando automáticamente." -ForegroundColor Cyan
+Write-Host "Puedes ver el progreso en:" -ForegroundColor Cyan
+Write-Host "https://console.cloud.google.com/cloud-build/builds?project=$(gcloud config get-value project)" -ForegroundColor White
+Write-Host ""
