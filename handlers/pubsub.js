@@ -2,7 +2,7 @@
  * Handler de Pub/Sub para notificaciones de Gmail
  */
 import { getGmailClient, getGmailSenderClient, getNewInboxMessageIdsFromHistory } from "../services/gmail.js";
-import { writeHistoryState } from "../services/storage.js";
+import { writeHistoryState, writeHistoryStateSender } from "../services/storage.js";
 import { processMessageIds } from "../services/processor.js";
 import { logErr } from "../utils/helpers.js";
 
@@ -64,9 +64,9 @@ export async function handlePubSub(req, res) {
       console.log("[mfs] _pubsub: Procesando emails de secretmedia@feverup.com...");
       const gmailSender = await getGmailSenderClient();
       
-      // Obtener mensajes nuevos de la cuenta SENDER
+      // Obtener mensajes nuevos de la cuenta SENDER (usando estado separado)
       const { ids: senderIds, newHistoryId: senderHistoryId, usedFallback: senderUsedFallback } =
-        await getNewInboxMessageIdsFromHistory(gmailSender, notifHistoryId);
+        await getNewInboxMessageIdsFromHistory(gmailSender, notifHistoryId, true); // useSenderState = true
 
       console.log("[mfs] _pubsub: IDs que voy a procesar ahora (cuenta SENDER):", {
         count: senderIds.length,
@@ -89,14 +89,20 @@ export async function handlePubSub(req, res) {
       // Continuar aunque falle la cuenta SENDER
     }
 
-    // 3) Actualizamos historyId
+    // 3) Actualizamos historyId de la cuenta principal
     if (newHistoryId) {
-      console.log("[mfs] _pubsub: actualizo historyId guardado →", newHistoryId);
+      console.log("[mfs] _pubsub: actualizo historyId guardado (cuenta principal) →", newHistoryId);
       await writeHistoryState(newHistoryId);
     } else {
       console.log(
         "[mfs] _pubsub: no actualizo historyId (fallback o error de history)"
       );
+    }
+
+    // 4) Actualizamos historyId de la cuenta SENDER (si se procesó)
+    if (senderHistoryId) {
+      console.log("[mfs] _pubsub: actualizo historyId guardado (cuenta SENDER) →", senderHistoryId);
+      await writeHistoryStateSender(senderHistoryId);
     }
 
     return res.status(204).send();

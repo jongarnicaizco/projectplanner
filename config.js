@@ -18,9 +18,11 @@ export const CFG = {
 
   // Pub/Sub + estado
   PUBSUB_TOPIC: process.env.PUBSUB_TOPIC || "mfs-gmail-leads",
+  PUBSUB_TOPIC_SENDER: process.env.PUBSUB_TOPIC_SENDER || "mfs-gmail-leads-sender",
   PUBSUB_PROJECT_ID: process.env.PUBSUB_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || process.env.PROJECT_ID,
   GCS_BUCKET: process.env.GCS_BUCKET,
   STATE_OBJECT: process.env.STATE_OBJECT || "state/gmail_history.json",
+  STATE_OBJECT_SENDER: process.env.STATE_OBJECT_SENDER || "state/gmail_history_sender.json",
   RESET_ON_START: (process.env.RESET_ON_START || "false")
     .toLowerCase()
     .includes("true"),

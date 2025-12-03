@@ -9,8 +9,8 @@
 import express from "express";
 import functions from "@google-cloud/functions-framework";
 import { CFG } from "./config.js";
-import { getGmailClient, getGmailSenderClient, setupWatch } from "./services/gmail.js";
-import { clearHistoryState, writeHistoryState } from "./services/storage.js";
+import { getGmailClient, getGmailSenderClient, setupWatch, setupWatchSender } from "./services/gmail.js";
+import { clearHistoryState, writeHistoryState, clearHistoryStateSender } from "./services/storage.js";
 import { backoff, logErr } from "./utils/helpers.js";
 import { handlePubSub } from "./handlers/pubsub.js";
 import {
@@ -59,21 +59,51 @@ app.get("/vertex/status", (_req, res) => {
 app.post("/reset", async (_req, res) => {
   try {
     console.log("[mfs] /reset → reiniciando watch e historia de Gmail");
-    const gmail = await getGmailClient();
-    await clearHistoryState();
-
-    const watchResp = await setupWatch(gmail);
-    const hist = String(watchResp.historyId || "");
-
-    if (hist) {
-      await writeHistoryState(hist);
-      console.log("[mfs] /reset completado. Nuevo historyId:", hist);
+    const results = {};
+    
+    // Reset cuenta principal
+    try {
+      const gmail = await getGmailClient();
+      await clearHistoryState();
+      const watchResp = await setupWatch(gmail);
+      const hist = String(watchResp.historyId || "");
+      if (hist) {
+        await writeHistoryState(hist);
+        console.log("[mfs] /reset completado (cuenta principal). Nuevo historyId:", hist);
+      }
+      results.principal = {
+        ok: true,
+        historyId: hist,
+        labelFilterIds: ["INBOX"],
+      };
+    } catch (e) {
+      logErr("reset error (cuenta principal):", e);
+      results.principal = { error: e?.response?.data || e?.message };
+    }
+    
+    // Reset cuenta SENDER
+    try {
+      const gmailSender = await getGmailSenderClient();
+      await clearHistoryStateSender();
+      const watchRespSender = await setupWatchSender(gmailSender);
+      const histSender = String(watchRespSender.historyId || "");
+      if (histSender) {
+        await writeHistoryStateSender(histSender);
+        console.log("[mfs] /reset completado (cuenta SENDER). Nuevo historyId:", histSender);
+      }
+      results.sender = {
+        ok: true,
+        historyId: histSender,
+        labelFilterIds: ["INBOX"],
+      };
+    } catch (e) {
+      logErr("reset error (cuenta SENDER):", e);
+      results.sender = { error: e?.response?.data || e?.message };
     }
 
     res.json({
-      ok: true,
-      historyId: hist,
-      labelFilterIds: ["INBOX"],
+      ok: results.principal?.ok && results.sender?.ok,
+      ...results,
     });
   } catch (e) {
     logErr("reset error:", e);
@@ -229,17 +259,50 @@ app.post("/force-process", async (_req, res) => {
 app.post("/watch", async (_req, res) => {
   try {
     console.log("[mfs] /watch → configurando watch en Gmail");
-    const gmail = await getGmailClient();
-    const resp = await setupWatch(gmail);
+    const results = {};
     
-    if (resp && resp.historyId) {
-      res.json({
+    // Configurar watch para cuenta principal
+    try {
+      const gmail = await getGmailClient();
+      const resp = await setupWatch(gmail);
+      results.principal = resp && resp.historyId ? {
         ...resp,
-        message: "Gmail Watch configurado correctamente. Procesamiento en tiempo real activo.",
+        message: "Gmail Watch configurado correctamente para cuenta principal.",
+      } : {
+        message: "Gmail Watch no se pudo configurar para cuenta principal (topic no existe en el proyecto requerido).",
+        warning: true,
+      };
+    } catch (e) {
+      logErr("watch error (cuenta principal):", e);
+      results.principal = { error: e?.response?.data || e?.message };
+    }
+    
+    // Configurar watch para cuenta SENDER
+    try {
+      const gmailSender = await getGmailSenderClient();
+      const respSender = await setupWatchSender(gmailSender);
+      results.sender = respSender && respSender.historyId ? {
+        ...respSender,
+        message: "Gmail Watch configurado correctamente para cuenta SENDER.",
+      } : {
+        message: "Gmail Watch no se pudo configurar para cuenta SENDER (topic no existe en el proyecto requerido).",
+        warning: true,
+      };
+    } catch (e) {
+      logErr("watch error (cuenta SENDER):", e);
+      results.sender = { error: e?.response?.data || e?.message };
+    }
+    
+    const allSuccess = results.principal?.historyId && results.sender?.historyId;
+    if (allSuccess) {
+      res.json({
+        ...results,
+        message: "Gmail Watch configurado correctamente para ambas cuentas. Procesamiento en tiempo real activo.",
       });
     } else {
       res.status(200).json({
-        message: "Gmail Watch no se pudo configurar (topic no existe en el proyecto requerido). El procesamiento seguirá funcionando vía Cloud Scheduler cada 10 minutos.",
+        ...results,
+        message: "Gmail Watch configurado parcialmente. Verifica los detalles arriba.",
         warning: true,
       });
     }
@@ -299,19 +362,43 @@ if (
         console.log(
           "[mfs] RESET_ON_START activo → reseteo watch e historyId al arrancar"
         );
-        const gmail = await getGmailClient();
-        await clearHistoryState();
-        const watchResp = await setupWatch(gmail);
-        const hist = String(watchResp.historyId || "");
-
-        if (hist) {
-          await writeHistoryState(hist);
-          console.log(
-            "[mfs] RESET_ON_START completado. historyId:",
-            hist,
-            "labelFilterIds:",
-            ["INBOX"]
-          );
+        
+        // Reset cuenta principal
+        try {
+          const gmail = await getGmailClient();
+          await clearHistoryState();
+          const watchResp = await setupWatch(gmail);
+          const hist = String(watchResp.historyId || "");
+          if (hist) {
+            await writeHistoryState(hist);
+            console.log(
+              "[mfs] RESET_ON_START completado (cuenta principal). historyId:",
+              hist,
+              "labelFilterIds:",
+              ["INBOX"]
+            );
+          }
+        } catch (e) {
+          logErr("[mfs] RESET_ON_START error (cuenta principal):", e);
+        }
+        
+        // Reset cuenta SENDER
+        try {
+          const gmailSender = await getGmailSenderClient();
+          await clearHistoryStateSender();
+          const watchRespSender = await setupWatchSender(gmailSender);
+          const histSender = String(watchRespSender.historyId || "");
+          if (histSender) {
+            await writeHistoryStateSender(histSender);
+            console.log(
+              "[mfs] RESET_ON_START completado (cuenta SENDER). historyId:",
+              histSender,
+              "labelFilterIds:",
+              ["INBOX"]
+            );
+          }
+        } catch (e) {
+          logErr("[mfs] RESET_ON_START error (cuenta SENDER):", e);
         }
       } catch (e) {
         logErr("[mfs] RESET_ON_START error:", e);

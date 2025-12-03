@@ -74,6 +74,54 @@ export async function clearHistoryState() {
 }
 
 /**
+ * Lee el estado del historyId de la cuenta SENDER desde GCS
+ */
+export async function readHistoryStateSender() {
+  if (!CFG.GCS_BUCKET) return null;
+
+  try {
+    const [buf] = await storage
+      .bucket(CFG.GCS_BUCKET)
+      .file(CFG.STATE_OBJECT_SENDER)
+      .download();
+    const j = JSON.parse(buf.toString("utf8"));
+    return j.historyId || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Escribe el estado del historyId de la cuenta SENDER en GCS
+ */
+export async function writeHistoryStateSender(historyId) {
+  if (!CFG.GCS_BUCKET) return;
+
+  await saveToGCS(
+    CFG.STATE_OBJECT_SENDER,
+    JSON.stringify({ historyId, updatedAt: new Date().toISOString() }, null, 2),
+    "application/json"
+  );
+}
+
+/**
+ * Borra el estado del historyId de la cuenta SENDER
+ */
+export async function clearHistoryStateSender() {
+  if (!CFG.GCS_BUCKET) return;
+
+  try {
+    await storage
+      .bucket(CFG.GCS_BUCKET)
+      .file(CFG.STATE_OBJECT_SENDER)
+      .delete({ ignoreNotFound: true });
+    console.log("[mfs] Estado de historyId SENDER borrado en GCS");
+  } catch (e) {
+    console.warn("[mfs] Aviso borrando estado de historyId SENDER:", e?.message || e);
+  }
+}
+
+/**
  * Adquiere un lock por messageId para evitar duplicados
  */
 export async function acquireMessageLock(messageId) {

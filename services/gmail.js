@@ -8,6 +8,8 @@ import { backoff } from "../utils/helpers.js";
 import {
   readHistoryState,
   writeHistoryState,
+  readHistoryStateSender,
+  writeHistoryStateSender,
 } from "./storage.js";
 
 /**
@@ -116,9 +118,12 @@ export async function getGmailClient() {
 
 /**
  * Obtiene todos los mensajes nuevos en INBOX desde el último historyId
+ * @param {Object} gmail - Cliente de Gmail
+ * @param {string} notifHistoryId - HistoryId de la notificación de Pub/Sub
+ * @param {boolean} useSenderState - Si es true, usa el estado de la cuenta SENDER
  */
-export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId) {
-  let startHistoryId = await readHistoryState();
+export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, useSenderState = false) {
+  let startHistoryId = useSenderState ? await readHistoryStateSender() : await readHistoryState();
 
   // Si no hay historyId guardado, hacemos fallback inicial
   if (!startHistoryId) {
@@ -133,7 +138,11 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId) {
       );
       const profHist = prof.data.historyId;
       if (profHist) {
-        await writeHistoryState(String(profHist));
+        if (useSenderState) {
+          await writeHistoryStateSender(String(profHist));
+        } else {
+          await writeHistoryState(String(profHist));
+        }
         startHistoryId = String(profHist);
         console.log(
           "[mfs] [history] historyId inicial guardado desde getProfile:",
@@ -350,6 +359,23 @@ export async function setupWatch(gmail) {
       "users.watch"
     );
     
+    const hist = String(watchResp.data.historyId || "");
+    if (hist) {
+      await writeHistoryState(hist);
+      console.log("[mfs] Watch configurado. historyId:", hist);
+    } else {
+      // Fallback: obtener del perfil
+      const prof = await backoff(
+        () => gmail.users.getProfile({ userId: "me" }),
+        "users.getProfile"
+      );
+      const profHist = String(prof.data.historyId || "");
+      if (profHist) {
+        await writeHistoryState(profHist);
+        console.log("[mfs] historyId tomado de getProfile:", profHist);
+      }
+    }
+
     return watchResp.data;
   } catch (error) {
     // Si el topic no existe en el proyecto requerido, loguear el error pero no fallar
@@ -368,25 +394,68 @@ export async function setupWatch(gmail) {
     // Para otros errores, relanzar
     throw error;
   }
+}
 
-  const hist = String(watchResp.data.historyId || "");
-  if (hist) {
-    await writeHistoryState(hist);
-    console.log("[mfs] Watch configurado. historyId:", hist);
-  } else {
-    // Fallback: obtener del perfil
-    const prof = await backoff(
-      () => gmail.users.getProfile({ userId: "me" }),
-      "users.getProfile"
+/**
+ * Configura el watch de Gmail para la cuenta SENDER (secretmedia@feverup.com)
+ */
+export async function setupWatchSender(gmailSender) {
+  // Gmail Watch requiere que el topic esté en el proyecto asociado a la cuenta de Gmail
+  // Para la cuenta SENDER, usamos check-in-sf
+  const pubsubProjectId = CFG.PROJECT_ID; // check-in-sf
+  const topicName = `projects/${pubsubProjectId}/topics/${CFG.PUBSUB_TOPIC_SENDER}`;
+  
+  console.log("[mfs] Configurando Gmail Watch SENDER con topic:", topicName);
+  
+  try {
+    const watchResp = await backoff(
+      () =>
+        gmailSender.users.watch({
+          userId: "me",
+          requestBody: {
+            topicName: topicName,
+            labelIds: ["INBOX"],
+            labelFilterAction: "include",
+          },
+        }),
+      "users.watch.sender"
     );
-    const profHist = String(prof.data.historyId || "");
-    if (profHist) {
-      await writeHistoryState(profHist);
-      console.log("[mfs] historyId tomado de getProfile:", profHist);
+    
+    const hist = String(watchResp.data.historyId || "");
+    if (hist) {
+      await writeHistoryStateSender(hist);
+      console.log("[mfs] Watch SENDER configurado. historyId:", hist);
+    } else {
+      // Fallback: obtener del perfil
+      const prof = await backoff(
+        () => gmailSender.users.getProfile({ userId: "me" }),
+        "users.getProfile.sender"
+      );
+      const profHist = String(prof.data.historyId || "");
+      if (profHist) {
+        await writeHistoryStateSender(profHist);
+        console.log("[mfs] historyId SENDER tomado de getProfile:", profHist);
+      }
     }
-  }
 
-  return watchResp.data;
+    return watchResp.data;
+  } catch (error) {
+    // Si el topic no existe en el proyecto requerido, loguear el error pero no fallar
+    const errorMsg = error?.message || String(error);
+    if (errorMsg.includes("Invalid topicName") || errorMsg.includes("does not match")) {
+      console.warn(
+        `[mfs] No se pudo configurar Gmail Watch SENDER: el topic ${topicName} no existe o no está en el proyecto correcto.`,
+        "El procesamiento seguirá funcionando vía Cloud Scheduler cada 10 minutos."
+      );
+      console.warn(
+        `[mfs] Para habilitar procesamiento en tiempo real, crea el topic en el proyecto: ${pubsubProjectId}`
+      );
+      // Retornar null para indicar que el watch no se configuró, pero no fallar
+      return { historyId: null, expiration: null };
+    }
+    // Para otros errores, relanzar
+    throw error;
+  }
 }
 
 /**
