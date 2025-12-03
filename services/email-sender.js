@@ -159,3 +159,185 @@ export async function sendTestEmail(emailId) {
   }
 }
 
+/**
+ * Genera el template de email para barter request
+ * @param {string} firstName - Primer nombre del cliente
+ * @param {string} brandName - Nombre de la marca/empresa
+ */
+function generateBarterEmailTemplate(firstName, brandName) {
+  return `Hi ${firstName || "[First Name]"},
+
+Thank you so much for reaching out and for thinking of Secret Media Network.
+
+I really appreciate your proposal to collaborate on a barter basis. To protect the trust we have with our readers, our editorial team operates fully independently and doesn't participate in barter or value-in-kind arrangements. Any sponsored or branded content is handled separately by our commercial partnerships team under clear paid programs.
+
+I completely understand why you'd explore a barter collaboration, especially when you're already investing in your product and experiences. Many of our partners felt the same way at first—they wanted to test the waters without committing to a large media budget. What they found is that structured paid campaigns, with clear content deliverables and guaranteed impressions, gave them much more predictable results and a stronger return on investment than one-off barter features.
+
+For businesses like yours, we usually recommend:
+
+- Content Creation: our team creates a dedicated, on-brand article and supporting assets (for example, a feature on our site, social posts, and/or newsletter placements).
+
+- Guaranteed Impressions: we promote that content across Secret Media Network channels until it reaches an agreed number of impressions, so you know exactly what reach you're getting.
+
+We can adapt the format (evergreen guide, spotlight article, launch feature, etc.) depending on whether your main goal is bookings, sales, or awareness.
+
+If you'd like, I'd be happy to put together a short proposal with options and pricing tailored to ${brandName || "[Brand Name]"} and your timelines, or jump on a quick call to walk you through what similar partners have achieved with us.
+
+Looking forward to hearing your thoughts.
+
+Best regards,
+
+Secret Media Network`;
+}
+
+/**
+ * Genera el template de email para free coverage request
+ * @param {string} firstName - Primer nombre del cliente
+ * @param {string} brandName - Nombre de la marca/empresa
+ */
+function generateFreeCoverageEmailTemplate(firstName, brandName) {
+  return `Hi ${firstName || "[First Name]"},
+
+Thank you so much for reaching out. I've passed your note and key details along to our editorial team so they can consider it for future coverage. Because our editors independently decide what to feature based on newsworthiness, timing, and overall fit for our readers, we're not able to guarantee coverage or a specific timeline—but they will review it as part of their regular planning.
+
+I completely understand that you're hoping to gain some organic exposure. Many of the local businesses we speak with feel the same way—they'd love to be featured editorially when they have a great story to tell. What they've found, however, is that relying only on earned media can be unpredictable: even strong stories sometimes don't line up with the editorial calendar, competing news, or space constraints.
+
+For businesses that want more certainty, we usually recommend exploring our paid partnership options. Through our Content Creation offering, our team develops a dedicated, on-brand feature about ${brandName || "[Brand Name]"}. With Guaranteed Impressions, we then promote that content across Secret Media Network channels until it reaches an agreed number of impressions—so instead of hoping for coverage, you know in advance the minimum reach you're getting.
+
+If you'd like, I'd be happy to share a short proposal with formats and pricing tailored to you and your goals, or we can jump on a quick call to walk through what similar partners have done with us.
+
+Thanks again for thinking of Secret Media Network, and I look forward to hearing your thoughts.
+
+Best regards,
+
+Secret Media Network`;
+}
+
+/**
+ * Envía un email de barter request a jongarnicaizco@gmail.com (TEST - NO se envía al cliente)
+ * @param {string} emailId - ID del email que se está procesando (para logging)
+ * @param {string} firstName - Primer nombre del cliente
+ * @param {string} brandName - Nombre de la marca/empresa (se extrae del from o subject si no está disponible)
+ */
+export async function sendBarterEmail(emailId, firstName, brandName) {
+  try {
+    console.log("[mfs] ===== INICIANDO ENVÍO DE EMAIL BARTER (TEST) =====");
+    console.log("[mfs] Email ID procesado:", emailId);
+    console.log("[mfs] Destinatario: jongarnicaizco@gmail.com (TEST - NO se envía al cliente)");
+    console.log("[mfs] Remitente: secretmedia@feverup.com");
+    console.log("[mfs] Tipo: Barter Request");
+    
+    const gmail = await getEmailSenderClient();
+    
+    const from = "secretmedia@feverup.com";
+    const to = "jongarnicaizco@gmail.com"; // IMPORTANTE: Solo a jongarnicaizco@gmail.com, NO al cliente
+    const subject = `TEST - Barter Request Response for ${brandName || "Client"}`;
+    const body = generateBarterEmailTemplate(firstName, brandName);
+    
+    const messageHeaders = [
+      `To: ${to}`,
+      `From: ${from}`,
+      `Subject: ${subject}`,
+      `Content-Type: text/plain; charset=utf-8`,
+    ];
+    
+    messageHeaders.push("");
+    messageHeaders.push(body);
+    
+    const message = messageHeaders.join("\n");
+    const encodedMessage = Buffer.from(message)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    
+    const response = await gmail.users.messages.send({
+      userId: "me",
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+    
+    console.log("[mfs] ===== EMAIL BARTER (TEST) ENVIADO EXITOSAMENTE =====");
+    console.log("[mfs] Message ID:", response.data.id);
+    console.log("[mfs] Thread ID:", response.data.threadId);
+    
+    return {
+      success: true,
+      messageId: response.data.id,
+      threadId: response.data.threadId,
+    };
+  } catch (error) {
+    console.error("[mfs] ===== ERROR ENVIANDO EMAIL BARTER (TEST) =====");
+    console.error("[mfs] Error:", error?.message || error);
+    return {
+      success: false,
+      error: error?.message || "Unknown error",
+    };
+  }
+}
+
+/**
+ * Envía un email de free coverage request a jongarnicaizco@gmail.com (TEST - NO se envía al cliente)
+ * @param {string} emailId - ID del email que se está procesando (para logging)
+ * @param {string} firstName - Primer nombre del cliente
+ * @param {string} brandName - Nombre de la marca/empresa (se extrae del from o subject si no está disponible)
+ */
+export async function sendFreeCoverageEmail(emailId, firstName, brandName) {
+  try {
+    console.log("[mfs] ===== INICIANDO ENVÍO DE EMAIL FREE COVERAGE (TEST) =====");
+    console.log("[mfs] Email ID procesado:", emailId);
+    console.log("[mfs] Destinatario: jongarnicaizco@gmail.com (TEST - NO se envía al cliente)");
+    console.log("[mfs] Remitente: secretmedia@feverup.com");
+    console.log("[mfs] Tipo: Free Coverage Request");
+    
+    const gmail = await getEmailSenderClient();
+    
+    const from = "secretmedia@feverup.com";
+    const to = "jongarnicaizco@gmail.com"; // IMPORTANTE: Solo a jongarnicaizco@gmail.com, NO al cliente
+    const subject = `TEST - Free Coverage Request Response for ${brandName || "Client"}`;
+    const body = generateFreeCoverageEmailTemplate(firstName, brandName);
+    
+    const messageHeaders = [
+      `To: ${to}`,
+      `From: ${from}`,
+      `Subject: ${subject}`,
+      `Content-Type: text/plain; charset=utf-8`,
+    ];
+    
+    messageHeaders.push("");
+    messageHeaders.push(body);
+    
+    const message = messageHeaders.join("\n");
+    const encodedMessage = Buffer.from(message)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    
+    const response = await gmail.users.messages.send({
+      userId: "me",
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+    
+    console.log("[mfs] ===== EMAIL FREE COVERAGE (TEST) ENVIADO EXITOSAMENTE =====");
+    console.log("[mfs] Message ID:", response.data.id);
+    console.log("[mfs] Thread ID:", response.data.threadId);
+    
+    return {
+      success: true,
+      messageId: response.data.id,
+      threadId: response.data.threadId,
+    };
+  } catch (error) {
+    console.error("[mfs] ===== ERROR ENVIANDO EMAIL FREE COVERAGE (TEST) =====");
+    console.error("[mfs] Error:", error?.message || error);
+    return {
+      success: false,
+      error: error?.message || "Unknown error",
+    };
+  }
+}
+

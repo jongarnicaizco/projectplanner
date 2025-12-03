@@ -42,7 +42,7 @@ import {
 } from "./storage.js";
 import { classifyIntent, generateBodySummary, callModelText } from "./vertex.js";
 import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
-import { sendTestEmail } from "./email-sender.js";
+import { sendTestEmail, sendBarterEmail, sendFreeCoverageEmail } from "./email-sender.js";
 
 // Cache para el ID de la etiqueta "processed" (evitar múltiples llamadas a la API)
 let processedLabelIdCache = null;
@@ -421,6 +421,22 @@ export async function processMessageIds(gmail, ids) {
       // Buscar Reply-To (findHeader ya es case-insensitive)
       const replyTo = findHeader("Reply-To") || "";
       
+      // Detectar si es una respuesta (reply)
+      // Verificar: subject con "Re:" o "RE:" o "Fwd:" o "FWD:", In-Reply-To header, o threadId
+      const inReplyTo = findHeader("In-Reply-To") || "";
+      const threadId = msg.data.threadId || null;
+      const isReply = 
+        /^(Re|RE|Fwd|FWD|Fw|FW):\s*/i.test(subject) || 
+        !!inReplyTo || 
+        (threadId && threadId !== id); // Si threadId existe y es diferente del messageId, es parte de un thread
+      
+      console.log("[mfs] ===== DETECCIÓN DE RESPUESTA =====");
+      console.log("[mfs] Subject:", subject);
+      console.log("[mfs] In-Reply-To:", inReplyTo ? "SÍ" : "NO");
+      console.log("[mfs] Thread ID:", threadId);
+      console.log("[mfs] Message ID:", id);
+      console.log("[mfs] ¿Es respuesta?:", isReply);
+      
       // Log para debug
       console.log("[mfs] ===== BÚSQUEDA DE REPLY-TO =====");
       console.log("[mfs] Reply-To encontrado:", replyTo ? "SÍ" : "NO");
@@ -796,8 +812,9 @@ export async function processMessageIds(gmail, ids) {
         body,
       });
 
-      // REGLA DURA: Emails enviados a secretmedia@feverup.com SIEMPRE deben ser como mínimo Medium
-      // Esta regla se aplica DESPUÉS de la clasificación para asegurar el mínimo
+      // REGLA ESPECIAL: Para emails recibidos en secretmedia@feverup.com
+      // - Si es una RESPUESTA (reply) → Medium automáticamente
+      // - Si NO es respuesta → pasar por la lógica normal de clasificación (no forzar Medium)
       const toEmailLower = (to || "").toLowerCase().trim();
       const isSecretMediaEmail = toEmailLower.includes("secretmedia@feverup.com");
       
@@ -806,24 +823,21 @@ export async function processMessageIds(gmail, ids) {
       let finalReasoning = reasoning;
       
       if (isSecretMediaEmail) {
-        // Mapear intents a niveles numéricos para comparar
-        const intentLevels = { "Discard": 0, "Low": 1, "Medium": 2, "High": 3, "Very High": 4 };
-        const currentLevel = intentLevels[finalIntent] || 0;
-        const minLevel = intentLevels["Medium"]; // 2
-        
-        if (currentLevel < minLevel) {
-          console.log("[mfs] ===== APLICANDO REGLA: Email a secretmedia@feverup.com =====");
-          console.log("[mfs] Intent original:", finalIntent, "(nivel:", currentLevel, ")");
-          console.log("[mfs] Forzando a Medium (nivel mínimo requerido)");
+        if (isReply) {
+          // Si es una respuesta, forzar Medium automáticamente
+          console.log("[mfs] ===== APLICANDO REGLA: Email RESPUESTA a secretmedia@feverup.com =====");
+          console.log("[mfs] Intent original:", finalIntent);
+          console.log("[mfs] Forzando a Medium (es una respuesta)");
           finalIntent = "Medium";
           finalConfidence = Math.max(finalConfidence || 0.75, 0.75);
           if (!finalReasoning || finalReasoning.length === 0) {
-            finalReasoning = "Email sent to secretmedia@feverup.com, minimum classification is Medium.";
+            finalReasoning = "Email is a reply to secretmedia@feverup.com, automatically classified as Medium intent.";
           } else {
-            finalReasoning = finalReasoning + " Email sent to secretmedia@feverup.com, minimum classification is Medium.";
+            finalReasoning = finalReasoning + " Email is a reply to secretmedia@feverup.com, automatically classified as Medium intent.";
           }
         } else {
-          console.log("[mfs] Email a secretmedia@feverup.com con intent:", finalIntent, "(ya es Medium o mayor, no se modifica)");
+          // Si NO es respuesta, pasar por la lógica normal (no forzar Medium)
+          console.log("[mfs] Email a secretmedia@feverup.com (NO es respuesta), usando clasificación normal:", finalIntent);
         }
       }
 
@@ -870,30 +884,73 @@ export async function processMessageIds(gmail, ids) {
         continue;
       }
 
-      // Si es un registro nuevo, enviar email TEST antes de crear en Airtable
-      console.log("[mfs] ===== REGISTRO NUEVO DETECTADO - ENVIANDO EMAIL TEST =====");
+      // Si es un registro nuevo, enviar emails según el tipo detectado
+      // IMPORTANTE: Estos emails se envían SOLO a jongarnicaizco@gmail.com (TEST), NO al cliente
+      console.log("[mfs] ===== REGISTRO NUEVO DETECTADO - VERIFICANDO TIPO DE EMAIL =====");
       console.log("[mfs] Email ID:", id);
       console.log("[mfs] From:", from);
       console.log("[mfs] To:", to);
       console.log("[mfs] Subject:", subject);
-      try {
-        const emailResult = await sendTestEmail(id);
-        if (emailResult.success) {
-          console.log("[mfs] ✓✓✓ Email TEST enviado exitosamente antes de crear en Airtable ✓✓✓");
-          console.log("[mfs] Message ID del email enviado:", emailResult.messageId);
-          console.log("[mfs] Thread ID del email enviado:", emailResult.threadId);
-        } else {
-          console.error("[mfs] ✗✗✗ Error enviando email TEST, pero continuando con creación en Airtable ✗✗✗");
-          console.error("[mfs] Error code:", emailResult.code);
-          console.error("[mfs] Error status:", emailResult.status);
-          console.error("[mfs] Error type:", emailResult.errorType);
-          console.error("[mfs] Error description:", emailResult.errorDescription);
-          console.error("[mfs] Error message:", emailResult.error);
+      console.log("[mfs] isBarter:", isBarter);
+      console.log("[mfs] isFreeCoverage:", isFreeCoverage);
+      
+      // Extraer brandName del from email o subject como fallback
+      const brandName = senderName || from.split("@")[0] || subject.split(" ")[0] || "Client";
+      
+      // Enviar email de barter si se detectó barter request
+      if (isBarter) {
+        console.log("[mfs] ===== DETECTADO BARTER REQUEST - ENVIANDO EMAIL BARTER (TEST) =====");
+        try {
+          const barterResult = await sendBarterEmail(id, senderFirstName || "Client", brandName);
+          if (barterResult.success) {
+            console.log("[mfs] ✓✓✓ Email BARTER (TEST) enviado exitosamente a jongarnicaizco@gmail.com ✓✓✓");
+            console.log("[mfs] Message ID:", barterResult.messageId);
+          } else {
+            console.error("[mfs] ✗ Error enviando email BARTER (TEST):", barterResult.error);
+          }
+        } catch (barterError) {
+          console.error("[mfs] ✗ Excepción enviando email BARTER (TEST):", barterError?.message || barterError);
         }
-      } catch (emailError) {
-        console.error("[mfs] ✗✗✗ Excepción al enviar email TEST, pero continuando con creación en Airtable ✗✗✗");
-        console.error("[mfs] Error:", emailError?.message || emailError);
-        console.error("[mfs] Stack:", emailError?.stack);
+      }
+      
+      // Enviar email de free coverage si se detectó free coverage request
+      if (isFreeCoverage) {
+        console.log("[mfs] ===== DETECTADO FREE COVERAGE REQUEST - ENVIANDO EMAIL FREE COVERAGE (TEST) =====");
+        try {
+          const freeCoverageResult = await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName);
+          if (freeCoverageResult.success) {
+            console.log("[mfs] ✓✓✓ Email FREE COVERAGE (TEST) enviado exitosamente a jongarnicaizco@gmail.com ✓✓✓");
+            console.log("[mfs] Message ID:", freeCoverageResult.messageId);
+          } else {
+            console.error("[mfs] ✗ Error enviando email FREE COVERAGE (TEST):", freeCoverageResult.error);
+          }
+        } catch (freeCoverageError) {
+          console.error("[mfs] ✗ Excepción enviando email FREE COVERAGE (TEST):", freeCoverageError?.message || freeCoverageError);
+        }
+      }
+      
+      // Si NO es barter ni free coverage, enviar email TEST genérico
+      if (!isBarter && !isFreeCoverage) {
+        console.log("[mfs] ===== NO ES BARTER NI FREE COVERAGE - ENVIANDO EMAIL TEST GENÉRICO =====");
+        try {
+          const emailResult = await sendTestEmail(id);
+          if (emailResult.success) {
+            console.log("[mfs] ✓✓✓ Email TEST enviado exitosamente antes de crear en Airtable ✓✓✓");
+            console.log("[mfs] Message ID del email enviado:", emailResult.messageId);
+            console.log("[mfs] Thread ID del email enviado:", emailResult.threadId);
+          } else {
+            console.error("[mfs] ✗✗✗ Error enviando email TEST, pero continuando con creación en Airtable ✗✗✗");
+            console.error("[mfs] Error code:", emailResult.code);
+            console.error("[mfs] Error status:", emailResult.status);
+            console.error("[mfs] Error type:", emailResult.errorType);
+            console.error("[mfs] Error description:", emailResult.errorDescription);
+            console.error("[mfs] Error message:", emailResult.error);
+          }
+        } catch (emailError) {
+          console.error("[mfs] ✗✗✗ Excepción al enviar email TEST, pero continuando con creación en Airtable ✗✗✗");
+          console.error("[mfs] Error:", emailError?.message || emailError);
+          console.error("[mfs] Stack:", emailError?.stack);
+        }
       }
 
       // Crear registro en Airtable
