@@ -44,10 +44,17 @@ import { classifyIntent, generateBodySummary, callModelText } from "./vertex.js"
 import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
 import { sendTestEmail } from "./email-sender.js";
 
+// Cache para el ID de la etiqueta "processed" (evitar múltiples llamadas a la API)
+let processedLabelIdCache = null;
+
 /**
- * Verifica si un mensaje tiene la etiqueta "processed"
+ * Obtiene el ID de la etiqueta "processed" (con cache)
  */
-async function checkProcessedLabel(gmail, labelIds) {
+async function getProcessedLabelId(gmail) {
+  if (processedLabelIdCache) {
+    return processedLabelIdCache;
+  }
+  
   try {
     // Obtener todas las etiquetas del usuario para buscar "processed"
     const labelsResponse = await backoff(
@@ -58,13 +65,33 @@ async function checkProcessedLabel(gmail, labelIds) {
     const labels = labelsResponse.data.labels || [];
     const processedLabel = labels.find(label => label.name?.toLowerCase() === "processed");
     
-    if (!processedLabel) {
+    if (processedLabel) {
+      processedLabelIdCache = processedLabel.id;
+      return processedLabelIdCache;
+    }
+    
+    // Si no existe, retornar null (no cachear null para intentar crearla después)
+    return null;
+  } catch (error) {
+    console.warn("[mfs] Error obteniendo etiqueta 'processed':", error?.message || error);
+    return null;
+  }
+}
+
+/**
+ * Verifica si un mensaje tiene la etiqueta "processed"
+ */
+async function checkProcessedLabel(gmail, labelIds) {
+  try {
+    const processedLabelId = await getProcessedLabelId(gmail);
+    
+    if (!processedLabelId) {
       // Si la etiqueta no existe, el mensaje no puede tenerla
       return false;
     }
     
     // Verificar si el mensaje tiene esta etiqueta
-    return labelIds.includes(processedLabel.id);
+    return labelIds.includes(processedLabelId);
   } catch (error) {
     console.warn("[mfs] Error verificando etiqueta 'processed':", error?.message || error);
     // Si hay error, asumir que no tiene la etiqueta para no saltar emails por error
@@ -76,22 +103,15 @@ async function checkProcessedLabel(gmail, labelIds) {
  * Obtiene o crea la etiqueta "processed" en Gmail
  */
 async function getOrCreateProcessedLabel(gmail) {
+  // Primero intentar obtener del cache
+  let processedLabelId = await getProcessedLabelId(gmail);
+  
+  if (processedLabelId) {
+    return processedLabelId;
+  }
+  
+  // Si no existe, crearla
   try {
-    // Intentar obtener todas las etiquetas del usuario
-    const labelsResponse = await backoff(
-      () => gmail.users.labels.list({ userId: "me" }),
-      "labels.list"
-    );
-    
-    const labels = labelsResponse.data.labels || [];
-    const processedLabel = labels.find(label => label.name?.toLowerCase() === "processed");
-    
-    if (processedLabel) {
-      console.log("[mfs] Etiqueta 'processed' encontrada:", processedLabel.id);
-      return processedLabel.id;
-    }
-    
-    // Si no existe, crearla
     console.log("[mfs] Etiqueta 'processed' no existe, creándola...");
     const createResponse = await backoff(
       () => gmail.users.labels.create({
@@ -107,9 +127,13 @@ async function getOrCreateProcessedLabel(gmail) {
     
     const newLabelId = createResponse.data.id;
     console.log("[mfs] Etiqueta 'processed' creada:", newLabelId);
+    
+    // Actualizar cache
+    processedLabelIdCache = newLabelId;
+    
     return newLabelId;
   } catch (error) {
-    console.error("[mfs] Error obteniendo/creando etiqueta 'processed':", error?.message || error);
+    console.error("[mfs] Error creando etiqueta 'processed':", error?.message || error);
     // Si falla, intentar usar el nombre directamente (Gmail puede crear automáticamente)
     return "processed";
   }
