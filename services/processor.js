@@ -42,7 +42,7 @@ import {
 } from "./storage.js";
 import { classifyIntent, generateBodySummary, callModelText } from "./vertex.js";
 import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
-import { sendTestEmail } from "./email-sender.js";
+import { sendFreeCoverageEmail, sendBarterEmail } from "./email-sender.js";
 
 /**
  * Procesa una lista de IDs de mensajes
@@ -117,6 +117,20 @@ export async function processMessageIds(gmail, ids) {
           id,
           msgLabelIds
         );
+        continue;
+      }
+
+      // Obtener headers básicos para verificar si es un email enviado por nosotros
+      const basicHeaders = msg.data.payload?.headers || [];
+      const fromHeaderBasic = basicHeaders.find(h => h.name?.toLowerCase() === "from")?.value || "";
+      
+      // Filtrar emails enviados desde secretmedia@feverup.com para evitar bucles
+      if (fromHeaderBasic && fromHeaderBasic.toLowerCase().includes("secretmedia@feverup.com")) {
+        console.log(
+          "[mfs] Mensaje ignorado: es un email enviado desde secretmedia@feverup.com (evitando bucle):",
+          id
+        );
+        await releaseMessageLock(id);
         continue;
       }
 
@@ -631,36 +645,55 @@ export async function processMessageIds(gmail, ids) {
         continue;
       }
 
-      // Enviar email justo antes de crear en Airtable para cumplir requisito del usuario
-      console.log("[mfs] ========================================");
-      console.log("[mfs] ===== INICIANDO ENVÍO DE EMAIL =======");
-      console.log("[mfs] ========================================");
-      console.log("[mfs] Verificando que sendTestEmail está disponible...");
-      console.log("[mfs] sendTestEmail type:", typeof sendTestEmail);
-      console.log("[mfs] sendTestEmail value:", sendTestEmail ? "DEFINIDO" : "UNDEFINED");
-      
-      try {
-        console.log("[mfs] ===== LLAMANDO A sendTestEmail =====");
-        console.log("[mfs] Enviando email de prueba justo antes de crear registro en Airtable...");
-        console.log("[mfs] Parámetros: subject='test', body='test'");
+      // Enviar email personalizado solo si es Free Coverage Request o Barter Request
+      // Solo para emails nuevos (ya verificado que no existe en Airtable)
+      if (isFreeCoverage || isBarter) {
+        console.log("[mfs] ========================================");
+        console.log("[mfs] ===== INICIANDO ENVÍO DE EMAIL PERSONALIZADO =====");
+        console.log("[mfs] ========================================");
+        console.log("[mfs] Tipo de request:", isFreeCoverage ? "Free Coverage Request" : "Barter Request");
+        console.log("[mfs] Destinatario:", from);
+        console.log("[mfs] Primer nombre:", senderFirstName || "(no disponible)");
         
-        const emailResult = await sendTestEmail("test", "test");
-        
-        console.log("[mfs] ===== RESULTADO DE sendTestEmail =====");
-        console.log("[mfs] emailResult:", JSON.stringify(emailResult, null, 2));
-        
-        if (emailResult && emailResult.success) {
-          console.log("[mfs] ✓ Email de prueba enviado exitosamente:", emailResult.messageId);
-        } else {
-          console.warn("[mfs] ✗ No se pudo enviar email de prueba:", emailResult?.error || "Resultado inesperado");
-          console.warn("[mfs] emailResult completo:", JSON.stringify(emailResult, null, 2));
+        try {
+          // Extraer nombre de la marca del email (usar el dominio o el nombre del remitente como fallback)
+          let brandName = senderName || from.split("@")[0] || "your business";
+          // Si el nombre es muy largo o parece un email, usar solo el dominio
+          if (brandName.length > 50 || brandName.includes("@")) {
+            const domain = from.split("@")[1];
+            brandName = domain ? domain.split(".")[0] : "your business";
+          }
+          
+          // Obtener Message-ID del email original para responder correctamente
+          const messageIdHeader = allHeaders.find(h => h.name?.toLowerCase() === "message-id");
+          const originalMessageId = messageIdHeader?.value || null;
+          
+          let emailResult;
+          if (isFreeCoverage) {
+            console.log("[mfs] Enviando email de Free Coverage Request...");
+            emailResult = await sendFreeCoverageEmail(from, senderFirstName || "there", brandName, subject, originalMessageId);
+          } else if (isBarter) {
+            console.log("[mfs] Enviando email de Barter Request...");
+            emailResult = await sendBarterEmail(from, senderFirstName || "there", brandName, subject, originalMessageId);
+          }
+          
+          console.log("[mfs] ===== RESULTADO DE ENVÍO DE EMAIL =====");
+          console.log("[mfs] emailResult:", JSON.stringify(emailResult, null, 2));
+          
+          if (emailResult && emailResult.success) {
+            console.log("[mfs] ✓ Email personalizado enviado exitosamente:", emailResult.messageId);
+          } else {
+            console.warn("[mfs] ✗ No se pudo enviar email personalizado:", emailResult?.error || "Resultado inesperado");
+            console.warn("[mfs] emailResult completo:", JSON.stringify(emailResult, null, 2));
+          }
+        } catch (emailError) {
+          console.error("[mfs] ===== EXCEPCIÓN AL ENVIAR EMAIL =====");
+          console.error("[mfs] Error al enviar email personalizado (continuando con Airtable):", emailError?.message);
+          console.error("[mfs] Error stack:", emailError?.stack);
+          // No bloquear el procesamiento si falla el envío del email
         }
-      } catch (emailError) {
-        console.error("[mfs] ===== EXCEPCIÓN AL ENVIAR EMAIL =====");
-        console.error("[mfs] Error al enviar email de prueba (continuando con Airtable):", emailError?.message);
-        console.error("[mfs] Error stack:", emailError?.stack);
-        console.error("[mfs] Error completo:", JSON.stringify(emailError, Object.getOwnPropertyNames(emailError), 2));
-        // No bloquear el procesamiento si falla el envío del email
+      } else {
+        console.log("[mfs] No se envía email (no es Free Coverage Request ni Barter Request)");
       }
       
       console.log("[mfs] ===== CONTINUANDO CON CREACIÓN EN AIRTABLE =====");

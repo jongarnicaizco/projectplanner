@@ -88,33 +88,92 @@ async function getEmailSenderClient() {
 }
 
 /**
- * Envía un email de prueba a jongarnicaizco@gmail.com
- * Por cada correo procesado, envía un email con el texto "test"
- * @param {string} subject - Asunto del email (opcional, por defecto "test")
- * @param {string} body - Cuerpo del email (opcional, por defecto "test")
+ * Genera el template de email para Free Coverage Request
  */
-export async function sendTestEmail(subject = "test", body = "test") {
+function generateFreeCoverageEmail(firstName, brandName = "your business") {
+  return `Hi ${firstName || "there"},
+
+Thank you so much for reaching out. I've passed your note and key details along to our editorial team so they can consider it for future coverage. Because our editors independently decide what to feature based on newsworthiness, timing, and overall fit for our readers, we're not able to guarantee coverage or a specific timeline—but they will review it as part of their regular planning.
+
+I completely understand that you're hoping to gain some organic exposure. Many of the local businesses we speak with feel the same way—they'd love to be featured editorially when they have a great story to tell. What they've found, however, is that relying only on earned media can be unpredictable: even strong stories sometimes don't line up with the editorial calendar, competing news, or space constraints.
+
+For businesses that want more certainty, we usually recommend exploring our paid partnership options. Through our Content Creation offering, our team develops a dedicated, on-brand feature about ${brandName}. With Guaranteed Impressions, we then promote that content across Secret Media Network channels until it reaches an agreed number of impressions—so instead of hoping for coverage, you know in advance the minimum reach you're getting.
+
+If you'd like, I'd be happy to share a short proposal with formats and pricing tailored to you and your goals, or we can jump on a quick call to walk through what similar partners have done with us.
+
+Thanks again for thinking of Secret Media Network, and I look forward to hearing your thoughts.
+
+Best regards,
+
+Secret Media Network`;
+}
+
+/**
+ * Genera el template de email para Barter Request
+ */
+function generateBarterEmail(firstName, brandName = "your business") {
+  return `Hi ${firstName || "there"},
+
+Thank you so much for reaching out and for thinking of Secret Media Network.
+
+I really appreciate your proposal to collaborate on a barter basis. To protect the trust we have with our readers, our editorial team operates fully independently and doesn't participate in barter or value-in-kind arrangements. Any sponsored or branded content is handled separately by our commercial partnerships team under clear paid programs.
+
+I completely understand why you'd explore a barter collaboration, especially when you're already investing in your product and experiences. Many of our partners felt the same way at first—they wanted to test the waters without committing to a large media budget. What they found is that structured paid campaigns, with clear content deliverables and guaranteed impressions, gave them much more predictable results and a stronger return on investment than one-off barter features.
+
+For businesses like ${brandName}, we usually recommend:
+
+Content Creation: our team creates a dedicated, on-brand article and supporting assets (for example, a feature on our site, social posts, and/or newsletter placements).
+
+Guaranteed Impressions: we promote that content across Secret Media Network channels until it reaches an agreed number of impressions, so you know exactly what reach you're getting.
+
+We can adapt the format (evergreen guide, spotlight article, launch feature, etc.) depending on whether your main goal is bookings, sales, or awareness.
+
+If you'd like, I'd be happy to put together a short proposal with options and pricing tailored to you and your timelines, or jump on a quick call to walk you through what similar partners have achieved with us.
+
+Looking forward to hearing your thoughts.
+
+Best regards,
+
+Secret Media Network`;
+}
+
+/**
+ * Envía un email personalizado
+ * @param {string} to - Email del destinatario
+ * @param {string} subject - Asunto del email
+ * @param {string} body - Cuerpo del email
+ * @param {string} originalMessageId - Message-ID del email original (opcional, para responder)
+ */
+export async function sendEmail(to, subject, body, originalMessageId = null) {
   try {
     console.log("[mfs] ===== INICIANDO ENVÍO DE EMAIL =====");
-    console.log("[mfs] Destinatario: jongarnicaizco@gmail.com");
+    console.log("[mfs] Destinatario:", to);
     console.log("[mfs] Remitente: secretmedia@feverup.com");
     console.log("[mfs] Asunto:", subject);
-    console.log("[mfs] Cuerpo:", body);
+    console.log("[mfs] Cuerpo (primeros 200 chars):", body.slice(0, 200));
     
     const gmail = await getEmailSenderClient();
     
     // Crear el mensaje en formato RFC 2822
-    const to = "jongarnicaizco@gmail.com";
     const from = "secretmedia@feverup.com";
     
-    const message = [
+    const messageHeaders = [
       `To: ${to}`,
       `From: ${from}`,
       `Subject: ${subject}`,
       `Content-Type: text/plain; charset=utf-8`,
-      "",
-      body,
-    ].join("\n");
+    ];
+    
+    // Si hay un Message-ID original, agregar headers para que sea una respuesta
+    if (originalMessageId) {
+      messageHeaders.push(`In-Reply-To: ${originalMessageId}`);
+      messageHeaders.push(`References: ${originalMessageId}`);
+    }
+    
+    messageHeaders.push(""); // Línea vacía antes del body
+    messageHeaders.push(body);
+    
+    const message = messageHeaders.join("\n");
 
     console.log("[mfs] Mensaje creado, codificando en base64url...");
 
@@ -136,7 +195,7 @@ export async function sendTestEmail(subject = "test", body = "test") {
     });
 
     console.log("[mfs] ===== EMAIL ENVIADO EXITOSAMENTE =====");
-    console.log("[mfs] ✓✓✓ EMAIL ENVIADO DESDE secretmedia@feverup.com A jongarnicaizco@gmail.com ✓✓✓");
+    console.log("[mfs] ✓✓✓ EMAIL ENVIADO DESDE secretmedia@feverup.com A", to, "✓✓✓");
     console.log("[mfs] Message ID:", response.data.id);
     console.log("[mfs] Thread ID:", response.data.threadId);
     console.log("[mfs] Destinatario:", to);
@@ -209,3 +268,45 @@ export async function sendTestEmail(subject = "test", body = "test") {
   }
 }
 
+/**
+ * Envía un email de prueba a jongarnicaizco@gmail.com (mantenido para compatibilidad)
+ * @param {string} subject - Asunto del email (opcional, por defecto "test")
+ * @param {string} body - Cuerpo del email (opcional, por defecto "test")
+ */
+export async function sendTestEmail(subject = "test", body = "test") {
+  return sendEmail("jongarnicaizco@gmail.com", subject, body);
+}
+
+/**
+ * Envía un email personalizado para Free Coverage Request
+ * @param {string} to - Email del destinatario
+ * @param {string} firstName - Primer nombre del destinatario
+ * @param {string} brandName - Nombre de la marca/empresa (opcional)
+ * @param {string} originalSubject - Asunto del email original (opcional)
+ * @param {string} originalMessageId - Message-ID del email original (opcional)
+ */
+export async function sendFreeCoverageEmail(to, firstName, brandName, originalSubject = "", originalMessageId = null) {
+  // Usar el subject original con "Re: " si existe, sino usar uno genérico
+  const subject = originalSubject 
+    ? (originalSubject.startsWith("Re:") ? originalSubject : `Re: ${originalSubject}`)
+    : "Re: Your inquiry to Secret Media Network";
+  const body = generateFreeCoverageEmail(firstName, brandName);
+  return sendEmail(to, subject, body, originalMessageId);
+}
+
+/**
+ * Envía un email personalizado para Barter Request
+ * @param {string} to - Email del destinatario
+ * @param {string} firstName - Primer nombre del destinatario
+ * @param {string} brandName - Nombre de la marca/empresa (opcional)
+ * @param {string} originalSubject - Asunto del email original (opcional)
+ * @param {string} originalMessageId - Message-ID del email original (opcional)
+ */
+export async function sendBarterEmail(to, firstName, brandName, originalSubject = "", originalMessageId = null) {
+  // Usar el subject original con "Re: " si existe, sino usar uno genérico
+  const subject = originalSubject 
+    ? (originalSubject.startsWith("Re:") ? originalSubject : `Re: ${originalSubject}`)
+    : "Re: Your collaboration proposal to Secret Media Network";
+  const body = generateBarterEmail(firstName, brandName);
+  return sendEmail(to, subject, body, originalMessageId);
+}
