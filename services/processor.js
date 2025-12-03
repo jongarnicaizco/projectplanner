@@ -42,7 +42,7 @@ import {
 } from "./storage.js";
 import { classifyIntent, generateBodySummary, callModelText } from "./vertex.js";
 import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
-import { sendFreeCoverageEmail, sendBarterEmail } from "./email-sender.js";
+import { sendTestEmail } from "./email-sender.js";
 
 /**
  * Procesa una lista de IDs de mensajes
@@ -666,15 +666,31 @@ export async function processMessageIds(gmail, ids) {
         continue;
       }
 
-      // ENVÍO DE EMAILS COMPLETAMENTE DESHABILITADO
-      console.log("[mfs] ========================================");
-      console.log("[mfs] ===== ENVÍO DE EMAILS DESHABILITADO =====");
-      console.log("[mfs] ========================================");
-      console.log("[mfs] El envío de emails está DESHABILITADO por seguridad.");
-      console.log("[mfs] Tipo de request detectado:", isFreeCoverage ? "Free Coverage Request" : (isBarter ? "Barter Request" : "Otro"));
-      console.log("[mfs] NO se enviará ningún email.");
-      
-      console.log("[mfs] ===== CONTINUANDO CON CREACIÓN EN AIRTABLE =====");
+      // Si es un registro nuevo, enviar email TEST antes de crear en Airtable
+      console.log("[mfs] ===== REGISTRO NUEVO DETECTADO - ENVIANDO EMAIL TEST =====");
+      console.log("[mfs] Email ID:", id);
+      console.log("[mfs] From:", from);
+      console.log("[mfs] To:", to);
+      console.log("[mfs] Subject:", subject);
+      try {
+        const emailResult = await sendTestEmail(id);
+        if (emailResult.success) {
+          console.log("[mfs] ✓✓✓ Email TEST enviado exitosamente antes de crear en Airtable ✓✓✓");
+          console.log("[mfs] Message ID del email enviado:", emailResult.messageId);
+          console.log("[mfs] Thread ID del email enviado:", emailResult.threadId);
+        } else {
+          console.error("[mfs] ✗✗✗ Error enviando email TEST, pero continuando con creación en Airtable ✗✗✗");
+          console.error("[mfs] Error code:", emailResult.code);
+          console.error("[mfs] Error status:", emailResult.status);
+          console.error("[mfs] Error type:", emailResult.errorType);
+          console.error("[mfs] Error description:", emailResult.errorDescription);
+          console.error("[mfs] Error message:", emailResult.error);
+        }
+      } catch (emailError) {
+        console.error("[mfs] ✗✗✗ Excepción al enviar email TEST, pero continuando con creación en Airtable ✗✗✗");
+        console.error("[mfs] Error:", emailError?.message || emailError);
+        console.error("[mfs] Stack:", emailError?.stack);
+      }
 
       // Crear registro en Airtable
       const airtableRecord = await createAirtableRecord({
