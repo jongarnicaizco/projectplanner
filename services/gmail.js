@@ -57,37 +57,41 @@ export async function getGmailClient() {
           status: oauthError?.response?.status || oauthError?.status || "unknown",
         };
         
-        console.error("[mfs] Error verificando token OAuth:", JSON.stringify(errorDetails, null, 2));
+        console.error("[mfs] ✗✗✗ ERROR verificando token OAuth ✗✗✗");
+        console.error("[mfs] Error details:", JSON.stringify(errorDetails, null, 2));
         
-        // Si es unauthorized_client, dar instrucciones específicas
-        if (errorDetails.error === "unauthorized_client" || errorDetails.code === 401) {
+        // Si es invalid_client o unauthorized_client, lanzar error directamente sin fallback
+        if (errorDetails.error === "invalid_client" || errorDetails.error === "unauthorized_client" || errorDetails.status === 401) {
           console.error("[mfs] ========================================");
-          console.error("[mfs] ERROR: unauthorized_client");
+          console.error("[mfs] ERROR: OAuth Client inválido o no autorizado");
           console.error("[mfs] Posibles causas:");
-          console.error("[mfs] 1. El OAuth Client no está habilitado en Google Cloud Console");
-          console.error("[mfs] 2. El redirect URI no está autorizado en el OAuth Client");
-          console.error("[mfs] 3. El refresh token fue generado con un Client ID/Secret diferente");
-          console.error("[mfs] 4. El refresh token ha expirado (regenerar con obtener_refresh_token_completo.js)");
+          console.error("[mfs] 1. El OAuth Client no existe en check-in-sf");
+          console.error("[mfs] 2. El Client ID en Secret Manager no coincide con el OAuth Client");
+          console.error("[mfs] 3. El OAuth Client no está habilitado");
+          console.error("[mfs] 4. El redirect URI no está autorizado en el OAuth Client");
+          console.error("[mfs] 5. El refresh token fue generado con un Client ID diferente");
           console.error("[mfs] ========================================");
+          console.error("[mfs] Verifica el OAuth Client en:");
+          console.error("[mfs] https://console.cloud.google.com/apis/credentials?project=check-in-sf");
+          throw new Error(`Error de autenticación OAuth: ${errorDetails.error} - ${errorDetails.errorDescription}. Verifica la configuración del OAuth Client en check-in-sf.`);
         }
         
-        console.error("[mfs] Intentando fallback a JWT...");
-        // Continuar con JWT como fallback
+        // Para otros errores OAuth, también lanzar error directamente
+        throw new Error(`Error de autenticación OAuth: ${errorDetails.error} - ${errorDetails.errorDescription}`);
       }
     } catch (secretError) {
-      console.error("[mfs] Error obteniendo secrets de OAuth:", secretError?.message || secretError);
-      console.error("[mfs] Intentando fallback a JWT...");
-      // Continuar con JWT como fallback
+      console.error("[mfs] ✗✗✗ ERROR obteniendo secrets de OAuth ✗✗✗");
+      console.error("[mfs] Error message:", secretError?.message || secretError);
+      throw new Error(`No se pudieron obtener las credenciales OAuth: ${secretError?.message || secretError}`);
     }
   }
 
-  // Domain-wide delegation (JWT) - Fallback si OAuth falla
+  // Si no es modo OAuth, usar JWT (Domain-wide delegation)
   console.log("[mfs] Usando autenticación JWT (Domain-wide delegation)");
   
   if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
     throw new Error(
-      "No se puede autenticar: OAuth falló y JWT no está configurado. " +
-      "Configura GOOGLE_CLIENT_EMAIL y GOOGLE_PRIVATE_KEY, o regenera el refresh token de OAuth."
+      "JWT no está configurado. Configura GOOGLE_CLIENT_EMAIL y GOOGLE_PRIVATE_KEY, o usa AUTH_MODE=oauth."
     );
   }
   
@@ -109,9 +113,7 @@ export async function getGmailClient() {
   } catch (jwtError) {
     console.error("[mfs] Error con autenticación JWT:", jwtError?.message || jwtError);
     throw new Error(
-      "No se puede autenticar con Gmail. " +
-      "OAuth falló y JWT también falló. " +
-      "Verifica las credenciales o regenera el refresh token de OAuth."
+      `No se puede autenticar con Gmail usando JWT: ${jwtError?.message || jwtError}`
     );
   }
 }
@@ -525,8 +527,8 @@ export async function getGmailSenderClient() {
       console.error("[mfs] Client ID usado:", clientId?.substring(0, 50) || "empty");
       console.error("[mfs] Redirect URI usado:", redirectUri);
       
-      // Si es invalid_client, dar instrucciones específicas
-      if (errorDetails.error === "invalid_client") {
+      // Si es invalid_client, dar instrucciones específicas y lanzar error directamente
+      if (errorDetails.error === "invalid_client" || errorDetails.error === "unauthorized_client" || errorDetails.status === 401) {
         console.error("[mfs] ========================================");
         console.error("[mfs] ERROR: invalid_client para cuenta SENDER");
         console.error("[mfs] Posibles causas:");
@@ -538,8 +540,10 @@ export async function getGmailSenderClient() {
         console.error("[mfs] ========================================");
         console.error("[mfs] Verifica el OAuth Client en:");
         console.error("[mfs] https://console.cloud.google.com/apis/credentials?project=check-in-sf");
+        throw new Error(`Error de autenticación OAuth SENDER: ${errorDetails.error} - ${errorDetails.errorDescription}. Verifica la configuración del OAuth Client en check-in-sf.`);
       }
       
+      // Para otros errores OAuth, también lanzar error directamente
       throw new Error(`Error de autenticación OAuth SENDER: ${errorDetails.error} - ${errorDetails.errorDescription}`);
     }
   } catch (secretError) {
