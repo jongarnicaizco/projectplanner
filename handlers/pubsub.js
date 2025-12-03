@@ -36,11 +36,15 @@ export async function handlePubSub(req, res) {
     });
 
     // Procesar emails de media.manager@feverup.com (cuenta principal)
+    console.log("[mfs] _pubsub: Obteniendo cliente Gmail principal...");
     const gmail = await getGmailClient();
+    console.log("[mfs] _pubsub: ✓ Cliente Gmail principal obtenido");
 
     // 1) Obtenemos TODOS los mensajes nuevos en INBOX de la cuenta principal
+    console.log("[mfs] _pubsub: Obteniendo mensajes nuevos de cuenta principal...");
     const { ids, newHistoryId, usedFallback } =
       await getNewInboxMessageIdsFromHistory(gmail, notifHistoryId);
+    console.log("[mfs] _pubsub: ✓ Mensajes obtenidos de cuenta principal");
 
     console.log("[mfs] _pubsub: IDs que voy a procesar ahora (cuenta principal):", {
       count: ids.length,
@@ -50,14 +54,19 @@ export async function handlePubSub(req, res) {
 
     // 2) Procesamos secuencialmente cada mensaje de la cuenta principal
     if (ids.length) {
+      console.log("[mfs] _pubsub: Procesando", ids.length, "mensajes de cuenta principal...");
       try {
         await processMessageIds(gmail, ids);
+        console.log("[mfs] _pubsub: ✓ Procesamiento de cuenta principal completado");
       } catch (e) {
+        console.error("[mfs] _pubsub: ✗ Error procesando cuenta principal:", e?.message || e);
         logErr("[mfs] processMessageIds error (cuenta principal):", e);
       }
     } else {
       console.log("[mfs] _pubsub: no hay mensajes nuevos que procesar (cuenta principal)");
     }
+    
+    console.log("[mfs] _pubsub: Fin de procesamiento de cuenta principal, continuando con cuenta SENDER...");
 
     // Procesar emails de secretmedia@feverup.com (cuenta SENDER)
     // IMPORTANTE: Este código SIEMPRE se ejecuta, incluso si la cuenta principal falló
