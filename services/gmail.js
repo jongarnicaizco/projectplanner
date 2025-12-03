@@ -33,11 +33,11 @@ export async function getGmailClient() {
       });
       
       // El redirect URI debe coincidir con el configurado en OAuth Client
-      // NOTA: El OAuth Client está en smn-content-v2, no en check-in-sf
+      // NOTA: El OAuth Client está en check-in-sf
       // El redirect URI debe estar autorizado en el OAuth Client
       const redirectUri = process.env.GMAIL_REDIRECT_URI || "http://localhost:3000/oauth2callback";
       console.log("[mfs] Usando redirect URI:", redirectUri);
-      console.log("[mfs] NOTA: El OAuth Client debe estar en smn-content-v2 y tener este redirect URI autorizado");
+      console.log("[mfs] NOTA: El OAuth Client debe estar en check-in-sf y tener este redirect URI autorizado");
       
       const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
       oAuth2Client.setCredentials({ refresh_token: refreshToken });
