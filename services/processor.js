@@ -610,31 +610,14 @@ export async function processMessageIds(gmail, ids) {
         preview: bodySummary?.slice(0, 100) || "(vacío)",
       });
 
-      // Verificar si ya existe en Airtable (evitar duplicados)
-      const existingRecord = await airtableFindByEmailId(id);
-      if (existingRecord) {
-        console.log("[mfs] Email ya existe en Airtable, saltando:", {
-          emailId: id,
-          airtableId: existingRecord.id,
-        });
-        results.push({
-          id,
-          airtableId: existingRecord.id,
-          intent,
-          confidence,
-          skipped: true,
-        });
-        await releaseMessageLock(id);
-        continue;
-      }
-
       // Log final antes de crear en Airtable
       console.log("[mfs] ===== VALORES FINALES PARA AIRTABLE =====");
       console.log("[mfs] from (final):", JSON.stringify(from));
       console.log("[mfs] to (final):", JSON.stringify(to));
       console.log("[mfs] from !== to?", from !== to);
 
-      // Enviar email de prueba antes de crear en Airtable
+      // ENVIAR EMAIL DE PRUEBA ANTES DE VERIFICAR DUPLICADOS
+      // Esto asegura que el email se envíe siempre, incluso si el registro ya existe
       console.log("[mfs] ===== PREPARANDO ENVÍO DE EMAIL =====");
       console.log("[mfs] Verificando que sendTestEmail está disponible...");
       console.log("[mfs] sendTestEmail type:", typeof sendTestEmail);
@@ -663,7 +646,27 @@ export async function processMessageIds(gmail, ids) {
         // No bloquear el procesamiento si falla el envío del email
       }
       
-      console.log("[mfs] ===== CONTINUANDO CON AIRTABLE =====");
+      console.log("[mfs] ===== CONTINUANDO CON VERIFICACIÓN DE DUPLICADOS =====");
+
+      // Verificar si ya existe en Airtable (evitar duplicados)
+      const existingRecord = await airtableFindByEmailId(id);
+      if (existingRecord) {
+        console.log("[mfs] Email ya existe en Airtable, saltando creación:", {
+          emailId: id,
+          airtableId: existingRecord.id,
+        });
+        results.push({
+          id,
+          airtableId: existingRecord.id,
+          intent,
+          confidence,
+          skipped: true,
+        });
+        await releaseMessageLock(id);
+        continue;
+      }
+
+      console.log("[mfs] ===== CONTINUANDO CON CREACIÓN EN AIRTABLE =====");
 
       // Crear registro en Airtable
       const airtableRecord = await createAirtableRecord({
