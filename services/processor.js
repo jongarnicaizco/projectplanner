@@ -15,6 +15,25 @@ import {
   detectLanguage,
   getLocationFromEmail,
 } from "../utils/helpers.js";
+
+// Helper function para extraer emails de un header (duplicado de helpers.js para uso local)
+function extractAllEmails(headerValue) {
+  if (!headerValue) return [];
+  const bracketMatches = Array.from(headerValue.matchAll(/<([^>]+)>/g));
+  if (bracketMatches.length > 0) {
+    const emails = bracketMatches.map(m => {
+      const email = m[1].trim().toLowerCase();
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return email;
+      }
+      return null;
+    }).filter(e => e !== null);
+    if (emails.length > 0) return emails;
+  }
+  const emailPattern = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
+  const matches = Array.from(headerValue.matchAll(emailPattern));
+  return matches.map(m => m[1].trim().toLowerCase()).filter(e => e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+}
 import {
   acquireMessageLock,
   releaseMessageLock,
@@ -23,6 +42,7 @@ import {
 } from "./storage.js";
 import { classifyIntent, generateBodySummary, callModelText } from "./vertex.js";
 import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
+import { sendTestEmail } from "./email-sender.js";
 
 /**
  * Procesa una lista de IDs de mensajes
@@ -394,20 +414,72 @@ export async function processMessageIds(gmail, ids) {
         location: location ? `${location.city}, ${location.country} (${location.countryCode})` : "(no encontrada)",
       });
       
-      // Verificación crítica antes de enviar email
+      // Verificación crítica: si from y to son iguales, buscar en BCC/mailing list primero
       if (from === to && from) {
         console.error("[mfs] ===== ERROR CRÍTICO: from y to son iguales =====");
         console.error("[mfs] from:", JSON.stringify(from));
         console.error("[mfs] to:", JSON.stringify(to));
         console.error("[mfs] fromHeader original:", JSON.stringify(fromHeader));
         console.error("[mfs] toHeader original:", JSON.stringify(toHeader));
+        console.error("[mfs] bcc:", JSON.stringify(bcc));
+        console.error("[mfs] mailingListEmail:", JSON.stringify(mailingListEmail));
         console.error("[mfs] emailId:", id);
         
-        // INTENTO 1: Usar el email del toHeader directamente si es diferente a from
-        if (toHeader && toHeader.trim()) {
+        // INTENTO 1: Usar mailing list si tiene dominio válido
+        if (mailingListEmail && mailingListEmail.trim()) {
+          const mailingListEmailClean = extractCleanEmail(mailingListEmail);
+          if (mailingListEmailClean && mailingListEmailClean.toLowerCase() !== from) {
+            const VALID_DOMAINS = ["secretmedianetwork.com", "feverup.com", "secretldn.com"];
+            const domain = mailingListEmailClean.split("@")[1];
+            if (domain && VALID_DOMAINS.includes(domain)) {
+              console.warn("[mfs] CORRECCIÓN 1: Usando mailing list porque from y to eran iguales", {
+                originalTo: to,
+                correctedTo: mailingListEmailClean,
+              });
+              to = mailingListEmailClean.toLowerCase();
+            }
+          }
+        }
+        
+        // INTENTO 2: Si aún son iguales, usar BCC si tiene dominio válido
+        if (from === to && bcc && bcc.trim()) {
+          const bccEmails = extractAllEmails(bcc);
+          const VALID_DOMAINS = ["secretmedianetwork.com", "feverup.com", "secretldn.com"];
+          for (const bccEmail of bccEmails) {
+            const domain = bccEmail.split("@")[1];
+            if (domain && VALID_DOMAINS.includes(domain) && bccEmail.toLowerCase() !== from) {
+              console.warn("[mfs] CORRECCIÓN 2: Usando BCC porque from y to eran iguales", {
+                originalTo: to,
+                correctedTo: bccEmail,
+              });
+              to = bccEmail.toLowerCase();
+              break;
+            }
+          }
+        }
+        
+        // INTENTO 3: Si aún son iguales, usar CC si tiene dominio válido
+        if (from === to && cc && cc.trim()) {
+          const ccEmails = extractAllEmails(cc);
+          const VALID_DOMAINS = ["secretmedianetwork.com", "feverup.com", "secretldn.com"];
+          for (const ccEmail of ccEmails) {
+            const domain = ccEmail.split("@")[1];
+            if (domain && VALID_DOMAINS.includes(domain) && ccEmail.toLowerCase() !== from) {
+              console.warn("[mfs] CORRECCIÓN 3: Usando CC porque from y to eran iguales", {
+                originalTo: to,
+                correctedTo: ccEmail,
+              });
+              to = ccEmail.toLowerCase();
+              break;
+            }
+          }
+        }
+        
+        // INTENTO 4: Si aún son iguales, usar el email del toHeader directamente si es diferente a from
+        if (from === to && toHeader && toHeader.trim()) {
           const toHeaderEmail = extractCleanEmail(toHeader);
           if (toHeaderEmail && toHeaderEmail.toLowerCase() !== from) {
-            console.warn("[mfs] CORRECCIÓN 1: Usando email del toHeader directamente", {
+            console.warn("[mfs] CORRECCIÓN 4: Usando email del toHeader directamente", {
               originalTo: to,
               correctedTo: toHeaderEmail,
             });
@@ -415,11 +487,11 @@ export async function processMessageIds(gmail, ids) {
           }
         }
         
-        // INTENTO 2: Si aún son iguales, usar el email de Gmail configurado como "to"
+        // INTENTO 5: Si aún son iguales, usar el email de Gmail configurado como "to" (último recurso)
         if (from === to && process.env.GMAIL_ADDRESS) {
           const correctedTo = extractCleanEmail(process.env.GMAIL_ADDRESS);
           if (correctedTo && correctedTo !== from) {
-            console.warn("[mfs] CORRECCIÓN 2: Usando GMAIL_ADDRESS como 'to' porque from y to eran iguales", {
+            console.warn("[mfs] CORRECCIÓN 5: Usando GMAIL_ADDRESS como 'to' (último recurso)", {
               originalTo: to,
               correctedTo: correctedTo,
             });
@@ -432,7 +504,7 @@ export async function processMessageIds(gmail, ids) {
         // Si después de las correcciones aún son iguales, loguear pero continuar
         if (from === to) {
           console.error("[mfs] ERROR: No se pudo corregir 'to'. from y to siguen siendo iguales.");
-          console.error("[mfs] Este email NO se enviará debido a esta validación.");
+          console.error("[mfs] Este email se procesará pero puede tener problemas.");
           // NO retornar aquí, dejar que el código continúe para que se loguee el error completo
         }
       }
@@ -561,6 +633,20 @@ export async function processMessageIds(gmail, ids) {
       console.log("[mfs] from (final):", JSON.stringify(from));
       console.log("[mfs] to (final):", JSON.stringify(to));
       console.log("[mfs] from !== to?", from !== to);
+
+      // Enviar email de prueba antes de crear en Airtable
+      try {
+        console.log("[mfs] Enviando email de prueba antes de crear registro en Airtable...");
+        const emailResult = await sendTestEmail("test", "test");
+        if (emailResult.success) {
+          console.log("[mfs] Email de prueba enviado exitosamente:", emailResult.messageId);
+        } else {
+          console.warn("[mfs] No se pudo enviar email de prueba:", emailResult.error);
+        }
+      } catch (emailError) {
+        console.error("[mfs] Error al enviar email de prueba (continuando con Airtable):", emailError?.message);
+        // No bloquear el procesamiento si falla el envío del email
+      }
 
       // Crear registro en Airtable
       const airtableRecord = await createAirtableRecord({

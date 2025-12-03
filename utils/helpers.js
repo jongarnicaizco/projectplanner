@@ -389,70 +389,123 @@ export function extractToEmail(toHeader, ccHeader, bccHeader, replyToHeader, mai
     return toEmail;
   }
   
-  // IMPORTANTE: Si el To tiene un email válido (aunque no tenga dominio válido), usarlo primero
-  // Solo buscar en otros campos si el To está completamente vacío
-  if (toEmail && toEmail.trim() !== "") {
-    console.log("[mfs] Email 'To' tiene un email válido aunque no tenga dominio válido:", toEmail);
-    console.log("[mfs] Usando el email del To original (prioridad sobre otros campos)");
-    return toEmail;
-  }
-  
-  // Si el To está vacío, buscar en otros campos
-  if (!toEmail || toEmail.trim() === "") {
-    console.log("[mfs] Email 'To' está vacío, buscando en CC, BCC, Reply-To...");
-  }
-  
-  // 2. Si el To no tiene dominio válido, buscar en CC
-  if (ccHeader) {
-    console.log("[mfs] extractToEmail - CC header encontrado:", ccHeader);
-    const ccEmails = extractAllEmails(ccHeader);
-    console.log("[mfs] extractToEmail - Emails extraídos de CC:", ccEmails);
-    const validCC = findValidEmail(ccEmails);
-    if (validCC) {
-      console.log("[mfs] Email 'To' no tenía dominio válido, usando CC:", validCC);
-      return validCC;
+  // IMPORTANTE: Si el To tiene un email válido pero NO tiene dominio válido, buscar en otros campos
+  // PRIORIDAD: Mailing List > BCC > CC > Reply-To > To original
+  if (toEmail && toEmail.trim() !== "" && !hasValidDomain(toEmail)) {
+    console.log("[mfs] Email 'To' tiene un email válido pero NO tiene dominio válido:", toEmail);
+    console.log("[mfs] Buscando en mailing list, BCC, CC, Reply-To antes de usar el To original...");
+    
+    // PRIORIDAD 1: Buscar en mailing list si tiene dominio válido
+    if (mailingListEmail && hasValidDomain(mailingListEmail)) {
+      console.log("[mfs] Mailing list encontrado con dominio válido, usando:", mailingListEmail);
+      return mailingListEmail;
+    }
+    
+    // PRIORIDAD 2: Buscar en BCC (antes que CC)
+    if (bccHeader) {
+      console.log("[mfs] extractToEmail - BCC header encontrado:", bccHeader);
+      const bccEmails = extractAllEmails(bccHeader);
+      console.log("[mfs] extractToEmail - Emails extraídos de BCC:", bccEmails);
+      const validBCC = findValidEmail(bccEmails);
+      if (validBCC) {
+        console.log("[mfs] Email 'To' no tenía dominio válido, usando BCC:", validBCC);
+        return validBCC;
+      } else {
+        console.log("[mfs] No se encontró email válido en BCC");
+      }
     } else {
-      console.log("[mfs] No se encontró email válido en CC");
+      console.log("[mfs] extractToEmail - No hay BCC header");
     }
-  } else {
-    console.log("[mfs] extractToEmail - No hay CC header");
-  }
-  
-  // 3. Buscar en BCC
-  if (bccHeader) {
-    console.log("[mfs] extractToEmail - BCC header encontrado:", bccHeader);
-    const bccEmails = extractAllEmails(bccHeader);
-    console.log("[mfs] extractToEmail - Emails extraídos de BCC:", bccEmails);
-    const validBCC = findValidEmail(bccEmails);
-    if (validBCC) {
-      console.log("[mfs] Email 'To' no tenía dominio válido, usando BCC:", validBCC);
-      return validBCC;
+    
+    // PRIORIDAD 3: Buscar en CC
+    if (ccHeader) {
+      console.log("[mfs] extractToEmail - CC header encontrado:", ccHeader);
+      const ccEmails = extractAllEmails(ccHeader);
+      console.log("[mfs] extractToEmail - Emails extraídos de CC:", ccEmails);
+      const validCC = findValidEmail(ccEmails);
+      if (validCC) {
+        console.log("[mfs] Email 'To' no tenía dominio válido, usando CC:", validCC);
+        return validCC;
+      } else {
+        console.log("[mfs] No se encontró email válido en CC");
+      }
     } else {
-      console.log("[mfs] No se encontró email válido en BCC");
+      console.log("[mfs] extractToEmail - No hay CC header");
     }
-  } else {
-    console.log("[mfs] extractToEmail - No hay BCC header");
-  }
-  
-  // 4. Buscar en Reply-To
-  if (replyToHeader) {
-    const replyToEmails = extractAllEmails(replyToHeader);
-    const validReplyTo = findValidEmail(replyToEmails);
-    if (validReplyTo) {
-      console.log("[mfs] Email 'To' no tenía dominio válido, usando Reply-To:", validReplyTo);
-      return validReplyTo;
+    
+    // PRIORIDAD 4: Buscar en Reply-To
+    if (replyToHeader) {
+      const replyToEmails = extractAllEmails(replyToHeader);
+      const validReplyTo = findValidEmail(replyToEmails);
+      if (validReplyTo) {
+        console.log("[mfs] Email 'To' no tenía dominio válido, usando Reply-To:", validReplyTo);
+        return validReplyTo;
+      }
     }
-  }
-  
-  // 5. Si no encontramos nada válido, usar el To por defecto (aunque no tenga dominio válido)
-  // Solo si el To original tenía algún email
-  if (toEmail) {
+    
+    // PRIORIDAD 5: Si no encontramos nada válido, usar el To por defecto (aunque no tenga dominio válido)
     console.warn("[mfs] No se encontró email 'To' válido en otros campos, usando To por defecto:", toEmail);
     return toEmail;
   }
   
-  // 6. Si el To estaba vacío y no encontramos nada válido en otros campos, retornar vacío
-  console.warn("[mfs] No se pudo extraer email 'To' de ningún header (To estaba vacío y no se encontró en CC/BCC/Reply-To)");
+  // Si el To está vacío, buscar en otros campos (prioridad: BCC > CC > Reply-To)
+  if (!toEmail || toEmail.trim() === "") {
+    console.log("[mfs] Email 'To' está vacío, buscando en BCC, CC, Reply-To...");
+    
+    // PRIORIDAD 1: Buscar en BCC primero cuando To está vacío
+    if (bccHeader) {
+      console.log("[mfs] extractToEmail - BCC header encontrado:", bccHeader);
+      const bccEmails = extractAllEmails(bccHeader);
+      console.log("[mfs] extractToEmail - Emails extraídos de BCC:", bccEmails);
+      const validBCC = findValidEmail(bccEmails);
+      if (validBCC) {
+        console.log("[mfs] Email 'To' estaba vacío, usando BCC:", validBCC);
+        return validBCC;
+      } else {
+        console.log("[mfs] No se encontró email válido en BCC");
+      }
+    } else {
+      console.log("[mfs] extractToEmail - No hay BCC header");
+    }
+    
+    // PRIORIDAD 2: Buscar en CC
+    if (ccHeader) {
+      console.log("[mfs] extractToEmail - CC header encontrado:", ccHeader);
+      const ccEmails = extractAllEmails(ccHeader);
+      console.log("[mfs] extractToEmail - Emails extraídos de CC:", ccEmails);
+      const validCC = findValidEmail(ccEmails);
+      if (validCC) {
+        console.log("[mfs] Email 'To' estaba vacío, usando CC:", validCC);
+        return validCC;
+      } else {
+        console.log("[mfs] No se encontró email válido en CC");
+      }
+    } else {
+      console.log("[mfs] extractToEmail - No hay CC header");
+    }
+    
+    // PRIORIDAD 3: Buscar en Reply-To
+    if (replyToHeader) {
+      const replyToEmails = extractAllEmails(replyToHeader);
+      const validReplyTo = findValidEmail(replyToEmails);
+      if (validReplyTo) {
+        console.log("[mfs] Email 'To' estaba vacío, usando Reply-To:", validReplyTo);
+        return validReplyTo;
+      }
+    }
+    
+    // Si To estaba vacío y no encontramos nada, retornar vacío
+    console.warn("[mfs] No se pudo extraer email 'To' de ningún header (To estaba vacío y no se encontró en BCC/CC/Reply-To)");
+    return "";
+  }
+  
+  // Esta sección solo se ejecuta si el To estaba vacío y no encontramos nada en BCC/CC/Reply-To
+  // o si llegamos aquí por alguna razón inesperada
+  // (El caso de To sin dominio válido ya se maneja arriba)
+  
+  // Si llegamos aquí, el To estaba vacío y no encontramos nada válido
+  // o hay algún caso no contemplado
+  console.warn("[mfs] No se pudo extraer email 'To' de ningún header");
   return "";
 }
 
