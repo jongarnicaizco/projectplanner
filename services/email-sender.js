@@ -23,23 +23,33 @@ async function getEmailSenderClient() {
     OAUTH2_CREDENTIALS.redirect_uri
   );
 
+  // Configurar credenciales iniciales
   oAuth2Client.setCredentials({
     refresh_token: OAUTH2_CREDENTIALS.refresh_token,
     access_token: OAUTH2_CREDENTIALS.access_token,
   });
 
-  // Obtener un nuevo access token si es necesario
+  // Forzar la obtención de un nuevo access token (el token puede haber expirado)
   try {
+    console.log("[mfs] Obteniendo access token para envío de email...");
     const tokenResponse = await oAuth2Client.getAccessToken();
     if (tokenResponse.token) {
+      console.log("[mfs] Access token obtenido exitosamente");
       oAuth2Client.setCredentials({
         access_token: tokenResponse.token,
         refresh_token: OAUTH2_CREDENTIALS.refresh_token,
       });
+    } else {
+      console.warn("[mfs] No se obtuvo nuevo token, usando el existente");
     }
   } catch (error) {
-    console.error("[mfs] Error obteniendo access token:", error?.message);
-    // Continuar de todas formas, puede que el token aún sea válido
+    console.error("[mfs] Error obteniendo access token:", {
+      message: error?.message,
+      code: error?.code,
+      details: error?.response?.data,
+    });
+    // Intentar usar el token existente de todas formas
+    console.log("[mfs] Intentando usar access token existente...");
   }
 
   return google.gmail({ version: "v1", auth: oAuth2Client });
@@ -53,7 +63,11 @@ async function getEmailSenderClient() {
  */
 export async function sendTestEmail(subject = "test", body = "test") {
   try {
-    console.log("[mfs] Enviando email de prueba a jongarnicaizco@gmail.com...");
+    console.log("[mfs] ===== INICIANDO ENVÍO DE EMAIL =====");
+    console.log("[mfs] Destinatario: jongarnicaizco@gmail.com");
+    console.log("[mfs] Remitente: secretmedia@feverup.com");
+    console.log("[mfs] Asunto:", subject);
+    console.log("[mfs] Cuerpo:", body);
     
     const gmail = await getEmailSenderClient();
     
@@ -70,12 +84,16 @@ export async function sendTestEmail(subject = "test", body = "test") {
       body,
     ].join("\n");
 
+    console.log("[mfs] Mensaje creado, codificando en base64url...");
+
     // Codificar el mensaje en base64url
     const encodedMessage = Buffer.from(message)
       .toString("base64")
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
       .replace(/=+$/, "");
+
+    console.log("[mfs] Mensaje codificado, enviando a Gmail API...");
 
     // Enviar el email
     const response = await gmail.users.messages.send({
@@ -85,26 +103,32 @@ export async function sendTestEmail(subject = "test", body = "test") {
       },
     });
 
-    console.log("[mfs] Email de prueba enviado exitosamente:", {
-      messageId: response.data.id,
-      to: to,
-      subject: subject,
-    });
+    console.log("[mfs] ===== EMAIL ENVIADO EXITOSAMENTE =====");
+    console.log("[mfs] Message ID:", response.data.id);
+    console.log("[mfs] Thread ID:", response.data.threadId);
+    console.log("[mfs] Destinatario:", to);
+    console.log("[mfs] Asunto:", subject);
 
     return {
       success: true,
       messageId: response.data.id,
+      threadId: response.data.threadId,
     };
   } catch (error) {
-    console.error("[mfs] Error enviando email de prueba:", {
-      error: error?.message,
-      code: error?.code,
-      details: error?.response?.data,
-    });
+    console.error("[mfs] ===== ERROR ENVIANDO EMAIL =====");
+    console.error("[mfs] Error message:", error?.message);
+    console.error("[mfs] Error code:", error?.code);
+    console.error("[mfs] Error status:", error?.response?.status);
+    console.error("[mfs] Error statusText:", error?.response?.statusText);
+    console.error("[mfs] Error details:", JSON.stringify(error?.response?.data, null, 2));
+    console.error("[mfs] Stack trace:", error?.stack);
     
     return {
       success: false,
       error: error?.message || "Unknown error",
+      code: error?.code,
+      status: error?.response?.status,
+      details: error?.response?.data,
     };
   }
 }
