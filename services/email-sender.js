@@ -9,6 +9,8 @@ const OAUTH2_CREDENTIALS = {
   client_secret: "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",
   refresh_token: "1//04MHr-4Z872t7CgYIARAAGAQSNwF-L9IrFU2uHdj8wGSaGCP1BT9HqHk4Vf7S8SYbCVQIpVPMkIeOab8oFc6r0gJWZ9sDJMSj_Jk",
   redirect_uri: "http://localhost:3000/oauth2callback",
+  // Access token actual (se refrescará automáticamente cuando expire)
+  access_token: "ya29.a0ATi6K2sswlPhTHpmUEAnf5OAwH0KWT4anefok2wTn4iazvnl4VvGghMPmTcxSQEFzIuO95ra44juImzSeUnnLzhtQT_rMQ4YqoPrcSvrizUG5dStrxvOBlItFU_n2tdvNIK5ryvGgpjJjuDT3TnJdEtWWcnBbsQwtgnkalLGVNLaduFASLj4jq9QzWs7IOiyJt7XoVcaCgYKAfESARESFQHGX2MiIj-osjTwVvuP94vdOfOCeQ0206",
 };
 
 /**
@@ -23,6 +25,7 @@ async function getEmailSenderClient() {
 
   oAuth2Client.setCredentials({
     refresh_token: OAUTH2_CREDENTIALS.refresh_token,
+    access_token: OAUTH2_CREDENTIALS.access_token,
   });
 
   // Obtener un nuevo access token si es necesario
@@ -44,6 +47,7 @@ async function getEmailSenderClient() {
 
 /**
  * Envía un email de prueba a jongarnicaizco@gmail.com
+ * Por cada correo procesado, envía un email con el texto "test"
  * @param {string} subject - Asunto del email (opcional, por defecto "test")
  * @param {string} body - Cuerpo del email (opcional, por defecto "test")
  */
