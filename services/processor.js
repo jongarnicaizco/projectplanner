@@ -45,6 +45,34 @@ import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
 import { sendTestEmail } from "./email-sender.js";
 
 /**
+ * Verifica si un mensaje tiene la etiqueta "processed"
+ */
+async function checkProcessedLabel(gmail, labelIds) {
+  try {
+    // Obtener todas las etiquetas del usuario para buscar "processed"
+    const labelsResponse = await backoff(
+      () => gmail.users.labels.list({ userId: "me" }),
+      "labels.list"
+    );
+    
+    const labels = labelsResponse.data.labels || [];
+    const processedLabel = labels.find(label => label.name?.toLowerCase() === "processed");
+    
+    if (!processedLabel) {
+      // Si la etiqueta no existe, el mensaje no puede tenerla
+      return false;
+    }
+    
+    // Verificar si el mensaje tiene esta etiqueta
+    return labelIds.includes(processedLabel.id);
+  } catch (error) {
+    console.warn("[mfs] Error verificando etiqueta 'processed':", error?.message || error);
+    // Si hay error, asumir que no tiene la etiqueta para no saltar emails por error
+    return false;
+  }
+}
+
+/**
  * Obtiene o crea la etiqueta "processed" en Gmail
  */
 async function getOrCreateProcessedLabel(gmail) {
@@ -203,6 +231,26 @@ export async function processMessageIds(gmail, ids) {
           id,
           msgLabelIds
         );
+        await releaseMessageLock(id);
+        continue;
+      }
+
+      // Verificar si el email ya tiene la etiqueta "processed" - si la tiene, saltarlo
+      const hasProcessedLabel = await checkProcessedLabel(gmail, msgLabelIds);
+      if (hasProcessedLabel) {
+        console.log(
+          "[mfs] Mensaje ya tiene etiqueta 'processed', saltando procesamiento:",
+          id
+        );
+        results.push({
+          id,
+          airtableId: null,
+          intent: null,
+          confidence: null,
+          skipped: true,
+          reason: "already_processed",
+        });
+        await releaseMessageLock(id);
         continue;
       }
 
