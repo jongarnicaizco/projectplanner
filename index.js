@@ -208,12 +208,16 @@ app.post("/force-process", async (_req, res) => {
     }
     
     // Procesar cuenta SENDER (secretmedia@feverup.com)
+    console.log("[mfs] ===== /force-process: INICIANDO PROCESAMIENTO CUENTA SENDER =====");
     try {
       console.log("[mfs] /force-process → Procesando mensajes de secretmedia@feverup.com");
+      console.log("[mfs] /force-process → Obteniendo cliente Gmail SENDER...");
       const gmailSender = await getGmailSenderClient();
+      console.log("[mfs] /force-process → ✓ Cliente Gmail SENDER obtenido exitosamente");
       
       const twoHoursAgo = Math.floor(Date.now() / 1000) - (2 * 60 * 60);
       const query = `in:inbox after:${twoHoursAgo}`;
+      console.log("[mfs] /force-process → Buscando mensajes con query:", query);
       
       const list = await gmailSender.users.messages.list({
         userId: "me",
@@ -225,14 +229,22 @@ app.post("/force-process", async (_req, res) => {
       console.log(`[mfs] /force-process → Encontrados ${senderMessageIds.length} mensajes en INBOX (cuenta SENDER)`);
       
       if (senderMessageIds.length > 0) {
+        console.log("[mfs] /force-process → Procesando", senderMessageIds.length, "mensajes de cuenta SENDER...");
         const { processMessageIds } = await import("./services/processor.js");
         const senderResults = await processMessageIds(gmailSender, senderMessageIds);
+        console.log("[mfs] /force-process → ✓ Procesamiento de cuenta SENDER completado:", senderResults.length, "resultados");
         allResults.push(...senderResults);
+      } else {
+        console.log("[mfs] /force-process → No hay mensajes nuevos en cuenta SENDER (últimas 2 horas)");
       }
     } catch (e) {
-      console.error("[mfs] /force-process → Error procesando cuenta SENDER:", e?.message || e);
+      console.error("[mfs] /force-process → ✗✗✗ ERROR procesando cuenta SENDER ✗✗✗");
+      console.error("[mfs] /force-process → Error message:", e?.message || e);
+      console.error("[mfs] /force-process → Error code:", e?.code || e?.response?.status || "unknown");
+      console.error("[mfs] /force-process → Stack trace:", e?.stack);
       // Continuar aunque falle la cuenta SENDER
     }
+    console.log("[mfs] ===== /force-process: FIN PROCESAMIENTO CUENTA SENDER =====");
     
     if (allResults.length === 0) {
       return res.json({

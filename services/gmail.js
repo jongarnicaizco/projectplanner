@@ -462,34 +462,48 @@ export async function setupWatchSender(gmailSender) {
  * Crea y retorna el cliente de Gmail usando los secrets de SENDER (para secretmedia@feverup.com)
  */
 export async function getGmailSenderClient() {
+  console.log("[mfs] ===== INICIANDO CREACIÓN DE CLIENTE GMAIL SENDER =====");
   console.log("[mfs] Creando cliente de Gmail SENDER con modo OAuth");
   
   try {
+    console.log("[mfs] Obteniendo secrets de OAuth SENDER desde Secret Manager...");
     const clientId = await accessSecret("GMAIL_CLIENT_ID_SENDER");
     const clientSecret = await accessSecret("GMAIL_CLIENT_SECRET_SENDER");
     const refreshToken = await accessSecret("GMAIL_REFRESH_TOKEN_SENDER");
     
-    if (!clientId || !clientSecret || !refreshToken) {
-      throw new Error("Faltan credenciales OAuth SENDER en Secret Manager. Verifica GMAIL_CLIENT_ID_SENDER, GMAIL_CLIENT_SECRET_SENDER y GMAIL_REFRESH_TOKEN_SENDER");
-    }
-    
-    console.log("[mfs] OAuth SENDER secrets obtenidos:", {
+    console.log("[mfs] Secrets obtenidos:", {
+      clientIdExists: !!clientId,
+      clientSecretExists: !!clientSecret,
+      refreshTokenExists: !!refreshToken,
       clientIdLength: clientId?.length || 0,
       clientSecretLength: clientSecret?.length || 0,
       refreshTokenLength: refreshToken?.length || 0,
     });
     
+    if (!clientId || !clientSecret || !refreshToken) {
+      const missing = [];
+      if (!clientId) missing.push("GMAIL_CLIENT_ID_SENDER");
+      if (!clientSecret) missing.push("GMAIL_CLIENT_SECRET_SENDER");
+      if (!refreshToken) missing.push("GMAIL_REFRESH_TOKEN_SENDER");
+      throw new Error(`Faltan credenciales OAuth SENDER en Secret Manager: ${missing.join(", ")}`);
+    }
+    
+    console.log("[mfs] ✓ Todos los secrets OAuth SENDER obtenidos correctamente");
+    
     const redirectUri = process.env.GMAIL_REDIRECT_URI || "http://localhost:3000/oauth2callback";
     console.log("[mfs] Usando redirect URI:", redirectUri);
     
+    console.log("[mfs] Creando cliente OAuth2...");
     const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
     oAuth2Client.setCredentials({ refresh_token: refreshToken });
     
     // Intentar refrescar el token para verificar que funciona
+    console.log("[mfs] Verificando y refrescando access token...");
     try {
       const tokenResponse = await oAuth2Client.getAccessToken();
-      console.log("[mfs] Token OAuth SENDER refrescado exitosamente");
-      console.log("[mfs] Cliente Gmail OAuth SENDER listo y verificado");
+      console.log("[mfs] ✓ Token OAuth SENDER refrescado exitosamente");
+      console.log("[mfs] ✓ Cliente Gmail OAuth SENDER listo y verificado");
+      console.log("[mfs] ===== CLIENTE GMAIL SENDER CREADO EXITOSAMENTE =====");
       return google.gmail({ version: "v1", auth: oAuth2Client });
     } catch (oauthError) {
       const errorDetails = {
@@ -500,11 +514,14 @@ export async function getGmailSenderClient() {
         status: oauthError?.response?.status || oauthError?.status || "unknown",
       };
       
-      console.error("[mfs] Error verificando token OAuth SENDER:", JSON.stringify(errorDetails, null, 2));
+      console.error("[mfs] ✗✗✗ ERROR verificando token OAuth SENDER ✗✗✗");
+      console.error("[mfs] Error details:", JSON.stringify(errorDetails, null, 2));
       throw new Error(`Error de autenticación OAuth SENDER: ${errorDetails.error} - ${errorDetails.errorDescription}`);
     }
   } catch (secretError) {
-    console.error("[mfs] Error obteniendo secrets de OAuth SENDER:", secretError?.message || secretError);
+    console.error("[mfs] ✗✗✗ ERROR obteniendo secrets de OAuth SENDER ✗✗✗");
+    console.error("[mfs] Error message:", secretError?.message || secretError);
+    console.error("[mfs] Error stack:", secretError?.stack);
     throw new Error(`No se pudieron obtener las credenciales OAuth SENDER: ${secretError?.message || secretError}`);
   }
 }
