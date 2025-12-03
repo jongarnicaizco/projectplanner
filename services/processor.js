@@ -260,22 +260,29 @@ export async function processMessageIds(gmail, ids) {
       }
 
       // Verificar si el email ya tiene la etiqueta "processed" - si la tiene, saltarlo
-      const hasProcessedLabel = await checkProcessedLabel(gmail, msgLabelIds);
-      if (hasProcessedLabel) {
-        console.log(
-          "[mfs] Mensaje ya tiene etiqueta 'processed', saltando procesamiento:",
-          id
-        );
-        results.push({
-          id,
-          airtableId: null,
-          intent: null,
-          confidence: null,
-          skipped: true,
-          reason: "already_processed",
-        });
-        await releaseMessageLock(id);
-        continue;
+      try {
+        const hasProcessedLabel = await checkProcessedLabel(gmail, msgLabelIds);
+        if (hasProcessedLabel) {
+          console.log(
+            "[mfs] Mensaje ya tiene etiqueta 'processed', saltando procesamiento:",
+            id
+          );
+          results.push({
+            id,
+            airtableId: null,
+            intent: null,
+            confidence: null,
+            skipped: true,
+            reason: "already_processed",
+          });
+          await releaseMessageLock(id);
+          continue;
+        } else {
+          console.log("[mfs] Mensaje NO tiene etiqueta 'processed', continuando con procesamiento:", id);
+        }
+      } catch (labelCheckError) {
+        console.warn("[mfs] Error verificando etiqueta 'processed', continuando con procesamiento:", id, labelCheckError?.message || labelCheckError);
+        // Si hay error verificando la etiqueta, continuar procesando (no bloquear por error)
       }
 
       // Obtener headers básicos para verificar si es un email enviado por nosotros o de test
