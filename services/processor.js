@@ -901,7 +901,7 @@ export async function processMessageIds(gmail, ids) {
       if (isBarter) {
         console.log("[mfs] ===== DETECTADO BARTER REQUEST - ENVIANDO EMAIL BARTER (TEST) =====");
         try {
-          const barterResult = await sendBarterEmail(id, senderFirstName || "Client", brandName);
+          const barterResult = await sendBarterEmail(id, senderFirstName || "Client", brandName, subject);
           if (barterResult.success) {
             console.log("[mfs] ✓✓✓ Email BARTER (TEST) enviado exitosamente a jongarnicaizco@gmail.com ✓✓✓");
             console.log("[mfs] Message ID:", barterResult.messageId);
@@ -917,7 +917,7 @@ export async function processMessageIds(gmail, ids) {
       if (isFreeCoverage) {
         console.log("[mfs] ===== DETECTADO FREE COVERAGE REQUEST - ENVIANDO EMAIL FREE COVERAGE (TEST) =====");
         try {
-          const freeCoverageResult = await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName);
+          const freeCoverageResult = await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject);
           if (freeCoverageResult.success) {
             console.log("[mfs] ✓✓✓ Email FREE COVERAGE (TEST) enviado exitosamente a jongarnicaizco@gmail.com ✓✓✓");
             console.log("[mfs] Message ID:", freeCoverageResult.messageId);

@@ -218,20 +218,23 @@ Secret Media Network`;
  * @param {string} emailId - ID del email que se está procesando (para logging)
  * @param {string} firstName - Primer nombre del cliente
  * @param {string} brandName - Nombre de la marca/empresa (se extrae del from o subject si no está disponible)
+ * @param {string} originalSubject - Subject del correo original recibido
  */
-export async function sendBarterEmail(emailId, firstName, brandName) {
+export async function sendBarterEmail(emailId, firstName, brandName, originalSubject) {
   try {
     console.log("[mfs] ===== INICIANDO ENVÍO DE EMAIL BARTER (TEST) =====");
     console.log("[mfs] Email ID procesado:", emailId);
     console.log("[mfs] Destinatario: jongarnicaizco@gmail.com (TEST - NO se envía al cliente)");
     console.log("[mfs] Remitente: secretmedia@feverup.com");
     console.log("[mfs] Tipo: Barter Request");
+    console.log("[mfs] Subject original:", originalSubject);
     
     const gmail = await getEmailSenderClient();
     
     const from = "secretmedia@feverup.com";
     const to = "jongarnicaizco@gmail.com"; // IMPORTANTE: Solo a jongarnicaizco@gmail.com, NO al cliente
-    const subject = `TEST - Barter Request Response for ${brandName || "Client"}`;
+    // El subject debe ser "Re: " seguido del subject original
+    const subject = originalSubject ? `Re: ${originalSubject}` : `Re: Barter Request Response for ${brandName || "Client"}`;
     const body = generateBarterEmailTemplate(firstName, brandName);
     
     const messageHeaders = [
@@ -282,20 +285,23 @@ export async function sendBarterEmail(emailId, firstName, brandName) {
  * @param {string} emailId - ID del email que se está procesando (para logging)
  * @param {string} firstName - Primer nombre del cliente
  * @param {string} brandName - Nombre de la marca/empresa (se extrae del from o subject si no está disponible)
+ * @param {string} originalSubject - Subject del correo original recibido
  */
-export async function sendFreeCoverageEmail(emailId, firstName, brandName) {
+export async function sendFreeCoverageEmail(emailId, firstName, brandName, originalSubject) {
   try {
     console.log("[mfs] ===== INICIANDO ENVÍO DE EMAIL FREE COVERAGE (TEST) =====");
     console.log("[mfs] Email ID procesado:", emailId);
     console.log("[mfs] Destinatario: jongarnicaizco@gmail.com (TEST - NO se envía al cliente)");
     console.log("[mfs] Remitente: secretmedia@feverup.com");
     console.log("[mfs] Tipo: Free Coverage Request");
+    console.log("[mfs] Subject original:", originalSubject);
     
     const gmail = await getEmailSenderClient();
     
     const from = "secretmedia@feverup.com";
     const to = "jongarnicaizco@gmail.com"; // IMPORTANTE: Solo a jongarnicaizco@gmail.com, NO al cliente
-    const subject = `TEST - Free Coverage Request Response for ${brandName || "Client"}`;
+    // El subject debe ser "Re: " seguido del subject original
+    const subject = originalSubject ? `Re: ${originalSubject}` : `Re: Free Coverage Request Response for ${brandName || "Client"}`;
     const body = generateFreeCoverageEmailTemplate(firstName, brandName);
     
     const messageHeaders = [
