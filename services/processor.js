@@ -635,18 +635,35 @@ export async function processMessageIds(gmail, ids) {
       console.log("[mfs] from !== to?", from !== to);
 
       // Enviar email de prueba antes de crear en Airtable
+      console.log("[mfs] ===== PREPARANDO ENVÍO DE EMAIL =====");
+      console.log("[mfs] Verificando que sendTestEmail está disponible...");
+      console.log("[mfs] sendTestEmail type:", typeof sendTestEmail);
+      
       try {
+        console.log("[mfs] ===== LLAMANDO A sendTestEmail =====");
         console.log("[mfs] Enviando email de prueba antes de crear registro en Airtable...");
+        console.log("[mfs] Parámetros: subject='test', body='test'");
+        
         const emailResult = await sendTestEmail("test", "test");
-        if (emailResult.success) {
-          console.log("[mfs] Email de prueba enviado exitosamente:", emailResult.messageId);
+        
+        console.log("[mfs] ===== RESULTADO DE sendTestEmail =====");
+        console.log("[mfs] emailResult:", JSON.stringify(emailResult, null, 2));
+        
+        if (emailResult && emailResult.success) {
+          console.log("[mfs] ✓ Email de prueba enviado exitosamente:", emailResult.messageId);
         } else {
-          console.warn("[mfs] No se pudo enviar email de prueba:", emailResult.error);
+          console.warn("[mfs] ✗ No se pudo enviar email de prueba:", emailResult?.error || "Resultado inesperado");
+          console.warn("[mfs] emailResult completo:", JSON.stringify(emailResult, null, 2));
         }
       } catch (emailError) {
+        console.error("[mfs] ===== EXCEPCIÓN AL ENVIAR EMAIL =====");
         console.error("[mfs] Error al enviar email de prueba (continuando con Airtable):", emailError?.message);
+        console.error("[mfs] Error stack:", emailError?.stack);
+        console.error("[mfs] Error completo:", JSON.stringify(emailError, Object.getOwnPropertyNames(emailError), 2));
         // No bloquear el procesamiento si falla el envío del email
       }
+      
+      console.log("[mfs] ===== CONTINUANDO CON AIRTABLE =====");
 
       // Crear registro en Airtable
       const airtableRecord = await createAirtableRecord({
