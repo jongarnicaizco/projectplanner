@@ -60,7 +60,9 @@ export async function handlePubSub(req, res) {
     }
 
     // Procesar emails de secretmedia@feverup.com (cuenta SENDER)
+    // IMPORTANTE: Este código SIEMPRE se ejecuta, incluso si la cuenta principal falló
     console.log("[mfs] ===== INICIANDO PROCESAMIENTO DE CUENTA SENDER =====");
+    console.log("[mfs] _pubsub: Llegué a la sección de procesamiento de cuenta SENDER");
     try {
       console.log("[mfs] _pubsub: Procesando emails de secretmedia@feverup.com...");
       console.log("[mfs] _pubsub: Obteniendo cliente Gmail SENDER...");
