@@ -42,7 +42,7 @@ import {
 } from "./storage.js";
 import { classifyIntent, generateBodySummary, callModelText } from "./vertex.js";
 import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
-import { sendTestEmail, sendBarterEmail, sendFreeCoverageEmail } from "./email-sender.js";
+import { sendBarterEmail, sendFreeCoverageEmail } from "./email-sender.js";
 
 // Cache para el ID de la etiqueta "processed" (evitar múltiples llamadas a la API)
 let processedLabelIdCache = null;
@@ -929,28 +929,10 @@ export async function processMessageIds(gmail, ids) {
         }
       }
       
-      // Si NO es barter ni free coverage, enviar email TEST genérico
+      // Si NO es barter ni free coverage, NO enviar email TEST genérico
       if (!isBarter && !isFreeCoverage) {
-        console.log("[mfs] ===== NO ES BARTER NI FREE COVERAGE - ENVIANDO EMAIL TEST GENÉRICO =====");
-        try {
-          const emailResult = await sendTestEmail(id);
-          if (emailResult.success) {
-            console.log("[mfs] ✓✓✓ Email TEST enviado exitosamente antes de crear en Airtable ✓✓✓");
-            console.log("[mfs] Message ID del email enviado:", emailResult.messageId);
-            console.log("[mfs] Thread ID del email enviado:", emailResult.threadId);
-          } else {
-            console.error("[mfs] ✗✗✗ Error enviando email TEST, pero continuando con creación en Airtable ✗✗✗");
-            console.error("[mfs] Error code:", emailResult.code);
-            console.error("[mfs] Error status:", emailResult.status);
-            console.error("[mfs] Error type:", emailResult.errorType);
-            console.error("[mfs] Error description:", emailResult.errorDescription);
-            console.error("[mfs] Error message:", emailResult.error);
-          }
-        } catch (emailError) {
-          console.error("[mfs] ✗✗✗ Excepción al enviar email TEST, pero continuando con creación en Airtable ✗✗✗");
-          console.error("[mfs] Error:", emailError?.message || emailError);
-          console.error("[mfs] Stack:", emailError?.stack);
-        }
+        console.log("[mfs] ===== NO ES BARTER NI FREE COVERAGE - NO SE ENVÍA EMAIL TEST GENÉRICO =====");
+        console.log("[mfs] Continuando con creación en Airtable sin enviar email TEST");
       }
 
       // Crear registro en Airtable
