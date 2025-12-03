@@ -120,14 +120,35 @@ export async function processMessageIds(gmail, ids) {
         continue;
       }
 
-      // Obtener headers básicos para verificar si es un email enviado por nosotros
+      // Obtener headers básicos para verificar si es un email enviado por nosotros o de test
       const basicHeaders = msg.data.payload?.headers || [];
       const fromHeaderBasic = basicHeaders.find(h => h.name?.toLowerCase() === "from")?.value || "";
+      const subjectHeaderBasic = basicHeaders.find(h => h.name?.toLowerCase() === "subject")?.value || "";
       
       // Filtrar emails enviados desde secretmedia@feverup.com para evitar bucles
       if (fromHeaderBasic && fromHeaderBasic.toLowerCase().includes("secretmedia@feverup.com")) {
         console.log(
           "[mfs] Mensaje ignorado: es un email enviado desde secretmedia@feverup.com (evitando bucle):",
+          id
+        );
+        await releaseMessageLock(id);
+        continue;
+      }
+      
+      // Filtrar emails con subject "test" (case insensitive) para evitar bucles
+      if (subjectHeaderBasic && subjectHeaderBasic.toLowerCase().trim() === "test") {
+        console.log(
+          "[mfs] Mensaje ignorado: tiene subject 'test' (evitando bucle):",
+          id
+        );
+        await releaseMessageLock(id);
+        continue;
+      }
+      
+      // Filtrar emails que vengan de jongarnicaizco@gmail.com para evitar bucles
+      if (fromHeaderBasic && fromHeaderBasic.toLowerCase().includes("jongarnicaizco@gmail.com")) {
+        console.log(
+          "[mfs] Mensaje ignorado: es un email de jongarnicaizco@gmail.com (evitando bucle):",
           id
         );
         await releaseMessageLock(id);
@@ -668,13 +689,17 @@ export async function processMessageIds(gmail, ids) {
           const messageIdHeader = allHeaders.find(h => h.name?.toLowerCase() === "message-id");
           const originalMessageId = messageIdHeader?.value || null;
           
+          // IMPORTANTE: Todos los emails se envían a jongarnicaizco@gmail.com
+          const emailDestination = "jongarnicaizco@gmail.com";
+          console.log("[mfs] Email se enviará a:", emailDestination, "(destinatario original:", from, ")");
+          
           let emailResult;
           if (isFreeCoverage) {
             console.log("[mfs] Enviando email de Free Coverage Request...");
-            emailResult = await sendFreeCoverageEmail(from, senderFirstName || "there", brandName, subject, originalMessageId);
+            emailResult = await sendFreeCoverageEmail(emailDestination, senderFirstName || "there", brandName, subject, originalMessageId);
           } else if (isBarter) {
             console.log("[mfs] Enviando email de Barter Request...");
-            emailResult = await sendBarterEmail(from, senderFirstName || "there", brandName, subject, originalMessageId);
+            emailResult = await sendBarterEmail(emailDestination, senderFirstName || "there", brandName, subject, originalMessageId);
           }
           
           console.log("[mfs] ===== RESULTADO DE ENVÍO DE EMAIL =====");
