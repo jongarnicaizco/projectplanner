@@ -490,8 +490,13 @@ export async function getGmailSenderClient() {
     
     console.log("[mfs] ✓ Todos los secrets OAuth SENDER obtenidos correctamente");
     
+    // El redirect URI debe coincidir con el configurado en el OAuth Client
+    // Para OAuth, el redirect URI puede ser cualquier URI autorizado en el OAuth Client
+    // Usamos un URI común que debería estar autorizado
     const redirectUri = process.env.GMAIL_REDIRECT_URI || "http://localhost:3000/oauth2callback";
     console.log("[mfs] Usando redirect URI:", redirectUri);
+    console.log("[mfs] NOTA: El OAuth Client debe estar en check-in-sf y tener este redirect URI autorizado");
+    console.log("[mfs] Client ID obtenido (primeros 50 chars):", clientId?.substring(0, 50) || "empty");
     
     console.log("[mfs] Creando cliente OAuth2...");
     const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
@@ -508,14 +513,33 @@ export async function getGmailSenderClient() {
     } catch (oauthError) {
       const errorDetails = {
         message: oauthError?.message || "unknown",
-        code: oauthError?.code || "unknown",
-        error: oauthError?.response?.data?.error || oauthError?.data?.error || "unknown",
-        errorDescription: oauthError?.response?.data?.error_description || oauthError?.data?.error_description || "unknown",
+        code: oauthError?.code || oauthError?.response?.status || "unknown",
+        error: oauthError?.response?.data?.error || oauthError?.data?.error || oauthError?.error || "unknown",
+        errorDescription: oauthError?.response?.data?.error_description || oauthError?.data?.error_description || oauthError?.error_description || "unknown",
         status: oauthError?.response?.status || oauthError?.status || "unknown",
+        responseData: oauthError?.response?.data || oauthError?.data || {},
       };
       
       console.error("[mfs] ✗✗✗ ERROR verificando token OAuth SENDER ✗✗✗");
       console.error("[mfs] Error details:", JSON.stringify(errorDetails, null, 2));
+      console.error("[mfs] Client ID usado:", clientId?.substring(0, 50) || "empty");
+      console.error("[mfs] Redirect URI usado:", redirectUri);
+      
+      // Si es invalid_client, dar instrucciones específicas
+      if (errorDetails.error === "invalid_client") {
+        console.error("[mfs] ========================================");
+        console.error("[mfs] ERROR: invalid_client para cuenta SENDER");
+        console.error("[mfs] Posibles causas:");
+        console.error("[mfs] 1. El OAuth Client no existe en check-in-sf");
+        console.error("[mfs] 2. El Client ID en Secret Manager no coincide con el OAuth Client");
+        console.error("[mfs] 3. El OAuth Client no está habilitado");
+        console.error("[mfs] 4. El redirect URI no está autorizado en el OAuth Client");
+        console.error("[mfs] 5. El refresh token fue generado con un Client ID diferente");
+        console.error("[mfs] ========================================");
+        console.error("[mfs] Verifica el OAuth Client en:");
+        console.error("[mfs] https://console.cloud.google.com/apis/credentials?project=check-in-sf");
+      }
+      
       throw new Error(`Error de autenticación OAuth SENDER: ${errorDetails.error} - ${errorDetails.errorDescription}`);
     }
   } catch (secretError) {

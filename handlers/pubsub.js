@@ -72,6 +72,10 @@ export async function handlePubSub(req, res) {
     // IMPORTANTE: Este código SIEMPRE se ejecuta, incluso si la cuenta principal falló
     console.log("[mfs] ===== INICIANDO PROCESAMIENTO DE CUENTA SENDER =====");
     console.log("[mfs] _pubsub: Llegué a la sección de procesamiento de cuenta SENDER");
+    
+    // Declarar senderHistoryId fuera del try para que esté disponible después
+    let senderHistoryId = null;
+    
     try {
       console.log("[mfs] _pubsub: Procesando emails de secretmedia@feverup.com...");
       console.log("[mfs] _pubsub: Obteniendo cliente Gmail SENDER...");
@@ -81,8 +85,11 @@ export async function handlePubSub(req, res) {
       
       // Obtener mensajes nuevos de la cuenta SENDER (usando estado separado)
       console.log("[mfs] _pubsub: Obteniendo mensajes nuevos de cuenta SENDER...");
-      const { ids: senderIds, newHistoryId: senderHistoryId, usedFallback: senderUsedFallback } =
+      const { ids: senderIds, newHistoryId: senderHistoryIdTemp, usedFallback: senderUsedFallback } =
         await getNewInboxMessageIdsFromHistory(gmailSender, notifHistoryId, true); // useSenderState = true
+      
+      // Asignar senderHistoryId para que esté disponible fuera del try
+      senderHistoryId = senderHistoryIdTemp;
 
       console.log("[mfs] _pubsub: IDs que voy a procesar ahora (cuenta SENDER):", {
         count: senderIds.length,
