@@ -96,8 +96,8 @@ export async function getGmailClient() {
     null,
     (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
     [
-      "https://www.googleapis.com/auth/gmail.readonly"
-      // NO incluir gmail.send - solo lectura para procesar emails y crear registros en Airtable
+      "https://www.googleapis.com/auth/gmail.modify"
+      // gmail.modify permite leer, modificar (agregar/quitar labels) y enviar emails
     ],
     CFG.GMAIL_ADDRESS
   );

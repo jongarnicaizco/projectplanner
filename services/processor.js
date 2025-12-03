@@ -45,6 +45,92 @@ import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
 import { sendTestEmail } from "./email-sender.js";
 
 /**
+ * Obtiene o crea la etiqueta "processed" en Gmail
+ */
+async function getOrCreateProcessedLabel(gmail) {
+  try {
+    // Intentar obtener todas las etiquetas del usuario
+    const labelsResponse = await backoff(
+      () => gmail.users.labels.list({ userId: "me" }),
+      "labels.list"
+    );
+    
+    const labels = labelsResponse.data.labels || [];
+    const processedLabel = labels.find(label => label.name?.toLowerCase() === "processed");
+    
+    if (processedLabel) {
+      console.log("[mfs] Etiqueta 'processed' encontrada:", processedLabel.id);
+      return processedLabel.id;
+    }
+    
+    // Si no existe, crearla
+    console.log("[mfs] Etiqueta 'processed' no existe, creándola...");
+    const createResponse = await backoff(
+      () => gmail.users.labels.create({
+        userId: "me",
+        requestBody: {
+          name: "processed",
+          labelListVisibility: "labelShow",
+          messageListVisibility: "show",
+        },
+      }),
+      "labels.create"
+    );
+    
+    const newLabelId = createResponse.data.id;
+    console.log("[mfs] Etiqueta 'processed' creada:", newLabelId);
+    return newLabelId;
+  } catch (error) {
+    console.error("[mfs] Error obteniendo/creando etiqueta 'processed':", error?.message || error);
+    // Si falla, intentar usar el nombre directamente (Gmail puede crear automáticamente)
+    return "processed";
+  }
+}
+
+/**
+ * Aplica la etiqueta "processed" a un mensaje
+ */
+async function applyProcessedLabel(gmail, messageId) {
+  try {
+    const labelId = await getOrCreateProcessedLabel(gmail);
+    
+    await backoff(
+      () => gmail.users.messages.modify({
+        userId: "me",
+        id: messageId,
+        requestBody: {
+          addLabelIds: [labelId],
+        },
+      }),
+      "messages.modify.addLabel"
+    );
+    
+    console.log("[mfs] ✓ Etiqueta 'processed' aplicada al email:", messageId);
+  } catch (error) {
+    // Si falla con el ID, intentar con el nombre directamente
+    if (error?.response?.status === 400 || error?.code === 400) {
+      try {
+        await backoff(
+          () => gmail.users.messages.modify({
+            userId: "me",
+            id: messageId,
+            requestBody: {
+              addLabelIds: ["processed"],
+            },
+          }),
+          "messages.modify.addLabel.name"
+        );
+        console.log("[mfs] ✓ Etiqueta 'processed' aplicada al email (usando nombre):", messageId);
+      } catch (error2) {
+        throw error2;
+      }
+    } else {
+      throw error;
+    }
+  }
+}
+
+/**
  * Procesa una lista de IDs de mensajes
  */
 export async function processMessageIds(gmail, ids) {
@@ -686,6 +772,14 @@ export async function processMessageIds(gmail, ids) {
           emailId: id,
           airtableId: existingRecord.id,
         });
+        
+        // Aplicar etiqueta "processed" incluso si ya existe en Airtable
+        try {
+          await applyProcessedLabel(gmail, id);
+        } catch (labelError) {
+          console.warn("[mfs] No se pudo aplicar etiqueta 'processed' al email existente:", id, labelError?.message || labelError);
+        }
+        
         results.push({
           id,
           airtableId: existingRecord.id,
@@ -778,6 +872,14 @@ export async function processMessageIds(gmail, ids) {
         confidence: finalConfidence,
         isSecretMediaEmail,
       });
+
+      // Aplicar etiqueta "processed" al email procesado
+      try {
+        await applyProcessedLabel(gmail, id);
+      } catch (labelError) {
+        console.warn("[mfs] No se pudo aplicar etiqueta 'processed' al email:", id, labelError?.message || labelError);
+        // No fallar el procesamiento si no se puede aplicar la etiqueta
+      }
 
       // Pequeño delay para evitar picos
       await new Promise((r) => setTimeout(r, 200));
