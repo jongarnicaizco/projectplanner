@@ -1,88 +1,61 @@
-# Script para desplegar inmediatamente
-$ErrorActionPreference = "Continue"
-
-Write-Host "=" * 70 -ForegroundColor Cyan
-Write-Host "  DESPLIEGUE MANUAL DE mfs-lead-generation-ai" -ForegroundColor Cyan
-Write-Host "=" * 70 -ForegroundColor Cyan
-Write-Host ""
+# Script para desplegar ahora (push + build)
+$ErrorActionPreference = "Stop"
 
 $project = "check-in-sf"
-$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$imageTag = "manual-$timestamp"
+$repoPath = "C:\Users\fever\Media Fees Lead Automation\mfs-lead-generation-ai"
+Set-Location $repoPath
 
-Write-Host "[1] Generando tag de imagen: $imageTag" -ForegroundColor Yellow
-Write-Host ""
+Write-Host "`n=== DESPLIEGUE COMPLETO ===" -ForegroundColor Cyan
 
-Write-Host "[2] Ejecutando Cloud Build..." -ForegroundColor Yellow
-Write-Host "Esto puede tardar varios minutos..." -ForegroundColor Gray
-Write-Host ""
+Write-Host "`n1. Verificando cambios..." -ForegroundColor Yellow
+git status --short
 
-$buildOutput = gcloud builds submit `
-  --config=cloudbuild.yaml `
-  --project=$project `
-  --substitutions="_IMAGE_TAG=$imageTag" `
-  2>&1
+Write-Host "`n2. Añadiendo cambios..." -ForegroundColor Yellow
+git add -A
+Write-Host "  [OK] Cambios añadidos" -ForegroundColor Green
 
-Write-Host $buildOutput
+Write-Host "`n3. Haciendo commit..." -ForegroundColor Yellow
+$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+git commit -m "Deploy: $timestamp - Solo Airtable, sin envio de emails" 2>&1 | Out-Null
+Write-Host "  [OK] Commit realizado" -ForegroundColor Green
 
-if ($LASTEXITCODE -eq 0) {
-    Write-Host ""
-    Write-Host "✓✓✓ BUILD COMPLETADO EXITOSAMENTE ✓✓✓" -ForegroundColor Green
-    Write-Host ""
+Write-Host "`n4. Haciendo push a GitHub..." -ForegroundColor Yellow
+git push origin main 2>&1 | Out-Null
+Write-Host "  [OK] Push a GitHub completado" -ForegroundColor Green
+
+Write-Host "`n5. Esperando 10 segundos para que el trigger se active..." -ForegroundColor Yellow
+Start-Sleep -Seconds 10
+
+Write-Host "`n6. Verificando si el trigger automatico inicio un build..." -ForegroundColor Yellow
+$builds = gcloud builds list --project=$project --limit=1 --format=json 2>&1 | ConvertFrom-Json
+if ($builds -and $builds.Count -gt 0) {
+    $latest = $builds[0]
+    $buildTime = [DateTime]::Parse($latest.createTime)
+    $now = Get-Date
+    $diff = ($now - $buildTime).TotalMinutes
     
-    Write-Host "[3] Esperando a que el despliegue se complete..." -ForegroundColor Yellow
-    Start-Sleep -Seconds 10
-    
-    Write-Host ""
-    Write-Host "[4] Verificando servicio..." -ForegroundColor Yellow
-    $serviceInfo = gcloud run services describe mfs-lead-generation-ai `
-      --region=us-central1 `
-      --project=$project `
-      --format="json" `
-      2>&1 | ConvertFrom-Json
-    
-    if ($serviceInfo) {
-        Write-Host "✓ Servicio desplegado correctamente" -ForegroundColor Green
-        Write-Host "  URL: $($serviceInfo.status.url)" -ForegroundColor Cyan
-        Write-Host "  Revisión: $($serviceInfo.status.latestReadyRevisionName)" -ForegroundColor Gray
-        Write-Host ""
-        
-        # Verificar variables de entorno
-        Write-Host "[5] Verificando variables de entorno..." -ForegroundColor Yellow
-        $envVars = $serviceInfo.spec.template.spec.containers[0].env
-        $hasEmailFrom = $envVars | Where-Object { $_.name -eq "EMAIL_FROM" }
-        $hasEmailTo = $envVars | Where-Object { $_.name -eq "EMAIL_TO" }
-        $hasAirtable = $envVars | Where-Object { $_.name -like "*AIRTABLE*" }
-        
-        if ($hasEmailFrom -and $hasEmailTo) {
-            Write-Host "✓ Variables de email configuradas:" -ForegroundColor Green
-            Write-Host "  EMAIL_FROM: $($hasEmailFrom.value)" -ForegroundColor Gray
-            Write-Host "  EMAIL_TO: $($hasEmailTo.value)" -ForegroundColor Gray
-        } else {
-            Write-Host "⚠ Variables de email no encontradas" -ForegroundColor Yellow
-        }
-        
-        if ($hasAirtable) {
-            Write-Host "⚠ Variables de Airtable aún presentes (deben eliminarse)" -ForegroundColor Yellow
-        } else {
-            Write-Host "✓ Variables de Airtable eliminadas" -ForegroundColor Green
-        }
-        
-        Write-Host ""
-        Write-Host "=" * 70 -ForegroundColor Cyan
-        Write-Host "  DESPLIEGUE COMPLETADO" -ForegroundColor Cyan
-        Write-Host "=" * 70 -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "El servicio está activo y listo para procesar emails." -ForegroundColor Green
-        Write-Host "Los emails se enviarán a: jongarnicaizco@gmail.com" -ForegroundColor Cyan
+    if ($diff -lt 2) {
+        Write-Host "  [OK] Build automatico detectado: $($latest.id)" -ForegroundColor Green
+        Write-Host "    Estado: $($latest.status)" -ForegroundColor $(if ($latest.status -eq "SUCCESS") { "Green" } elseif ($latest.status -eq "WORKING") { "Yellow" } else { "Red" })
+        Write-Host "    URL: $($latest.logUrl)" -ForegroundColor Cyan
     } else {
-        Write-Host "⚠ No se pudo verificar el despliegue" -ForegroundColor Yellow
+        Write-Host "  [ADVERTENCIA] No se detecto build automatico reciente" -ForegroundColor Yellow
+        Write-Host "    Iniciando build manual..." -ForegroundColor Yellow
+        
+        $tag = "manual-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        Write-Host "    Tag: $tag" -ForegroundColor Gray
+        gcloud builds submit --config=cloudbuild.yaml --project=$project --substitutions="_IMAGE_TAG=$tag" 2>&1 | Out-Null
+        Write-Host "  [OK] Build manual iniciado" -ForegroundColor Green
     }
 } else {
-    Write-Host ""
-    Write-Host "✗✗✗ ERROR EN EL BUILD ✗✗✗" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Revisa los logs en:" -ForegroundColor Yellow
-    Write-Host "https://console.cloud.google.com/cloud-build/builds?project=$project" -ForegroundColor White
+    Write-Host "  [ADVERTENCIA] No se encontraron builds" -ForegroundColor Yellow
+    Write-Host "    Iniciando build manual..." -ForegroundColor Yellow
+    
+    $tag = "manual-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+    gcloud builds submit --config=cloudbuild.yaml --project=$project --substitutions="_IMAGE_TAG=$tag" 2>&1 | Out-Null
+    Write-Host "  [OK] Build manual iniciado" -ForegroundColor Green
 }
 
+Write-Host "`n=== FIN ===" -ForegroundColor Cyan
+Write-Host "`nEl build esta en progreso. Puedes verificar el estado con:" -ForegroundColor Yellow
+Write-Host "  gcloud builds list --project=check-in-sf --limit=1" -ForegroundColor Gray

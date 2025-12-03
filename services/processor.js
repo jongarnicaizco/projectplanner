@@ -633,13 +633,14 @@ export async function processMessageIds(gmail, ids) {
   console.log("[mfs] ========================================");
   console.log("[mfs] FIN: Resumen del lote procesado", {
     totalProcesados: results.length,
-    exitosos: results.filter(r => r.emailSent).length,
-    fallidos: results.filter(r => !r.emailSent).length,
+    exitosos: results.filter(r => r.airtableId && !r.skipped).length,
+    fallidos: results.filter(r => !r.airtableId && !r.skipped).length,
+    saltados: results.filter(r => r.skipped).length,
     resultados: results.map(r => ({
       id: r.id,
       intent: r.intent,
-      emailSent: r.emailSent,
-      messageId: r.messageId,
+      airtableId: r.airtableId,
+      skipped: r.skipped || false,
     })),
   });
   return results;

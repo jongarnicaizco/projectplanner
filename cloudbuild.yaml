@@ -47,7 +47,7 @@ steps:
       - 'managed'
       - '--allow-unauthenticated'
       - '--set-env-vars'
-      - 'GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=True,GENAI_MODEL=gemini-2.5-flash,GMAIL_ADDRESS=media.manager@feverup.com,GMAIL_LABEL_FILTER=INBOX,AUTH_MODE=oauth,GCS_BUCKET=mfs_automatic_email_lead_classification,AIRTABLE_BASE_ID=${AIRTABLE_BASE_ID},AIRTABLE_TABLE=${AIRTABLE_TABLE},AIRTABLE_TOKEN_SECRET=${AIRTABLE_TOKEN_SECRET},PUBSUB_TOPIC=mfs-gmail-leads,PUBSUB_PROJECT_ID=check-in-sf'
+      - 'GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=True,GENAI_MODEL=gemini-2.5-flash,GMAIL_ADDRESS=media.manager@feverup.com,GMAIL_LABEL_FILTER=INBOX,AUTH_MODE=oauth,GCS_BUCKET=mfs_automatic_email_lead_classification,AIRTABLE_BASE_ID=${_AIRTABLE_BASE_ID},AIRTABLE_TABLE=${_AIRTABLE_TABLE},AIRTABLE_TOKEN_SECRET=${_AIRTABLE_TOKEN_SECRET},PUBSUB_TOPIC=mfs-gmail-leads,PUBSUB_PROJECT_ID=${PROJECT_ID}'
       - '--memory'
       - '512Mi'
       - '--cpu'
@@ -81,6 +81,9 @@ substitutions:
   _REGION: 'us-central1'
   _REPOSITORY: 'cloud-run-source-deploy'
   _IMAGE_TAG: '${BUILD_ID}'
+  _AIRTABLE_BASE_ID: 'appT0vQS4arJ3dQ6w'
+  _AIRTABLE_TABLE: 'tblPIUeGJWqOtqage'
+  _AIRTABLE_TOKEN_SECRET: 'AIRTABLE_API_KEY'
 
 # Timeout del build (en segundos)
 timeout: '1200s'

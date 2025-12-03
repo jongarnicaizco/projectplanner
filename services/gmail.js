@@ -17,36 +17,101 @@ export async function getGmailClient() {
   console.log("[mfs] Creando cliente de Gmail con modo:", CFG.AUTH_MODE);
 
   if (CFG.AUTH_MODE === "oauth") {
-    const clientId = await accessSecret("GMAIL_CLIENT_ID");
-    const clientSecret = await accessSecret("GMAIL_CLIENT_SECRET");
-    const refreshToken = await accessSecret("GMAIL_REFRESH_TOKEN");
-    
-    // El redirect URI debe coincidir con el configurado en OAuth Client
-    // Si no está configurado, usa el default
-    const redirectUri = process.env.GMAIL_REDIRECT_URI || "http://localhost:3000/oauth2callback";
-    
-    const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-    oAuth2Client.setCredentials({ refresh_token: refreshToken });
-    
-    console.log("[mfs] Cliente Gmail OAuth listo");
-    return google.gmail({ version: "v1", auth: oAuth2Client });
+    try {
+      const clientId = await accessSecret("GMAIL_CLIENT_ID");
+      const clientSecret = await accessSecret("GMAIL_CLIENT_SECRET");
+      const refreshToken = await accessSecret("GMAIL_REFRESH_TOKEN");
+      
+      console.log("[mfs] OAuth secrets obtenidos:", {
+        clientIdLength: clientId?.length || 0,
+        clientSecretLength: clientSecret?.length || 0,
+        refreshTokenLength: refreshToken?.length || 0,
+        clientIdPrefix: clientId?.substring(0, 30) || "empty",
+        clientIdSuffix: clientId?.substring(Math.max(0, clientId.length - 20)) || "empty",
+      });
+      
+      // El redirect URI debe coincidir con el configurado en OAuth Client
+      // NOTA: El OAuth Client está en smn-content-v2, no en check-in-sf
+      // El redirect URI debe estar autorizado en el OAuth Client
+      const redirectUri = process.env.GMAIL_REDIRECT_URI || "http://localhost:3000/oauth2callback";
+      console.log("[mfs] Usando redirect URI:", redirectUri);
+      console.log("[mfs] NOTA: El OAuth Client debe estar en smn-content-v2 y tener este redirect URI autorizado");
+      
+      const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+      oAuth2Client.setCredentials({ refresh_token: refreshToken });
+      
+      // Intentar refrescar el token para verificar que funciona
+      try {
+        const tokenResponse = await oAuth2Client.getAccessToken();
+        console.log("[mfs] Token OAuth refrescado exitosamente");
+        console.log("[mfs] Cliente Gmail OAuth listo y verificado");
+        return google.gmail({ version: "v1", auth: oAuth2Client });
+      } catch (oauthError) {
+        const errorDetails = {
+          message: oauthError?.message || "unknown",
+          code: oauthError?.code || "unknown",
+          error: oauthError?.response?.data?.error || oauthError?.data?.error || "unknown",
+          errorDescription: oauthError?.response?.data?.error_description || oauthError?.data?.error_description || "unknown",
+          status: oauthError?.response?.status || oauthError?.status || "unknown",
+        };
+        
+        console.error("[mfs] Error verificando token OAuth:", JSON.stringify(errorDetails, null, 2));
+        
+        // Si es unauthorized_client, dar instrucciones específicas
+        if (errorDetails.error === "unauthorized_client" || errorDetails.code === 401) {
+          console.error("[mfs] ========================================");
+          console.error("[mfs] ERROR: unauthorized_client");
+          console.error("[mfs] Posibles causas:");
+          console.error("[mfs] 1. El OAuth Client no está habilitado en Google Cloud Console");
+          console.error("[mfs] 2. El redirect URI no está autorizado en el OAuth Client");
+          console.error("[mfs] 3. El refresh token fue generado con un Client ID/Secret diferente");
+          console.error("[mfs] 4. El refresh token ha expirado (regenerar con obtener_refresh_token_completo.js)");
+          console.error("[mfs] ========================================");
+        }
+        
+        console.error("[mfs] Intentando fallback a JWT...");
+        // Continuar con JWT como fallback
+      }
+    } catch (secretError) {
+      console.error("[mfs] Error obteniendo secrets de OAuth:", secretError?.message || secretError);
+      console.error("[mfs] Intentando fallback a JWT...");
+      // Continuar con JWT como fallback
+    }
   }
 
-  // Domain-wide delegation (JWT)
+  // Domain-wide delegation (JWT) - Fallback si OAuth falla
+  console.log("[mfs] Usando autenticación JWT (Domain-wide delegation)");
+  
+  if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+    throw new Error(
+      "No se puede autenticar: OAuth falló y JWT no está configurado. " +
+      "Configura GOOGLE_CLIENT_EMAIL y GOOGLE_PRIVATE_KEY, o regenera el refresh token de OAuth."
+    );
+  }
+  
   const jwt = new google.auth.JWT(
     process.env.GOOGLE_CLIENT_EMAIL,
     null,
     (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
     [
-      "https://www.googleapis.com/auth/gmail.readonly",
-      "https://www.googleapis.com/auth/gmail.send"
+      "https://www.googleapis.com/auth/gmail.readonly"
+      // NO incluir gmail.send - solo lectura para procesar emails y crear registros en Airtable
     ],
     CFG.GMAIL_ADDRESS
   );
   
-  await jwt.authorize();
-  console.log("[mfs] Cliente Gmail DWD listo");
-  return google.gmail({ version: "v1", auth: jwt });
+  try {
+    await jwt.authorize();
+    console.log("[mfs] Cliente Gmail JWT listo");
+    return google.gmail({ version: "v1", auth: jwt });
+  } catch (jwtError) {
+    console.error("[mfs] Error con autenticación JWT:", jwtError?.message || jwtError);
+    throw new Error(
+      "No se puede autenticar con Gmail. " +
+      "OAuth falló y JWT también falló. " +
+      "Verifica las credenciales o regenera el refresh token de OAuth."
+    );
+  }
 }
 
 /**
@@ -124,8 +189,26 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId) {
           "[mfs] [history] Notificación con historyId <= al ya procesado:",
           { startHistoryId, notifHistoryId, diferencia: String(diferencia) }
         );
-        // Aún así, intentar consultar history.list por si hay mensajes que no se detectaron
-        // No retornar inmediatamente, continuar con la consulta
+        console.log("[mfs] [history] Aún así, haré fallback a INBOX para verificar si hay mensajes nuevos");
+        // Hacer fallback inmediato si la diferencia es <= 0
+        const list = await backoff(
+          () =>
+            gmail.users.messages.list({
+              userId: "me",
+              q: "in:inbox",
+              maxResults: 50,
+            }),
+          "messages.list.fallback_negativo"
+        );
+        const fallbackIds = (list.data.messages || []).map((m) => m.id);
+        console.log("[mfs] [history] Fallback (diferencia <= 0): mensajes encontrados en INBOX:", fallbackIds.length);
+        
+        if (fallbackIds.length > 0) {
+          console.log("[mfs] [history] Usando mensajes de INBOX como fallback (historyId desincronizado)");
+          const newHistoryId = notifHistoryId || startHistoryId;
+          return { ids: fallbackIds, newHistoryId, usedFallback: true };
+        }
+        // Si no hay mensajes en el fallback, continuar con history.list por si acaso
       } else if (diferencia < 10n) {
         console.warn("[mfs] [history] Diferencia muy pequeña entre historyId. Podría haber desincronización. Continuando con consulta...");
       } else {
@@ -208,40 +291,33 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId) {
     notifHistoryId,
     idsEncontrados: Array.from(idsSet).slice(0, 10),
   });
-
-  // Si no encontramos mensajes pero hay notificación, hacer fallback automático
-  // para verificar si hay mensajes en INBOX que no se detectaron
-  if (idsSet.size === 0 && notifHistoryId) {
+  
+  // Si no encontramos mensajes en history.list, hacer fallback SIEMPRE para verificar
+  // Esto es importante porque a veces history.list no detecta mensajes aunque existan
+  if (idsSet.size === 0) {
+    console.warn("[mfs] [history] No se encontraron mensajes en history.list. Haciendo fallback a INBOX para verificar...");
     try {
-      const last = BigInt(startHistoryId);
-      const notif = BigInt(String(notifHistoryId));
-      const diferencia = notif - last;
+      const list = await backoff(
+        () =>
+          gmail.users.messages.list({
+            userId: "me",
+            q: "in:inbox",
+            maxResults: 50,
+          }),
+        "messages.list.fallback_siempre"
+      );
+      const fallbackIds = (list.data.messages || []).map((m) => m.id);
+      console.log("[mfs] [history] Fallback (sin mensajes en history): mensajes encontrados en INBOX:", fallbackIds.length);
       
-      // Si hay notificación pero no encontramos mensajes, y la diferencia es pequeña o negativa,
-      // hacer fallback para obtener mensajes recientes de INBOX
-      if (diferencia <= 10n) {
-        console.warn("[mfs] [history] No se encontraron mensajes en history.list pero hay notificación. Haciendo fallback a INBOX...");
-        const list = await backoff(
-          () =>
-            gmail.users.messages.list({
-              userId: "me",
-              q: "in:inbox",
-              maxResults: 50, // Aumentar a 50 para capturar más mensajes
-            }),
-          "messages.list.fallback_desync"
-        );
-        const fallbackIds = (list.data.messages || []).map((m) => m.id);
-        console.log("[mfs] [history] Fallback: mensajes encontrados en INBOX:", fallbackIds.length);
-        
-        if (fallbackIds.length > 0) {
-          console.warn("[mfs] [history] ADVERTENCIA: Desincronización detectada. Usando mensajes de INBOX como fallback.");
-          // Actualizar historyId al de la notificación para sincronizar
-          const newHistoryId = notifHistoryId || startHistoryId;
-          return { ids: fallbackIds, newHistoryId, usedFallback: true };
-        }
+      if (fallbackIds.length > 0) {
+        console.warn("[mfs] [history] ADVERTENCIA: Desincronización detectada. Usando mensajes de INBOX como fallback.");
+        const newHistoryId = notifHistoryId || startHistoryId;
+        return { ids: fallbackIds, newHistoryId, usedFallback: true };
+      } else {
+        console.log("[mfs] [history] No hay mensajes nuevos en INBOX. Todo está sincronizado.");
       }
     } catch (e) {
-      console.warn("[mfs] [history] Error en fallback de desincronización:", e?.message);
+      console.warn("[mfs] [history] Error en fallback automático:", e?.message);
     }
   }
 
