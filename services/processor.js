@@ -631,6 +631,37 @@ export async function processMessageIds(gmail, ids) {
         body,
       });
 
+      // REGLA DURA: Emails enviados a secretmedia@feverup.com SIEMPRE deben ser como mínimo Medium
+      // Esta regla se aplica DESPUÉS de la clasificación para asegurar el mínimo
+      const toEmailLower = (to || "").toLowerCase().trim();
+      const isSecretMediaEmail = toEmailLower.includes("secretmedia@feverup.com");
+      
+      let finalIntent = intent;
+      let finalConfidence = confidence;
+      let finalReasoning = reasoning;
+      
+      if (isSecretMediaEmail) {
+        // Mapear intents a niveles numéricos para comparar
+        const intentLevels = { "Discard": 0, "Low": 1, "Medium": 2, "High": 3, "Very High": 4 };
+        const currentLevel = intentLevels[finalIntent] || 0;
+        const minLevel = intentLevels["Medium"]; // 2
+        
+        if (currentLevel < minLevel) {
+          console.log("[mfs] ===== APLICANDO REGLA: Email a secretmedia@feverup.com =====");
+          console.log("[mfs] Intent original:", finalIntent, "(nivel:", currentLevel, ")");
+          console.log("[mfs] Forzando a Medium (nivel mínimo requerido)");
+          finalIntent = "Medium";
+          finalConfidence = Math.max(finalConfidence || 0.75, 0.75);
+          if (!finalReasoning || finalReasoning.length === 0) {
+            finalReasoning = "Email sent to secretmedia@feverup.com, minimum classification is Medium.";
+          } else {
+            finalReasoning = finalReasoning + " Email sent to secretmedia@feverup.com, minimum classification is Medium.";
+          }
+        } else {
+          console.log("[mfs] Email a secretmedia@feverup.com con intent:", finalIntent, "(ya es Medium o mayor, no se modifica)");
+        }
+      }
+
       // Generar resumen del body con Gemini
       const bodySummary = await generateBodySummary(body);
       console.log("[mfs] Resumen del body generado:", {
@@ -702,9 +733,9 @@ export async function processMessageIds(gmail, ids) {
         body,
         bodySummary,
         timestamp,
-        intent,
-        confidence,
-        reasoning,
+        intent: finalIntent,
+        confidence: finalConfidence,
+        reasoning: finalReasoning,
         meddicMetrics,
         meddicEconomicBuyer,
         meddicDecisionCriteria,
@@ -736,15 +767,16 @@ export async function processMessageIds(gmail, ids) {
       results.push({
         id,
         airtableId: airtableRecord?.id || null,
-        intent,
-        confidence,
+        intent: finalIntent,
+        confidence: finalConfidence,
       });
 
       console.log("[mfs] Fin de procesado para mensaje:", {
         id,
         airtableId: airtableRecord?.id || null,
-        intent,
-        confidence,
+        intent: finalIntent,
+        confidence: finalConfidence,
+        isSecretMediaEmail,
       });
 
       // Pequeño delay para evitar picos

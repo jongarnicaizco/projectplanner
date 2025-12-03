@@ -994,18 +994,51 @@ async function classifyIntentHeuristic({
   // REGLA DURA FINAL: Press Release, Free Coverage Request o Barter Request SIEMPRE Low (última verificación antes de retornar)
   // Esta es la verificación más importante - sobrescribe cualquier otra lógica, INCLUYENDO Discard
   // Usar finalFreeCoverage y finalBarter (combinación de modelo + heurística) para detectar
+  // EXCEPCIÓN: Si el email es para secretmedia@feverup.com, NO aplicar esta regla (debe ser mínimo Medium)
+  const toEmail = (to || "").toLowerCase().trim();
+  const isSecretMediaEmail = toEmail.includes("secretmedia@feverup.com");
+  
   if (isPressStyle || isFreeCoverageRequest || finalFreeCoverage || isBarterRequest || finalBarter) {
-    if (intent === "Discard" || intent !== "Low") {
-      console.log("[mfs] [classify] FORZANDO Low para press release/Free Coverage Request/Barter Request (intent actual era:", intent, ", isPressStyle:", isPressStyle, ", isFreeCoverageRequest:", isFreeCoverageRequest, ", finalFreeCoverage:", finalFreeCoverage, ", isBarterRequest:", isBarterRequest, ", finalBarter:", finalBarter, ")");
-      intent = "Low";
-      confidence = Math.max(confidence || 0.8, 0.8);
-      if (isPressStyle) {
-        reasoning = "Email is a press release, so it is categorized as Low intent (not Discard, Medium, High, or Very High).";
-      } else if (isFreeCoverageRequest || finalFreeCoverage) {
-        reasoning = "Email is a free coverage request (press release or news shared), categorized as Low intent (not Discard, Medium, High, or Very High).";
-      } else {
-        reasoning = "Email is a barter request (invitation or service in exchange for coverage), categorized as Low intent (not Discard, Medium, High, or Very High).";
+    // Si es para secretmedia@feverup.com, NO forzar a Low (se aplicará la regla de mínimo Medium después)
+    if (!isSecretMediaEmail) {
+      if (intent === "Discard" || intent !== "Low") {
+        console.log("[mfs] [classify] FORZANDO Low para press release/Free Coverage Request/Barter Request (intent actual era:", intent, ", isPressStyle:", isPressStyle, ", isFreeCoverageRequest:", isFreeCoverageRequest, ", finalFreeCoverage:", finalFreeCoverage, ", isBarterRequest:", isBarterRequest, ", finalBarter:", finalBarter, ")");
+        intent = "Low";
+        confidence = Math.max(confidence || 0.8, 0.8);
+        if (isPressStyle) {
+          reasoning = "Email is a press release, so it is categorized as Low intent (not Discard, Medium, High, or Very High).";
+        } else if (isFreeCoverageRequest || finalFreeCoverage) {
+          reasoning = "Email is a free coverage request (press release or news shared), categorized as Low intent (not Discard, Medium, High, or Very High).";
+        } else {
+          reasoning = "Email is a barter request (invitation or service in exchange for coverage), categorized as Low intent (not Discard, Medium, High, or Very High).";
+        }
       }
+    } else {
+      console.log("[mfs] [classify] Email a secretmedia@feverup.com detectado como Free Coverage/Barter, pero NO forzando a Low (se aplicará mínimo Medium)");
+    }
+  }
+
+  // REGLA DURA FINAL: Emails enviados a secretmedia@feverup.com SIEMPRE deben ser como mínimo Medium
+  // Esta regla se aplica AL FINAL, después de TODAS las demás reglas, para tener máxima prioridad
+  // Incluso si es Free Coverage o Barter, si es para secretmedia@feverup.com, debe ser Medium como mínimo
+  if (isSecretMediaEmail) {
+    const intentLevels = { "Discard": 0, "Low": 1, "Medium": 2, "High": 3, "Very High": 4 };
+    const currentLevel = intentLevels[intent] || 0;
+    const minLevel = intentLevels["Medium"]; // 2
+    
+    if (currentLevel < minLevel) {
+      console.log("[mfs] [classify] FORZANDO Medium para email a secretmedia@feverup.com (intent actual era:", intent, ", nivel:", currentLevel, ")");
+      intent = "Medium";
+      confidence = Math.max(confidence || 0.75, 0.75);
+      if (!reasoning || reasoning.length === 0) {
+        reasoning = "Email sent to secretmedia@feverup.com, minimum classification is Medium.";
+      } else {
+        reasoning = reasoning + " Email sent to secretmedia@feverup.com, minimum classification is Medium.";
+      }
+    } else {
+      // Si ya es Medium o mayor, asegurar que el confidence sea alto
+      console.log("[mfs] [classify] Email a secretmedia@feverup.com con intent:", intent, "(ya es Medium o mayor, nivel:", currentLevel, ")");
+      confidence = Math.max(confidence || 0.75, 0.75);
     }
   }
 

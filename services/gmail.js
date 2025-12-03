@@ -389,4 +389,55 @@ export async function setupWatch(gmail) {
   return watchResp.data;
 }
 
+/**
+ * Crea y retorna el cliente de Gmail usando los secrets de SENDER (para secretmedia@feverup.com)
+ */
+export async function getGmailSenderClient() {
+  console.log("[mfs] Creando cliente de Gmail SENDER con modo OAuth");
+  
+  try {
+    const clientId = await accessSecret("GMAIL_CLIENT_ID_SENDER");
+    const clientSecret = await accessSecret("GMAIL_CLIENT_SECRET_SENDER");
+    const refreshToken = await accessSecret("GMAIL_REFRESH_TOKEN_SENDER");
+    
+    if (!clientId || !clientSecret || !refreshToken) {
+      throw new Error("Faltan credenciales OAuth SENDER en Secret Manager. Verifica GMAIL_CLIENT_ID_SENDER, GMAIL_CLIENT_SECRET_SENDER y GMAIL_REFRESH_TOKEN_SENDER");
+    }
+    
+    console.log("[mfs] OAuth SENDER secrets obtenidos:", {
+      clientIdLength: clientId?.length || 0,
+      clientSecretLength: clientSecret?.length || 0,
+      refreshTokenLength: refreshToken?.length || 0,
+    });
+    
+    const redirectUri = process.env.GMAIL_REDIRECT_URI || "http://localhost:3000/oauth2callback";
+    console.log("[mfs] Usando redirect URI:", redirectUri);
+    
+    const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+    oAuth2Client.setCredentials({ refresh_token: refreshToken });
+    
+    // Intentar refrescar el token para verificar que funciona
+    try {
+      const tokenResponse = await oAuth2Client.getAccessToken();
+      console.log("[mfs] Token OAuth SENDER refrescado exitosamente");
+      console.log("[mfs] Cliente Gmail OAuth SENDER listo y verificado");
+      return google.gmail({ version: "v1", auth: oAuth2Client });
+    } catch (oauthError) {
+      const errorDetails = {
+        message: oauthError?.message || "unknown",
+        code: oauthError?.code || "unknown",
+        error: oauthError?.response?.data?.error || oauthError?.data?.error || "unknown",
+        errorDescription: oauthError?.response?.data?.error_description || oauthError?.data?.error_description || "unknown",
+        status: oauthError?.response?.status || oauthError?.status || "unknown",
+      };
+      
+      console.error("[mfs] Error verificando token OAuth SENDER:", JSON.stringify(errorDetails, null, 2));
+      throw new Error(`Error de autenticación OAuth SENDER: ${errorDetails.error} - ${errorDetails.errorDescription}`);
+    }
+  } catch (secretError) {
+    console.error("[mfs] Error obteniendo secrets de OAuth SENDER:", secretError?.message || secretError);
+    throw new Error(`No se pudieron obtener las credenciales OAuth SENDER: ${secretError?.message || secretError}`);
+  }
+}
+
 

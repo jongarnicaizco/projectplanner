@@ -9,7 +9,7 @@
 import express from "express";
 import functions from "@google-cloud/functions-framework";
 import { CFG } from "./config.js";
-import { getGmailClient, setupWatch } from "./services/gmail.js";
+import { getGmailClient, getGmailSenderClient, setupWatch } from "./services/gmail.js";
 import { clearHistoryState, writeHistoryState } from "./services/storage.js";
 import { backoff, logErr } from "./utils/helpers.js";
 import { handlePubSub } from "./handlers/pubsub.js";
@@ -136,22 +136,75 @@ app.get("/diagnostico", async (_req, res) => {
 app.post("/force-process", async (_req, res) => {
   try {
     console.log("[mfs] /force-process → Procesando mensajes directamente de INBOX");
-    const gmail = await getGmailClient();
+    const allResults = [];
     
-    // Obtener mensajes recientes de INBOX (últimas 2 horas)
-    const twoHoursAgo = Math.floor(Date.now() / 1000) - (2 * 60 * 60);
-    const query = `in:inbox after:${twoHoursAgo}`;
+    // Procesar cuenta principal (media.manager@feverup.com)
+    try {
+      const gmail = await getGmailClient();
+      
+      // Obtener mensajes recientes de INBOX (últimas 2 horas)
+      const twoHoursAgo = Math.floor(Date.now() / 1000) - (2 * 60 * 60);
+      const query = `in:inbox after:${twoHoursAgo}`;
+      
+      const list = await gmail.users.messages.list({
+        userId: "me",
+        q: query,
+        maxResults: 100,
+      });
+      
+      const messageIds = (list.data.messages || []).map(m => m.id);
+      console.log(`[mfs] /force-process → Encontrados ${messageIds.length} mensajes en INBOX (cuenta principal)`);
+      
+      if (messageIds.length > 0) {
+        const { processMessageIds } = await import("./services/processor.js");
+        const results = await processMessageIds(gmail, messageIds);
+        allResults.push(...results);
+      }
+      
+      // Actualizar historyId al actual para sincronizar
+      try {
+        const prof = await gmail.users.getProfile({ userId: "me" });
+        const currentHistoryId = String(prof.data.historyId || "");
+        if (currentHistoryId) {
+          const { writeHistoryState } = await import("./services/storage.js");
+          await writeHistoryState(currentHistoryId);
+          console.log("[mfs] /force-process → historyId actualizado a:", currentHistoryId);
+        }
+      } catch (e) {
+        console.warn("[mfs] /force-process → No se pudo actualizar historyId:", e.message);
+      }
+    } catch (e) {
+      logErr("force-process error (cuenta principal):", e);
+    }
     
-    const list = await gmail.users.messages.list({
-      userId: "me",
-      q: query,
-      maxResults: 100,
-    });
+    // Procesar cuenta SENDER (secretmedia@feverup.com)
+    try {
+      console.log("[mfs] /force-process → Procesando mensajes de secretmedia@feverup.com");
+      const gmailSender = await getGmailSenderClient();
+      
+      const twoHoursAgo = Math.floor(Date.now() / 1000) - (2 * 60 * 60);
+      const query = `in:inbox after:${twoHoursAgo}`;
+      
+      const list = await gmailSender.users.messages.list({
+        userId: "me",
+        q: query,
+        maxResults: 100,
+      });
+      
+      const senderMessageIds = (list.data.messages || []).map(m => m.id);
+      console.log(`[mfs] /force-process → Encontrados ${senderMessageIds.length} mensajes en INBOX (cuenta SENDER)`);
+      
+      if (senderMessageIds.length > 0) {
+        const { processMessageIds } = await import("./services/processor.js");
+        const senderResults = await processMessageIds(gmailSender, senderMessageIds);
+        allResults.push(...senderResults);
+      }
+    } catch (e) {
+      console.error("[mfs] /force-process → Error procesando cuenta SENDER:", e?.message || e);
+      // Continuar aunque falle la cuenta SENDER
+    }
     
-    const messageIds = (list.data.messages || []).map(m => m.id);
-    console.log(`[mfs] /force-process → Encontrados ${messageIds.length} mensajes en INBOX`);
-    
-    if (messageIds.length === 0) {
+    if (allResults.length === 0) {
       return res.json({
         ok: true,
         message: "No hay mensajes nuevos en INBOX (últimas 2 horas)",
@@ -159,30 +212,13 @@ app.post("/force-process", async (_req, res) => {
       });
     }
     
-    // Procesar los mensajes
-    const { processMessageIds } = await import("./services/processor.js");
-    const results = await processMessageIds(gmail, messageIds);
-    
-    // Actualizar historyId al actual para sincronizar
-    try {
-      const prof = await gmail.users.getProfile({ userId: "me" });
-      const currentHistoryId = String(prof.data.historyId || "");
-      if (currentHistoryId) {
-        const { writeHistoryState } = await import("./services/storage.js");
-        await writeHistoryState(currentHistoryId);
-        console.log("[mfs] /force-process → historyId actualizado a:", currentHistoryId);
-      }
-    } catch (e) {
-      console.warn("[mfs] /force-process → No se pudo actualizar historyId:", e.message);
-    }
-    
     res.json({
       ok: true,
-      message: `Procesados ${results.length} mensajes`,
-      totalEncontrados: messageIds.length,
-      procesados: results.filter(r => r.success).length,
-      fallidos: results.filter(r => !r.success).length,
-      resultados: results.slice(0, 10), // Primeros 10 resultados
+      message: `Procesados ${allResults.length} mensajes`,
+      totalEncontrados: allResults.length,
+      procesados: allResults.filter(r => r.airtableId && !r.skipped).length,
+      fallidos: allResults.filter(r => !r.airtableId && !r.skipped).length,
+      resultados: allResults.slice(0, 10), // Primeros 10 resultados
     });
   } catch (e) {
     logErr("force-process error:", e);
