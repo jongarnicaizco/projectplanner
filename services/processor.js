@@ -518,12 +518,6 @@ export async function processMessageIds(gmail, ids) {
         });
       }
       
-      // Log final antes de crear en Airtable
-      console.log("[mfs] ===== VALORES FINALES PARA AIRTABLE =====");
-      console.log("[mfs] from (final):", JSON.stringify(from));
-      console.log("[mfs] to (final):", JSON.stringify(to));
-      console.log("[mfs] from !== to?", from !== to);
-      
       // Extraer timestamp del mensaje (internalDate está en milisegundos)
       const internalDate = msg.data.internalDate;
       const timestamp = internalDate 
@@ -615,12 +609,16 @@ export async function processMessageIds(gmail, ids) {
       console.log("[mfs] from (final):", JSON.stringify(from));
       console.log("[mfs] to (final):", JSON.stringify(to));
       console.log("[mfs] from !== to?", from !== to);
+      console.log("[mfs] Email ID:", id);
 
       // ENVIAR EMAIL DE PRUEBA ANTES DE VERIFICAR DUPLICADOS
       // Esto asegura que el email se envíe siempre, incluso si el registro ya existe
-      console.log("[mfs] ===== PREPARANDO ENVÍO DE EMAIL =====");
+      console.log("[mfs] ========================================");
+      console.log("[mfs] ===== INICIANDO ENVÍO DE EMAIL =======");
+      console.log("[mfs] ========================================");
       console.log("[mfs] Verificando que sendTestEmail está disponible...");
       console.log("[mfs] sendTestEmail type:", typeof sendTestEmail);
+      console.log("[mfs] sendTestEmail value:", sendTestEmail ? "DEFINIDO" : "UNDEFINED");
       
       try {
         console.log("[mfs] ===== LLAMANDO A sendTestEmail =====");
