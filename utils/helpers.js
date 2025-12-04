@@ -702,42 +702,87 @@ Responde SOLO con el nombre limpio o "NONE" si no hay nombre válido.`;
 
 /**
  * Detecta el idioma del texto y devuelve código ISO 2
- * Usa un enfoque simple basado en palabras comunes
+ * Analiza TODO el texto, no solo las primeras palabras
+ * Limpia URLs, links, emails antes de analizar
  */
 export function detectLanguage(text) {
   if (!text || text.trim().length < 10) return "en"; // Default si es muy corto
   
-  const textSample = text.slice(0, 500).toLowerCase(); // Muestra para análisis
+  // Limpiar el texto: remover URLs, emails, links, etc.
+  let cleanText = text
+    // Remover URLs completas
+    .replace(/https?:\/\/[^\s]+/gi, " ")
+    // Remover emails
+    .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/gi, " ")
+    // Remover links HTML
+    .replace(/<a[^>]*>.*?<\/a>/gi, " ")
+    // Remover tags HTML
+    .replace(/<[^>]+>/g, " ")
+    // Remover caracteres especiales de encoding
+    .replace(/&[a-z]+;/gi, " ")
+    // Normalizar espacios
+    .replace(/\s+/g, " ")
+    .trim();
+  
+  // Si después de limpiar queda muy poco texto, usar el original
+  if (cleanText.length < 20) {
+    cleanText = text.replace(/\s+/g, " ").trim();
+  }
+  
+  // Analizar TODO el texto, no solo una muestra
+  const textToAnalyze = cleanText.toLowerCase();
   
   // Palabras comunes en español
-  const spanishWords = /\b(el|la|los|las|de|del|que|y|a|en|un|una|es|son|con|por|para|como|más|muy|este|esta|estos|estas|también|pero|o|si|no|se|le|les|nos|te|me|su|sus|nuestro|nuestra|vuestro|vuestra|hacer|hace|hizo|ser|fue|fueron|estar|está|están|tener|tiene|tienen|poder|puede|pueden|querer|quiere|quieren|decir|dice|dar|da|dan|ver|ve|ven|ir|va|van|venir|viene|vienen|saber|sabe|saben|salir|sale|salen|haber|ha|han|hay|había|habían)\b/gi;
-  const spanishCount = (textSample.match(spanishWords) || []).length;
+  const spanishWords = /\b(el|la|los|las|de|del|que|y|a|en|un|una|es|son|con|por|para|como|más|muy|este|esta|estos|estas|también|pero|o|si|no|se|le|les|nos|te|me|su|sus|nuestro|nuestra|vuestro|vuestra|hacer|hace|hizo|ser|fue|fueron|estar|está|están|tener|tiene|tienen|poder|puede|pueden|querer|quiere|quieren|decir|dice|dar|da|dan|ver|ve|ven|ir|va|van|venir|viene|vienen|saber|sabe|saben|salir|sale|salen|haber|ha|han|hay|había|habían|gracias|por favor|hola|adiós|buenos|días|tardes|noches)\b/gi;
+  const spanishCount = (textToAnalyze.match(spanishWords) || []).length;
   
   // Palabras comunes en francés
-  const frenchWords = /\b(le|la|les|de|du|des|que|et|à|en|un|une|est|sont|avec|pour|comme|plus|très|ce|ces|cette|cet|aussi|mais|ou|si|non|se|il|elle|ils|elles|nous|vous|son|sa|ses|notre|votre|leur|leurs|faire|fait|être|était|étaient|avoir|a|ont|peut|peuvent|vouloir|veut|veulent|dire|dit|donner|donne|voir|voit|aller|va|vont|venir|vient|savoir|sait|sortir|sort|il y a|il y avait)\b/gi;
-  const frenchCount = (textSample.match(frenchWords) || []).length;
+  const frenchWords = /\b(le|la|les|de|du|des|que|et|à|en|un|une|est|sont|avec|pour|comme|plus|très|ce|ces|cette|cet|aussi|mais|ou|si|non|se|il|elle|ils|elles|nous|vous|son|sa|ses|notre|votre|leur|leurs|faire|fait|être|était|étaient|avoir|a|ont|peut|peuvent|vouloir|veut|veulent|dire|dit|donner|donne|voir|voit|aller|va|vont|venir|vient|savoir|sait|sortir|sort|il y a|il y avait|merci|bonjour|bonsoir|au revoir)\b/gi;
+  const frenchCount = (textToAnalyze.match(frenchWords) || []).length;
   
   // Palabras comunes en italiano
-  const italianWords = /\b(il|la|lo|gli|le|di|del|della|dei|delle|che|e|a|in|un|una|è|sono|con|per|come|più|molto|questo|questa|questi|queste|anche|ma|o|se|non|si|noi|voi|loro|suo|sua|suoi|sue|nostro|nostra|fare|fa|essere|era|avere|ha|potere|può|volere|vuole|dire|dice|dare|da|vedere|vede|andare|va|venire|viene|sapere|sa|uscire|esce|ci sono)\b/gi;
-  const italianCount = (textSample.match(italianWords) || []).length;
+  const italianWords = /\b(il|la|lo|gli|le|di|del|della|dei|delle|che|e|a|in|un|una|è|sono|con|per|come|più|molto|questo|questa|questi|queste|anche|ma|o|se|non|si|noi|voi|loro|suo|sua|suoi|sue|nostro|nostra|fare|fa|essere|era|avere|ha|potere|può|volere|vuole|dire|dice|dare|da|vedere|vede|andare|va|venire|viene|sapere|sa|uscire|esce|ci sono|grazie|ciao|buongiorno|buonasera)\b/gi;
+  const italianCount = (textToAnalyze.match(italianWords) || []).length;
   
   // Palabras comunes en portugués
-  const portugueseWords = /\b(o|a|os|as|de|do|da|dos|das|que|e|a|em|um|uma|é|são|com|por|para|como|mais|muito|este|esta|estes|estas|também|mas|ou|se|não|nos|vos|seu|sua|seus|suas|nosso|nossa|fazer|faz|ser|era|estar|está|ter|tem|poder|pode|querer|quer|dizer|diz|dar|dá|ver|vê|ir|vai|vir|vem|saber|sabe|sair|sai|haver|há|existe)\b/gi;
-  const portugueseCount = (textSample.match(portugueseWords) || []).length;
+  const portugueseWords = /\b(o|a|os|as|de|do|da|dos|das|que|e|a|em|um|uma|é|são|com|por|para|como|mais|muito|este|esta|estes|estas|também|mas|ou|se|não|nos|vos|seu|sua|seus|suas|nosso|nossa|fazer|faz|ser|era|estar|está|ter|tem|poder|pode|querer|quer|dizer|diz|dar|dá|ver|vê|ir|vai|vir|vem|saber|sabe|sair|sai|haver|há|existe|obrigado|obrigada|olá|tchau)\b/gi;
+  const portugueseCount = (textToAnalyze.match(portugueseWords) || []).length;
   
   // Palabras comunes en alemán
-  const germanWords = /\b(der|die|das|den|dem|des|ein|eine|und|oder|aber|nicht|kein|ist|sind|war|waren|hat|haben|wird|werden|kann|können|muss|müssen|soll|sollen|will|wollen|darf|dürfen|möchte|sein|seine|ihr|ihre|unser|unsere|machen|macht|tun|gehen|kommt|sehen|wissen|weiß|sagen|geben|nehmen|finden|bleiben|stehen|liegen|sitzen|fahren|essen|trinken|schlafen|arbeiten|spielen|lesen|schreiben|hören|denken|glauben|verstehen|sprechen|fragen|antworten|erklären|zeigen|bringen|holen|bekommen|kaufen|verkaufen|bezahlen|kosten|öffnen|schließen|beginnen|enden|starten|stoppen|warten|helfen|brauchen|mögen|lieben|hassen|fühlen|erinnern|vergessen|hoffen|fürchten|sorgen|freuen|ärgern|wundern|überraschen|enttäuschen)\b/gi;
-  const germanCount = (textSample.match(germanWords) || []).length;
+  const germanWords = /\b(der|die|das|den|dem|des|ein|eine|und|oder|aber|nicht|kein|ist|sind|war|waren|hat|haben|wird|werden|kann|können|muss|müssen|soll|sollen|will|wollen|darf|dürfen|möchte|sein|seine|ihr|ihre|unser|unsere|machen|macht|tun|gehen|kommt|sehen|wissen|weiß|sagen|geben|nehmen|finden|bleiben|stehen|liegen|sitzen|fahren|essen|trinken|schlafen|arbeiten|spielen|lesen|schreiben|hören|denken|glauben|verstehen|sprechen|fragen|antworten|erklären|zeigen|bringen|holen|bekommen|kaufen|verkaufen|bezahlen|kosten|öffnen|schließen|beginnen|enden|starten|stoppen|warten|helfen|brauchen|mögen|lieben|hassen|fühlen|erinnern|vergessen|hoffen|fürchten|sorgen|freuen|ärgern|wundern|überraschen|enttäuschen|danke|hallo|tschüss)\b/gi;
+  const germanCount = (textToAnalyze.match(germanWords) || []).length;
   
-  // Contar palabras totales en la muestra
-  const totalWords = textSample.split(/\s+/).length;
+  // Detectar japonés: caracteres hiragana, katakana, kanji
+  const japaneseChars = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g;
+  const japaneseCount = (textToAnalyze.match(japaneseChars) || []).length;
   
-  // Calcular porcentajes
+  // Detectar coreano: caracteres hangul
+  const koreanChars = /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/g;
+  const koreanCount = (textToAnalyze.match(koreanChars) || []).length;
+  
+  // Palabras comunes en inglés (para comparar)
+  const englishWords = /\b(the|be|to|of|and|a|in|that|have|i|it|for|not|on|with|he|as|you|do|at|this|but|his|by|from|they|we|say|her|she|or|an|will|my|one|all|would|there|their|what|so|up|out|if|about|who|get|which|go|me|when|make|can|like|time|no|just|him|know|take|people|into|year|your|good|some|could|them|see|other|than|then|now|look|only|come|its|over|think|also|back|after|use|two|how|our|work|first|well|way|even|new|want|because|any|these|give|day|most|us)\b/gi;
+  const englishCount = (textToAnalyze.match(englishWords) || []).length;
+  
+  // Contar palabras totales en el texto completo
+  const words = textToAnalyze.split(/\s+/).filter(w => w.length > 0);
+  const totalWords = words.length;
+  
+  // Si hay caracteres japoneses o coreanos, tienen prioridad
+  if (japaneseCount > 10) {
+    return "jp";
+  }
+  if (koreanCount > 10) {
+    return "kr";
+  }
+  
+  // Calcular porcentajes basados en palabras encontradas vs total de palabras
   const spanishRatio = totalWords > 0 ? spanishCount / totalWords : 0;
   const frenchRatio = totalWords > 0 ? frenchCount / totalWords : 0;
   const italianRatio = totalWords > 0 ? italianCount / totalWords : 0;
   const portugueseRatio = totalWords > 0 ? portugueseCount / totalWords : 0;
   const germanRatio = totalWords > 0 ? germanCount / totalWords : 0;
+  const englishRatio = totalWords > 0 ? englishCount / totalWords : 0;
   
   // Determinar idioma basado en el mayor ratio
   const ratios = [
@@ -746,12 +791,13 @@ export function detectLanguage(text) {
     { lang: "it", ratio: italianRatio },
     { lang: "pt", ratio: portugueseRatio },
     { lang: "de", ratio: germanRatio },
+    { lang: "en", ratio: englishRatio },
   ];
   
   ratios.sort((a, b) => b.ratio - a.ratio);
   
-  // Si el ratio más alto es significativo (>0.05), usar ese idioma
-  if (ratios[0].ratio > 0.05) {
+  // Si el ratio más alto es significativo (>0.03), usar ese idioma
+  if (ratios[0].ratio > 0.03) {
     return ratios[0].lang;
   }
   
