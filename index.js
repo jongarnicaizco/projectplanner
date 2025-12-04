@@ -130,15 +130,15 @@ app.post("/control/stop", async (_req, res) => {
 
 /**
  * Endpoint para procesar correos sin etiqueta "processed" (fallback automático cada 15 minutos)
- * Procesa correos de las últimas 24 horas que no tengan la etiqueta "processed"
+ * Procesa correos de los últimos 30 minutos que no tengan la etiqueta "processed"
  */
 app.post("/control/process-unprocessed", async (_req, res) => {
   try {
-    console.log(`[mfs] /control/process-unprocessed → Procesando correos sin etiqueta "processed" (fallback automático)`);
+    console.log(`[mfs] /control/process-unprocessed → Procesando correos sin etiqueta "processed" (fallback automático - últimos 30 minutos)`);
     
     const MAX_MESSAGES_PER_EXECUTION = 100;
-    const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
-    const query = `in:inbox -label:processed after:${oneDayAgo}`;
+    const thirtyMinutesAgo = Math.floor(Date.now() / 1000) - (30 * 60); // Últimos 30 minutos
+    const query = `in:inbox -label:processed after:${thirtyMinutesAgo}`;
     
     let totalProcesados = 0;
     let totalFallidos = 0;
