@@ -187,6 +187,9 @@ async function applyProcessedLabel(gmail, messageId) {
  */
 export async function processMessageIds(gmail, ids) {
   console.log("[mfs] ========================================");
+  console.log("[mfs] ===== INICIANDO PROCESAMIENTO DE MENSAJES =====");
+  console.log("[mfs] Número de mensajes a procesar:", ids.length);
+  console.log("[mfs] Cliente Gmail disponible:", gmail ? "sí" : "no");
   console.log("[mfs] INICIO: Procesando lote de mensajes", {
     totalMensajes: ids.length,
     ids: ids.slice(0, 5), // Mostrar primeros 5 IDs
@@ -992,11 +995,27 @@ export async function processMessageIds(gmail, ids) {
       });
 
       // Aplicar etiqueta "processed" al email procesado
+      // IMPORTANTE: Esto debe ejecutarse SIEMPRE, incluso si hay errores en Airtable
+      console.log("[mfs] ===== APLICANDO ETIQUETA 'processed' =====");
+      console.log("[mfs] Email ID:", id);
+      console.log("[mfs] isSecretMediaEmail:", isSecretMediaEmail);
+      console.log("[mfs] Cliente Gmail usado:", gmail ? "disponible" : "no disponible");
+      
       try {
         await applyProcessedLabel(gmail, id);
+        console.log("[mfs] ✓✓✓ Etiqueta 'processed' aplicada exitosamente ✓✓✓");
       } catch (labelError) {
-        console.warn("[mfs] No se pudo aplicar etiqueta 'processed' al email:", id, labelError?.message || labelError);
-        // No fallar el procesamiento si no se puede aplicar la etiqueta
+        console.error("[mfs] ✗✗✗ ERROR aplicando etiqueta 'processed' ✗✗✗");
+        console.error("[mfs] Email ID:", id);
+        console.error("[mfs] Error message:", labelError?.message || labelError);
+        console.error("[mfs] Error code:", labelError?.code || labelError?.response?.status || "unknown");
+        console.error("[mfs] Error details:", JSON.stringify({
+          error: labelError?.response?.data?.error || labelError?.error || "unknown",
+          errorDescription: labelError?.response?.data?.error_description || labelError?.error_description || "unknown",
+          status: labelError?.response?.status || labelError?.status || "unknown",
+        }, null, 2));
+        console.error("[mfs] Stack trace:", labelError?.stack);
+        // No fallar el procesamiento si no se puede aplicar la etiqueta, pero loguear el error
       }
 
       // Pequeño delay para evitar picos

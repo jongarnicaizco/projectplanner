@@ -41,3 +41,4 @@ gcloud builds submit --config=cloudbuild.yaml --project=check-in-sf --substituti
 gcloud run services describe mfs-lead-generation-ai --region=us-central1 --project=check-in-sf --format="value(status.latestReadyRevisionName)"
 ```
 
+
