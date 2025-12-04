@@ -173,13 +173,15 @@ app.post("/force-process", async (_req, res) => {
       const gmail = await getGmailClient();
       
       // Obtener mensajes recientes de INBOX (últimas 24 horas) excluyendo procesados
+      // Límite máximo de seguridad: 100 mensajes
+      const MAX_MESSAGES_PER_EXECUTION = 100;
       const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
       const query = `in:inbox -label:processed after:${oneDayAgo}`;
       
       const list = await gmail.users.messages.list({
         userId: "me",
         q: query,
-        maxResults: 50,
+        maxResults: MAX_MESSAGES_PER_EXECUTION,
       });
       
       const messageIds = (list.data.messages || []).map(m => m.id);
@@ -215,6 +217,8 @@ app.post("/force-process", async (_req, res) => {
       const gmailSender = await getGmailSenderClient();
       console.log("[mfs] /force-process → ✓ Cliente Gmail SENDER obtenido exitosamente");
       
+      // Límite máximo de seguridad: 100 mensajes
+      const MAX_MESSAGES_PER_EXECUTION = 100;
       const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
       const query = `in:inbox -label:processed after:${oneDayAgo}`;
       console.log("[mfs] /force-process → Buscando mensajes con query:", query);
@@ -222,7 +226,7 @@ app.post("/force-process", async (_req, res) => {
       const list = await gmailSender.users.messages.list({
         userId: "me",
         q: query,
-        maxResults: 50,
+        maxResults: MAX_MESSAGES_PER_EXECUTION,
       });
       
       const senderMessageIds = (list.data.messages || []).map(m => m.id);

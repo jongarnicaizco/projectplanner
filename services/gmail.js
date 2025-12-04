@@ -156,13 +156,15 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
     }
 
     // Si no hay historyId, solo procesar mensajes de las últimas 24 horas (solo nuevos)
+    // Límite máximo de seguridad: 100 mensajes
+    const MAX_MESSAGES_PER_EXECUTION = 100;
     const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
     const list = await backoff(
       () =>
         gmail.users.messages.list({
           userId: "me",
           q: `in:inbox -label:processed after:${oneDayAgo}`,
-          maxResults: 50,
+          maxResults: MAX_MESSAGES_PER_EXECUTION,
         }),
       "messages.list.fallback"
     );
@@ -215,6 +217,9 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
     }
   }
 
+  // Límite máximo de seguridad: máximo 100 mensajes por ejecución
+  const MAX_MESSAGES_PER_EXECUTION = 100;
+  
   let pageToken;
   const idsSet = new Set();
 
@@ -224,6 +229,12 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
   );
 
   while (true) {
+    // LÍMITE DE SEGURIDAD: Si ya tenemos MAX_MESSAGES_PER_EXECUTION, detener
+    if (idsSet.size >= MAX_MESSAGES_PER_EXECUTION) {
+      console.warn(`[mfs] [history] ⚠️ LÍMITE DE SEGURIDAD: ${idsSet.size} mensajes alcanzado. Deteniendo búsqueda para evitar ejecuciones excesivas.`);
+      break;
+    }
+
     let resp;
     try {
       resp = await backoff(
@@ -253,7 +264,7 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
             gmail.users.messages.list({
               userId: "me",
               q: `in:inbox -label:processed after:${oneDayAgo}`,
-              maxResults: 50,
+              maxResults: MAX_MESSAGES_PER_EXECUTION,
             }),
           "messages.list.fallback404"
         );
@@ -269,7 +280,13 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
     const history = data.history || [];
 
     for (const h of history) {
+      // LÍMITE DE SEGURIDAD: Detener si alcanzamos el límite
+      if (idsSet.size >= MAX_MESSAGES_PER_EXECUTION) {
+        break;
+      }
+      
       (h.messagesAdded || []).forEach((ma) => {
+        if (idsSet.size >= MAX_MESSAGES_PER_EXECUTION) return;
         const m = ma.message;
         if (!m) return;
         const labels = m.labelIds || [];
@@ -280,6 +297,7 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
     }
 
     if (!data.nextPageToken) break;
+    if (idsSet.size >= MAX_MESSAGES_PER_EXECUTION) break;
     pageToken = data.nextPageToken;
   }
 

@@ -133,7 +133,18 @@ function incrementRateLimit() {
   return rateLimitCount <= RATE_LIMIT_MAX;
 }
 
+// Límite máximo de seguridad: máximo 100 mensajes por ejecución
+// Esto previene ejecuciones excesivas (100 mensajes * ~100 ejecuciones/mensaje = ~10k máximo)
+const MAX_MESSAGES_PER_EXECUTION = 100;
+
 export async function processMessageIds(gmail, ids) {
+  // LÍMITE DE SEGURIDAD: Si hay más de MAX_MESSAGES_PER_EXECUTION, limitar y detener
+  if (ids.length > MAX_MESSAGES_PER_EXECUTION) {
+    console.error(`[mfs] ⚠️ LÍMITE DE SEGURIDAD: ${ids.length} mensajes excede el máximo de ${MAX_MESSAGES_PER_EXECUTION}. Limitando y deteniendo.`);
+    ids = ids.slice(0, MAX_MESSAGES_PER_EXECUTION);
+    console.error(`[mfs] ⚠️ Procesando solo los primeros ${MAX_MESSAGES_PER_EXECUTION} mensajes. El resto se procesará en la siguiente ejecución.`);
+  }
+
   if (!checkRateLimit()) {
     return {
       exitosos: 0,
