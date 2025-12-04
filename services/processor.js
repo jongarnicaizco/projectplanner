@@ -44,8 +44,6 @@ import { classifyIntent } from "./vertex.js";
 import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
 import { sendBarterEmail, sendFreeCoverageEmail, sendRateLimitNotificationEmail } from "./email-sender.js";
 
-let processedLabelIdCache = null;
-
 // Cache global del label ID - solo se obtiene una vez
 let processedLabelIdCache = null;
 let labelIdFetchAttempted = false;
