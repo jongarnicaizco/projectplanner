@@ -158,10 +158,11 @@ export async function processMessageIds(gmail, ids) {
     let getAllHeaders = null;
 
     try {
-
-      let msg;
+      // OPTIMIZACIÓN CRÍTICA: Verificar labels primero con metadata (sin cuerpo)
+      // Esto evita obtener el mensaje completo si ya está procesado
+      let msgMetadata;
       try {
-        msg = await gmail.users.messages.get({ userId: "me", id, format: "full" });
+        msgMetadata = await gmail.users.messages.get({ userId: "me", id, format: "metadata", metadataHeaders: [] });
       } catch (e) {
         if (String(e?.response?.status || e?.code || e?.status) === "404") {
           continue;
@@ -169,15 +170,26 @@ export async function processMessageIds(gmail, ids) {
         continue;
       }
 
-      const msgLabelIds = msg.data.labelIds || [];
+      const msgLabelIds = msgMetadata.data.labelIds || [];
       if (!msgLabelIds.includes("INBOX")) {
         continue;
       }
 
-      // Verificar etiqueta processed localmente (sin API)
+      // Verificar etiqueta processed ANTES de obtener el mensaje completo
       const hasProcessedLabel = msgLabelIds.includes("processed") || (processedLabelIdCache && msgLabelIds.includes(processedLabelIdCache));
       if (hasProcessedLabel) {
         results.push({ id, airtableId: null, intent: null, confidence: null, skipped: true, reason: "already_processed" });
+        continue;
+      }
+
+      // Solo ahora obtener el mensaje completo si no está procesado
+      let msg;
+      try {
+        msg = await gmail.users.messages.get({ userId: "me", id, format: "full" });
+      } catch (e) {
+        if (String(e?.response?.status || e?.code || e?.status) === "404") {
+          continue;
+        }
         continue;
       }
 
