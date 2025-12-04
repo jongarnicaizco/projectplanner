@@ -380,7 +380,12 @@ export async function processMessageIds(gmail, ids) {
     console.error("[mfs] ========================================");
     
     // Si han pasado más de 30 minutos desde la última ventana, resetear automáticamente
-    const windowAgeMinutes = Math.floor((new Date().getTime() - new Date(rateLimitCheck.windowStart || new Date()).getTime()) / 60000);
+    const state = await readRateLimitState();
+    let windowAgeMinutes = 0;
+    if (state && state.windowStart) {
+      windowAgeMinutes = Math.floor((new Date().getTime() - new Date(state.windowStart).getTime()) / 60000);
+    }
+    
     if (windowAgeMinutes >= 30) {
       console.log("[mfs] [rateLimit] Ventana de tiempo expirada, reseteando automáticamente...");
       await resetRateLimitState();
@@ -389,7 +394,9 @@ export async function processMessageIds(gmail, ids) {
     } else {
       console.error("[mfs] DETENIENDO PROCESAMIENTO PARA EVITAR BUCLES");
       console.error("[mfs] ========================================");
-    
+      
+      // Enviar email de notificación SOLO si aún no se ha enviado en esta ventana
+      if (rateLimitCheck.shouldSendNotification) {
         try {
           console.log("[mfs] [rateLimit] Enviando email de notificación (primera vez en esta ventana)...");
           const notificationResult = await sendRateLimitNotificationEmail(
