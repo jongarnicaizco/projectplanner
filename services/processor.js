@@ -333,20 +333,38 @@ export async function processMessageIds(gmail, ids) {
         const isReply = subject.toLowerCase().startsWith("re:") || subject.toLowerCase().startsWith("fwd:") || (msg.data.threadId && msg.data.threadId !== msg.data.id);
 
         // ÚNICA LLAMADA A GEMINI: classifyIntent
-        const {
-          intent,
-          confidence,
-          reasoning,
-          meddicMetrics,
-          meddicEconomicBuyer,
-          meddicDecisionCriteria,
-          meddicDecisionProcess,
-          meddicIdentifyPain,
-          meddicChampion,
-          isFreeCoverage,
-          isBarter,
-          isPricing,
-        } = await classifyIntent({ subject, from, to, body });
+        let intent, confidence, reasoning, meddicMetrics, meddicEconomicBuyer, meddicDecisionCriteria, meddicDecisionProcess, meddicIdentifyPain, meddicChampion, isFreeCoverage, isBarter, isPricing;
+        
+        try {
+          const classificationResult = await classifyIntent({ subject, from, to, body });
+          intent = classificationResult.intent;
+          confidence = classificationResult.confidence;
+          reasoning = classificationResult.reasoning;
+          meddicMetrics = classificationResult.meddicMetrics;
+          meddicEconomicBuyer = classificationResult.meddicEconomicBuyer;
+          meddicDecisionCriteria = classificationResult.meddicDecisionCriteria;
+          meddicDecisionProcess = classificationResult.meddicDecisionProcess;
+          meddicIdentifyPain = classificationResult.meddicIdentifyPain;
+          meddicChampion = classificationResult.meddicChampion;
+          isFreeCoverage = classificationResult.isFreeCoverage;
+          isBarter = classificationResult.isBarter;
+          isPricing = classificationResult.isPricing;
+        } catch (classifyError) {
+          // Si falla la clasificación, usar valores por defecto y continuar
+          console.error(`[mfs] ✗ Error en classifyIntent para ${id}:`, classifyError?.message || classifyError);
+          intent = "Discard";
+          confidence = 0;
+          reasoning = "Error en clasificación: " + (classifyError?.message || "unknown");
+          meddicMetrics = "";
+          meddicEconomicBuyer = "";
+          meddicDecisionCriteria = "";
+          meddicDecisionProcess = "";
+          meddicIdentifyPain = "";
+          meddicChampion = "";
+          isFreeCoverage = false;
+          isBarter = false;
+          isPricing = false;
+        }
 
         const toEmailLower = (to || "").toLowerCase().trim();
         const isSecretMediaEmail = toEmailLower.includes("secretmedia@feverup.com");
@@ -372,20 +390,41 @@ export async function processMessageIds(gmail, ids) {
 
         // Crear registro en Airtable directamente (sin verificación previa)
         // Si ya existe, createAirtableRecord manejará el error y no se duplicará
-        const airtableRecord = await createAirtableRecord({
-          id, from, to, cc, subject, body, bodySummary, timestamp,
-          intent: finalIntent, confidence: finalConfidence, reasoning: finalReasoning,
-          meddicMetrics, meddicEconomicBuyer, meddicDecisionCriteria, meddicDecisionProcess,
-          meddicIdentifyPain, meddicChampion, isFreeCoverage, isBarter, isPricing,
-          senderName, senderFirstName, language, location,
-        });
+        let airtableRecord;
+        try {
+          airtableRecord = await createAirtableRecord({
+            id, from, to, cc, subject, body, bodySummary, timestamp,
+            intent: finalIntent, confidence: finalConfidence, reasoning: finalReasoning,
+            meddicMetrics, meddicEconomicBuyer, meddicDecisionCriteria, meddicDecisionProcess,
+            meddicIdentifyPain, meddicChampion, isFreeCoverage, isBarter, isPricing,
+            senderName, senderFirstName, language, location,
+          });
+        } catch (airtableError) {
+          // Si falla Airtable, loguear pero continuar - aplicar etiqueta processed para evitar bucles
+          console.error(`[mfs] ✗ Error creando registro en Airtable para ${id}:`, airtableError?.message || airtableError);
+          // Aplicar etiqueta processed para evitar que se quede pillado en bucle
+          try {
+            await applyProcessedLabel(gmail, id);
+            console.log(`[mfs] ✓ Etiqueta processed aplicada a ${id} después de error en Airtable (para evitar bucle)`);
+          } catch (labelError) {
+            console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id} después de error:`, labelError?.message);
+          }
+          results.push({
+            id,
+            airtableId: null,
+            intent: finalIntent,
+            confidence: finalConfidence,
+            skipped: false,
+            error: "airtable_error",
+          });
+          continue; // Continuar con el siguiente mensaje
+        }
 
         // Si se creó exitosamente o ya existía (duplicado): enviar emails y aplicar etiqueta processed
         if (airtableRecord?.id || airtableRecord?.duplicate) {
           // Verificar límite antes de continuar (cada mensaje procesado cuenta como ejecución)
           if (!(await checkRateLimit())) {
             console.error(`[mfs] ⚠️ Límite de ${RATE_LIMIT_MAX} ejecuciones por minuto alcanzado. Servicio detenido automáticamente.`);
-            releaseProcessingLock(id);
             // Aplicar etiqueta processed aunque detengamos (para no reprocesar)
             try {
               await applyProcessedLabel(gmail, id);
@@ -415,6 +454,14 @@ export async function processMessageIds(gmail, ids) {
           
           // Incrementar contador de ejecuciones (cada mensaje procesado = 1 ejecución)
           await incrementRateLimit();
+        } else {
+          // Si no se creó ni es duplicado, aplicar etiqueta processed para evitar bucles
+          console.warn(`[mfs] ⚠️ Registro en Airtable no se creó ni es duplicado para ${id}. Aplicando etiqueta processed para evitar bucle.`);
+          try {
+            await applyProcessedLabel(gmail, id);
+          } catch (labelError) {
+            console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
+          }
         }
 
         results.push({
@@ -424,8 +471,26 @@ export async function processMessageIds(gmail, ids) {
           confidence: finalConfidence,
         });
       } catch (e) {
-        // En caso de error, no marcar como procesado
-        // El mensaje se intentará procesar de nuevo en la próxima ejecución
+        // En caso de error, loguear y aplicar etiqueta processed para evitar bucles infinitos
+        console.error(`[mfs] ✗ Error procesando mensaje ${id}:`, e?.message || e);
+        console.error(`[mfs] Stack trace:`, e?.stack);
+        
+        // Aplicar etiqueta processed para evitar que se quede pillado en bucle
+        try {
+          await applyProcessedLabel(gmail, id);
+          console.log(`[mfs] ✓ Etiqueta processed aplicada a ${id} después de error (para evitar bucle)`);
+        } catch (labelError) {
+          console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id} después de error:`, labelError?.message);
+        }
+        
+        results.push({
+          id,
+          airtableId: null,
+          intent: null,
+          confidence: null,
+          skipped: false,
+          error: e?.message || "unknown_error",
+        });
       } finally {
         // Liberar el lock siempre, incluso si hubo error o continue
         releaseProcessingLock(id);
