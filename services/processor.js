@@ -81,11 +81,11 @@ async function applyProcessedLabel(gmail, messageId) {
   }
 }
 
-// Rate limiting simplificado - solo en memoria (sin GCS)
+// Rate limiting por minuto - límite de seguridad de 10k ejecuciones por minuto
 let rateLimitCount = 0;
 let rateLimitWindowStart = Date.now();
-const RATE_LIMIT_MAX = 200;
-const RATE_LIMIT_WINDOW_MS = 30 * 60 * 1000;
+const RATE_LIMIT_MAX = 10000; // 10k ejecuciones por minuto
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minuto
 
 // Lock en memoria para evitar procesamiento concurrente del mismo mensaje
 // Se limpia automáticamente después de procesar (éxito o fallo)
@@ -112,24 +112,38 @@ function checkRateLimit() {
   const now = Date.now();
   const windowAge = now - rateLimitWindowStart;
   
+  // Resetear contador cada minuto
   if (windowAge >= RATE_LIMIT_WINDOW_MS) {
     rateLimitCount = 0;
     rateLimitWindowStart = now;
   }
   
-  return rateLimitCount < RATE_LIMIT_MAX;
+  // Si superamos el límite, detener procesamiento
+  if (rateLimitCount >= RATE_LIMIT_MAX) {
+    console.error(`[mfs] ⚠️ LÍMITE DE SEGURIDAD ALCANZADO: ${rateLimitCount} ejecuciones en el último minuto. Límite: ${RATE_LIMIT_MAX}. DETENIENDO PROCESAMIENTO.`);
+    return false;
+  }
+  
+  return true;
 }
 
 function incrementRateLimit() {
   const now = Date.now();
   const windowAge = now - rateLimitWindowStart;
   
+  // Resetear contador cada minuto
   if (windowAge >= RATE_LIMIT_WINDOW_MS) {
     rateLimitCount = 0;
     rateLimitWindowStart = now;
   }
   
   rateLimitCount++;
+  
+  // Si superamos el límite después de incrementar, loguear advertencia
+  if (rateLimitCount >= RATE_LIMIT_MAX) {
+    console.error(`[mfs] ⚠️ LÍMITE DE SEGURIDAD SUPERADO: ${rateLimitCount} ejecuciones en el último minuto. Límite: ${RATE_LIMIT_MAX}.`);
+  }
+  
   return rateLimitCount <= RATE_LIMIT_MAX;
 }
 
