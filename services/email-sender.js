@@ -281,9 +281,9 @@ export async function sendBarterEmail(emailId, firstName, brandName, originalSub
 }
 
 /**
- * Envía un email de alerta crítica cuando se superan 20k ejecuciones por minuto
+ * Envía un email de alerta crítica cuando se superan 3k ejecuciones por minuto
  * @param {number} count - Número de ejecuciones en el último minuto
- * @param {number} limit - Límite crítico (20000)
+ * @param {number} limit - Límite crítico (3000)
  * @param {string} serviceSource - Servicio de Cloud que está generando el problema
  */
 export async function sendCriticalAlertEmail(count, limit, serviceSource) {
@@ -297,22 +297,22 @@ export async function sendCriticalAlertEmail(count, limit, serviceSource) {
     
     const from = "secretmedia@feverup.com";
     const to = "jon.garnica@feverup.com";
-    const subject = `🚨 ALERTA CRÍTICA: ${count} ejecuciones por minuto - Límite crítico superado`;
+    const subject = `🚨 ALERTA: ${count} ejecuciones por minuto - Límite de 3k superado`;
     const body = `Hola Jon,
 
-ALERTA CRÍTICA: El sistema ha superado el límite crítico de ${limit.toLocaleString()} ejecuciones por minuto.
+ALERTA: El sistema ha superado el límite de ${limit.toLocaleString()} ejecuciones por minuto.
 
 Detalles:
 - Ejecuciones en el último minuto: ${count.toLocaleString()}
 - Límite crítico: ${limit.toLocaleString()} ejecuciones por minuto
 - Servicio de Cloud que está generando el problema: ${serviceSource}
 
-Esta es una alerta de seguridad para informarte de que el sistema está procesando un volumen muy alto de ejecuciones, lo que podría indicar:
+Esta es una alerta para informarte de que el sistema está procesando un volumen alto de ejecuciones, lo que podría indicar:
 - Un bucle infinito
 - Un problema con el procesamiento de mensajes
-- Un ataque o uso anormal del sistema
+- Un uso anormal del sistema
 
-El servicio NO se ha detenido automáticamente (solo se detiene a los ${limit.toLocaleString()} ejecuciones), pero es importante que revises qué está causando este volumen tan alto.
+El servicio NO se ha detenido automáticamente (solo se detiene a los 7,000 ejecuciones), pero es importante que revises qué está causando este volumen alto.
 
 Para revisar:
 1. Ve a los logs de Cloud Run: https://console.cloud.google.com/run
