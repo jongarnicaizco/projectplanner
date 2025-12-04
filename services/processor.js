@@ -133,25 +133,16 @@ function incrementRateLimit() {
   return rateLimitCount <= RATE_LIMIT_MAX;
 }
 
-// Límite máximo de seguridad: máximo 100 mensajes por ejecución
-// Esto previene ejecuciones excesivas (100 mensajes * ~100 ejecuciones/mensaje = ~10k máximo)
-const MAX_MESSAGES_PER_EXECUTION = 100;
-
 export async function processMessageIds(gmail, ids) {
-  // LÍMITE DE SEGURIDAD: Si hay más de MAX_MESSAGES_PER_EXECUTION, limitar y detener
-  if (ids.length > MAX_MESSAGES_PER_EXECUTION) {
-    console.error(`[mfs] ⚠️ LÍMITE DE SEGURIDAD: ${ids.length} mensajes excede el máximo de ${MAX_MESSAGES_PER_EXECUTION}. Limitando y deteniendo.`);
-    ids = ids.slice(0, MAX_MESSAGES_PER_EXECUTION);
-    console.error(`[mfs] ⚠️ Procesando solo los primeros ${MAX_MESSAGES_PER_EXECUTION} mensajes. El resto se procesará en la siguiente ejecución.`);
-  }
-
+  // Verificar límite de ejecuciones por minuto ANTES de procesar
   if (!checkRateLimit()) {
+    console.error(`[mfs] ⚠️ PROCESAMIENTO DETENIDO: Límite de 10k ejecuciones por minuto alcanzado. Deteniendo para evitar costos excesivos.`);
     return {
       exitosos: 0,
       fallidos: 0,
       saltados: ids.length,
       rateLimitExceeded: true,
-      resultados: ids.map(id => ({ id, skipped: true, reason: "rate_limit_exceeded" })),
+      resultados: ids.map(id => ({ id, skipped: true, reason: "rate_limit_exceeded_10k_per_minute" })),
     };
   }
   
@@ -301,6 +292,19 @@ export async function processMessageIds(gmail, ids) {
 
         // Si se creó exitosamente: enviar emails y aplicar etiqueta processed
         if (airtableRecord?.id) {
+          // Verificar límite antes de continuar (cada mensaje procesado cuenta como ejecución)
+          if (!checkRateLimit()) {
+            console.error(`[mfs] ⚠️ Límite de 10k ejecuciones por minuto alcanzado. Deteniendo procesamiento.`);
+            releaseProcessingLock(id);
+            // Aplicar etiqueta processed aunque detengamos (para no reprocesar)
+            try {
+              await applyProcessedLabel(gmail, id);
+            } catch (labelError) {
+              // Continuar
+            }
+            break; // Salir del loop
+          }
+
           // Enviar emails en paralelo (no bloqueante)
           if (isBarter) {
             sendBarterEmail(id, senderFirstName || "Client", brandName, subject).catch(() => {});
@@ -316,6 +320,8 @@ export async function processMessageIds(gmail, ids) {
             // Si falla, loguear pero continuar
             console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
           }
+          
+          // Incrementar contador de ejecuciones (cada mensaje procesado = 1 ejecución)
           incrementRateLimit();
         }
 
