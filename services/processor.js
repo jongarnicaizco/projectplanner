@@ -46,79 +46,47 @@ import { sendBarterEmail, sendFreeCoverageEmail, sendRateLimitNotificationEmail 
 
 let processedLabelIdCache = null;
 
+// Cache global del label ID - solo se obtiene una vez
+let processedLabelIdCache = null;
+let labelIdFetchAttempted = false;
+
 async function getProcessedLabelId(gmail) {
   if (processedLabelIdCache) return processedLabelIdCache;
+  if (labelIdFetchAttempted) return "processed"; // Fallback si ya intentamos
+  
+  labelIdFetchAttempted = true;
   try {
-    const labelsResponse = await backoff(() => gmail.users.labels.list({ userId: "me" }), "labels.list");
+    const labelsResponse = await gmail.users.labels.list({ userId: "me" });
     const labels = labelsResponse.data.labels || [];
     const processedLabel = labels.find(label => label.name?.toLowerCase() === "processed");
     if (processedLabel) {
       processedLabelIdCache = processedLabel.id;
       return processedLabelIdCache;
     }
-    return null;
+    return "processed"; // Fallback
   } catch (error) {
-    return null;
+    return "processed"; // Fallback
   }
 }
 
 async function checkProcessedLabel(gmail, labelIds) {
-  try {
-    const processedLabelId = await getProcessedLabelId(gmail);
-    if (!processedLabelId) return false;
-    return labelIds.includes(processedLabelId);
-  } catch (error) {
-    return false;
-  }
-}
-
-async function getOrCreateProcessedLabel(gmail) {
-  let processedLabelId = await getProcessedLabelId(gmail);
-  if (processedLabelId) return processedLabelId;
-  
-  try {
-    const newLabel = await backoff(
-      () => gmail.users.labels.create({
-        userId: "me",
-        requestBody: { name: "processed", labelListVisibility: "labelShow", messageListVisibility: "show" },
-      }),
-      "labels.create"
-    );
-    processedLabelIdCache = newLabel.data.id;
-    return newLabel.data.id;
-  } catch (error) {
-    return "processed";
-  }
+  if (!labelIds || labelIds.length === 0) return false;
+  // Verificar directamente en labelIds sin llamar a API
+  if (labelIds.includes("processed")) return true;
+  if (processedLabelIdCache && labelIds.includes(processedLabelIdCache)) return true;
+  return false;
 }
 
 async function applyProcessedLabel(gmail, messageId) {
   try {
-    const labelId = await getOrCreateProcessedLabel(gmail);
-    await backoff(
-      () => gmail.users.messages.modify({
-        userId: "me",
-        id: messageId,
-        requestBody: { addLabelIds: [labelId] },
-      }),
-      "messages.modify.addLabel"
-    );
+    const labelId = await getProcessedLabelId(gmail);
+    await gmail.users.messages.modify({
+      userId: "me",
+      id: messageId,
+      requestBody: { addLabelIds: [labelId] },
+    });
   } catch (error) {
-    if (error?.response?.status === 400 || error?.code === 400) {
-      try {
-        await backoff(
-          () => gmail.users.messages.modify({
-            userId: "me",
-            id: messageId,
-            requestBody: { addLabelIds: ["processed"] },
-          }),
-          "messages.modify.addLabel.name"
-        );
-      } catch (error2) {
-        throw error2;
-      }
-    } else {
-      throw error;
-    }
+    // Silently fail - no retries
   }
 }
 
@@ -239,30 +207,19 @@ export async function processMessageIds(gmail, ids) {
     try {
       lockAcquired = await acquireMessageLock(id);
       if (!lockAcquired) {
-        try {
-          const lockAge = await checkLockAge(id);
-          if (lockAge !== null && lockAge > 600000) {
-            await releaseMessageLock(id);
-            lockAcquired = await acquireMessageLock(id);
-          }
-        } catch (e) {
-          // Continue
-        }
-        
-        if (!lockAcquired) {
-          results.push({ id, success: false, skipped: true, reason: "lock_exists" });
-          continue;
-        }
+        results.push({ id, success: false, skipped: true, reason: "lock_exists" });
+        continue;
       }
 
       let msg;
       try {
-        msg = await backoff(() => gmail.users.messages.get({ userId: "me", id, format: "full" }), "messages.get");
+        msg = await gmail.users.messages.get({ userId: "me", id, format: "full" });
       } catch (e) {
         if (String(e?.response?.status || e?.code || e?.status) === "404") {
+          await releaseMessageLock(id);
           continue;
         }
-        logErr("[mfs] Error al leer mensaje de Gmail:", e);
+        await releaseMessageLock(id);
         continue;
       }
 
@@ -272,15 +229,12 @@ export async function processMessageIds(gmail, ids) {
         continue;
       }
 
-      try {
-        const hasProcessedLabel = await checkProcessedLabel(gmail, msgLabelIds);
-        if (hasProcessedLabel) {
-          results.push({ id, airtableId: null, intent: null, confidence: null, skipped: true, reason: "already_processed" });
-          await releaseMessageLock(id);
-          continue;
-        }
-      } catch (labelCheckError) {
-        // Continue
+      // Verificar etiqueta processed sin llamadas a API
+      const hasProcessedLabel = checkProcessedLabel(gmail, msgLabelIds);
+      if (hasProcessedLabel) {
+        results.push({ id, airtableId: null, intent: null, confidence: null, skipped: true, reason: "already_processed" });
+        await releaseMessageLock(id);
+        continue;
       }
 
       const basicHeaders = msg.data.payload?.headers || [];
@@ -406,11 +360,7 @@ export async function processMessageIds(gmail, ids) {
       // VERIFICAR SI YA EXISTE EN AIRTABLE ANTES DE LLAMAR A GEMINI
       const existingRecord = await airtableFindByEmailId(id);
       if (existingRecord) {
-        try {
-          await applyProcessedLabel(gmail, id);
-        } catch (labelError) {
-          // Continue
-        }
+        // NO aplicar etiqueta si ya existe - ahorrar llamadas a API
         results.push({ id, airtableId: existingRecord.id, intent: null, confidence: null, skipped: true });
         await releaseMessageLock(id);
         continue;
@@ -460,21 +410,8 @@ export async function processMessageIds(gmail, ids) {
 
       const brandName = senderName || from.split("@")[0] || subject.split(" ")[0] || "Client";
       
-      if (isBarter) {
-        try {
-          await sendBarterEmail(id, senderFirstName || "Client", brandName, subject);
-        } catch (barterError) {
-          // Continue
-        }
-      }
-      
-      if (isFreeCoverage) {
-        try {
-          await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject);
-        } catch (freeCoverageError) {
-          // Continue
-        }
-      }
+      // Enviar emails solo si se creó exitosamente en Airtable
+      // (se moverá después de crear en Airtable)
 
       const airtableRecord = await createAirtableRecord({
         id, from, to, cc, subject, body, bodySummary, timestamp,
@@ -484,29 +421,38 @@ export async function processMessageIds(gmail, ids) {
         senderName, senderFirstName, language, location,
       });
 
+      // Solo enviar emails y aplicar etiqueta si se creó exitosamente
+      if (airtableRecord?.id) {
+        if (isBarter) {
+          try {
+            await sendBarterEmail(id, senderFirstName || "Client", brandName, subject);
+          } catch (barterError) {
+            // Continue
+          }
+        }
+        
+        if (isFreeCoverage) {
+          try {
+            await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject);
+          } catch (freeCoverageError) {
+            // Continue
+          }
+        }
+
+        try {
+          await applyProcessedLabel(gmail, id);
+          await incrementRateLimit();
+        } catch (labelError) {
+          // Continue
+        }
+      }
+
       results.push({
         id,
         airtableId: airtableRecord?.id || null,
         intent: finalIntent,
         confidence: finalConfidence,
       });
-
-      try {
-        await applyProcessedLabel(gmail, id);
-        const rateLimitUpdate = await incrementRateLimit();
-        
-        if (!rateLimitUpdate.allowed && rateLimitUpdate.shouldSendNotification) {
-          try {
-            await sendRateLimitNotificationEmail(rateLimitUpdate.currentCount, rateLimitUpdate.limit, rateLimitUpdate.windowMinutes);
-          } catch (notificationError) {
-            // Continue
-          }
-        }
-      } catch (labelError) {
-        // Continue
-      }
-
-      await new Promise((r) => setTimeout(r, 200));
     } catch (e) {
       logErr("[mfs] Error en el bucle de processMessageIds:", e);
     } finally {
