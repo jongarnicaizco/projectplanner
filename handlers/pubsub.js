@@ -63,7 +63,7 @@ export async function handlePubSub(req, res) {
     if (ids.length) {
       console.log("[mfs] _pubsub: Procesando", ids.length, "mensajes de cuenta principal...");
       try {
-        await processMessageIds(gmail, ids);
+        await processMessageIds(gmail, ids, "Google Cloud Pub/Sub (Gmail Watch notifications - cuenta principal)");
         console.log("[mfs] _pubsub: ✓ Procesamiento de cuenta principal completado");
       } catch (e) {
         console.error("[mfs] _pubsub: ✗ Error procesando cuenta principal:", e?.message || e);
@@ -108,7 +108,7 @@ export async function handlePubSub(req, res) {
       if (senderIds.length) {
         console.log("[mfs] _pubsub: ✓ Hay", senderIds.length, "mensajes para procesar (cuenta SENDER)");
         try {
-          await processMessageIds(gmailSender, senderIds);
+          await processMessageIds(gmailSender, senderIds, "Google Cloud Pub/Sub (Gmail Watch notifications - cuenta SENDER)");
           console.log("[mfs] _pubsub: ✓ Procesamiento de cuenta SENDER completado");
         } catch (e) {
           console.error("[mfs] _pubsub: ✗✗✗ ERROR en processMessageIds (cuenta SENDER) ✗✗✗");

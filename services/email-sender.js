@@ -281,6 +281,96 @@ export async function sendBarterEmail(emailId, firstName, brandName, originalSub
 }
 
 /**
+ * Envía un email de alerta crítica cuando se superan 20k ejecuciones por minuto
+ * @param {number} count - Número de ejecuciones en el último minuto
+ * @param {number} limit - Límite crítico (20000)
+ * @param {string} serviceSource - Servicio de Cloud que está generando el problema
+ */
+export async function sendCriticalAlertEmail(count, limit, serviceSource) {
+  try {
+    console.log("[mfs] ===== ENVIANDO EMAIL DE ALERTA CRÍTICA =====");
+    console.log("[mfs] Count:", count);
+    console.log("[mfs] Limit:", limit);
+    console.log("[mfs] Service Source:", serviceSource);
+    
+    const gmail = await getEmailSenderClient();
+    
+    const from = "secretmedia@feverup.com";
+    const to = "jon.garnica@feverup.com";
+    const subject = `🚨 ALERTA CRÍTICA: ${count} ejecuciones por minuto - Límite crítico superado`;
+    const body = `Hola Jon,
+
+ALERTA CRÍTICA: El sistema ha superado el límite crítico de ${limit.toLocaleString()} ejecuciones por minuto.
+
+Detalles:
+- Ejecuciones en el último minuto: ${count.toLocaleString()}
+- Límite crítico: ${limit.toLocaleString()} ejecuciones por minuto
+- Servicio de Cloud que está generando el problema: ${serviceSource}
+
+Esta es una alerta de seguridad para informarte de que el sistema está procesando un volumen muy alto de ejecuciones, lo que podría indicar:
+- Un bucle infinito
+- Un problema con el procesamiento de mensajes
+- Un ataque o uso anormal del sistema
+
+El servicio NO se ha detenido automáticamente (solo se detiene a los ${limit.toLocaleString()} ejecuciones), pero es importante que revises qué está causando este volumen tan alto.
+
+Para revisar:
+1. Ve a los logs de Cloud Run: https://console.cloud.google.com/run
+2. Revisa qué servicio está generando tantas ejecuciones
+3. Verifica si hay algún bucle o problema en el procesamiento
+
+Este es un mensaje automático del sistema de procesamiento de leads.
+
+Saludos,
+Sistema de Automatización MFS`;
+
+    const messageHeaders = [
+      `To: ${to}`,
+      `From: ${from}`,
+      `Subject: ${subject}`,
+      `Content-Type: text/plain; charset=utf-8`,
+    ];
+    
+    messageHeaders.push("");
+    messageHeaders.push(body);
+    
+    const message = messageHeaders.join("\n");
+    const encodedMessage = Buffer.from(message)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    
+    const response = await gmail.users.messages.send({
+      userId: "me",
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+    
+    console.log("[mfs] ===== EMAIL DE ALERTA CRÍTICA ENVIADO EXITOSAMENTE =====");
+    console.log("[mfs] Message ID:", response.data.id);
+    console.log("[mfs] Thread ID:", response.data.threadId);
+    
+    return {
+      success: true,
+      messageId: response.data.id,
+      threadId: response.data.threadId,
+    };
+  } catch (error) {
+    console.error("[mfs] ===== ERROR ENVIANDO EMAIL DE ALERTA CRÍTICA =====");
+    console.error("[mfs] Error message:", error?.message || error);
+    console.error("[mfs] Error code:", error?.code || error?.response?.status || "unknown");
+    
+    return {
+      success: false,
+      error: error?.message || "Unknown error",
+      code: error?.code || error?.response?.status || "unknown",
+    };
+  }
+}
+
+/**
  * Envía un email de notificación de rate limit excedido
  * @param {number} count - Número de emails procesados
  * @param {number} limit - Límite máximo permitido

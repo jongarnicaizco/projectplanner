@@ -35,14 +35,44 @@ function extractAllEmails(headerValue) {
 // Eliminadas todas las operaciones de storage para minimizar costes
 import { classifyIntent } from "./vertex.js";
 import { createAirtableRecord, airtableFindByEmailId } from "./airtable.js";
-import { sendBarterEmail, sendFreeCoverageEmail, sendRateLimitNotificationEmail } from "./email-sender.js";
+import { sendBarterEmail, sendFreeCoverageEmail, sendRateLimitNotificationEmail, sendCriticalAlertEmail } from "./email-sender.js";
 
 // Función para resetear el contador de rate limit (llamada desde index.js cuando se activa el servicio)
 export function resetRateLimitCounter() {
   rateLimitCount = 0;
   rateLimitWindowStart = Date.now();
   rateLimitNotificationSent = false;
+  criticalAlertSent = false;
   console.log(`[mfs] ✓ Contador de rate limit reseteado`);
+}
+
+// Función para detectar el origen del servicio desde el stack trace
+function detectServiceSource() {
+  try {
+    const stack = new Error().stack;
+    if (!stack) return "Unknown";
+    
+    // Detectar desde dónde se está llamando
+    if (stack.includes("_pubsub") || stack.includes("pubsub")) {
+      return "Google Cloud Pub/Sub (Gmail Watch notifications)";
+    }
+    if (stack.includes("process-unprocessed") || stack.includes("fallback")) {
+      return "Cloud Scheduler (Fallback automático cada 15 minutos)";
+    }
+    if (stack.includes("force-process")) {
+      return "Force Process Endpoint (Manual)";
+    }
+    if (stack.includes("process-interval")) {
+      return "Process Interval Endpoint (Manual)";
+    }
+    if (stack.includes("control/start")) {
+      return "Control Start Endpoint (Manual)";
+    }
+    
+    return "Unknown Cloud Service";
+  } catch (e) {
+    return "Unknown";
+  }
 }
 
 // Cache del label ID por cuenta (usando el objeto gmail como clave)
@@ -112,10 +142,12 @@ async function applyProcessedLabel(gmail, messageId) {
 let rateLimitCount = 0;
 let rateLimitWindowStart = Date.now();
 const RATE_LIMIT_MAX = 7000; // 7000 ejecuciones por minuto - si se supera, se detiene automáticamente
+const CRITICAL_ALERT_LIMIT = 20000; // 20000 ejecuciones por minuto - alerta crítica
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minuto
 
 // Flag para evitar múltiples correos de notificación
 let rateLimitNotificationSent = false;
+let criticalAlertSent = false; // Flag para alerta crítica de 20k
 
 // Lock en memoria para evitar procesamiento concurrente del mismo mensaje
 // Se limpia automáticamente después de procesar (éxito o fallo)
@@ -146,8 +178,23 @@ async function checkRateLimit() {
   if (windowAge >= RATE_LIMIT_WINDOW_MS) {
     rateLimitCount = 0;
     rateLimitWindowStart = now;
-    // Resetear flag de notificación cuando se resetea el contador
+    // Resetear flags de notificación cuando se resetea el contador
     rateLimitNotificationSent = false;
+    criticalAlertSent = false;
+  }
+  
+  // ALERTA CRÍTICA: Si superamos 20k ejecuciones por minuto, enviar email inmediatamente
+  if (rateLimitCount >= CRITICAL_ALERT_LIMIT && !criticalAlertSent) {
+    criticalAlertSent = true;
+    const serviceSource = detectServiceSource();
+    console.error(`[mfs] 🚨🚨🚨 ALERTA CRÍTICA: ${rateLimitCount} ejecuciones en el último minuto. Límite crítico: ${CRITICAL_ALERT_LIMIT}. Servicio: ${serviceSource}`);
+    
+    try {
+      await sendCriticalAlertEmail(rateLimitCount, CRITICAL_ALERT_LIMIT, serviceSource);
+      console.log(`[mfs] ✓ Email de alerta crítica enviado a jon.garnica@feverup.com`);
+    } catch (emailError) {
+      console.error(`[mfs] ✗ Error enviando email de alerta crítica:`, emailError?.message);
+    }
   }
   
   // Si superamos el límite, detener servicio automáticamente
@@ -188,11 +235,26 @@ async function incrementRateLimit() {
   if (windowAge >= RATE_LIMIT_WINDOW_MS) {
     rateLimitCount = 0;
     rateLimitWindowStart = now;
-    // Resetear flag de notificación cuando se resetea el contador
+    // Resetear flags de notificación cuando se resetea el contador
     rateLimitNotificationSent = false;
+    criticalAlertSent = false;
   }
   
   rateLimitCount++;
+  
+  // ALERTA CRÍTICA: Si superamos 20k ejecuciones por minuto, enviar email inmediatamente
+  if (rateLimitCount >= CRITICAL_ALERT_LIMIT && !criticalAlertSent) {
+    criticalAlertSent = true;
+    const serviceSource = detectServiceSource();
+    console.error(`[mfs] 🚨🚨🚨 ALERTA CRÍTICA: ${rateLimitCount} ejecuciones en el último minuto. Límite crítico: ${CRITICAL_ALERT_LIMIT}. Servicio: ${serviceSource}`);
+    
+    try {
+      await sendCriticalAlertEmail(rateLimitCount, CRITICAL_ALERT_LIMIT, serviceSource);
+      console.log(`[mfs] ✓ Email de alerta crítica enviado a jon.garnica@feverup.com`);
+    } catch (emailError) {
+      console.error(`[mfs] ✗ Error enviando email de alerta crítica:`, emailError?.message);
+    }
+  }
   
   // Si superamos el límite después de incrementar, detener servicio automáticamente
   if (rateLimitCount >= RATE_LIMIT_MAX) {
@@ -222,8 +284,9 @@ async function incrementRateLimit() {
   return rateLimitCount <= RATE_LIMIT_MAX;
 }
 
-export async function processMessageIds(gmail, ids) {
+export async function processMessageIds(gmail, ids, serviceSource = null) {
   // Verificar límite de ejecuciones por minuto ANTES de procesar
+  // Si se proporciona serviceSource, se usará para la alerta crítica
   if (!(await checkRateLimit())) {
     console.error(`[mfs] ⚠️ PROCESAMIENTO DETENIDO: Límite de ${RATE_LIMIT_MAX} ejecuciones por minuto alcanzado. Servicio detenido automáticamente.`);
     return {
@@ -233,6 +296,20 @@ export async function processMessageIds(gmail, ids) {
       rateLimitExceeded: true,
       resultados: ids.map(id => ({ id, skipped: true, reason: `rate_limit_exceeded_${RATE_LIMIT_MAX}_per_minute` })),
     };
+  }
+  
+  // Verificar alerta crítica ANTES de procesar
+  if (rateLimitCount >= CRITICAL_ALERT_LIMIT && !criticalAlertSent) {
+    criticalAlertSent = true;
+    const detectedSource = serviceSource || detectServiceSource();
+    console.error(`[mfs] 🚨🚨🚨 ALERTA CRÍTICA: ${rateLimitCount} ejecuciones en el último minuto. Límite crítico: ${CRITICAL_ALERT_LIMIT}. Servicio: ${detectedSource}`);
+    
+    try {
+      await sendCriticalAlertEmail(rateLimitCount, CRITICAL_ALERT_LIMIT, detectedSource);
+      console.log(`[mfs] ✓ Email de alerta crítica enviado a jon.garnica@feverup.com`);
+    } catch (emailError) {
+      console.error(`[mfs] ✗ Error enviando email de alerta crítica:`, emailError?.message);
+    }
   }
   
   // Sistema de cola: procesar todos los mensajes que llegan sin verificar Airtable antes

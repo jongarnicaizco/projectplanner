@@ -163,7 +163,7 @@ app.post("/control/process-unprocessed", async (_req, res) => {
       
       if (messageIds.length > 0) {
         const { processMessageIds } = await import("./services/processor.js");
-        const results = await processMessageIds(gmail, messageIds);
+        const results = await processMessageIds(gmail, messageIds, "Cloud Scheduler (Fallback automático cada 15 minutos - cuenta principal)");
         totalProcesados += results.exitosos || 0;
         totalFallidos += results.fallidos || 0;
         totalSaltados += results.saltados || 0;
@@ -192,7 +192,7 @@ app.post("/control/process-unprocessed", async (_req, res) => {
       
       if (senderMessageIds.length > 0) {
         const { processMessageIds } = await import("./services/processor.js");
-        const senderResults = await processMessageIds(gmailSender, senderMessageIds);
+        const senderResults = await processMessageIds(gmailSender, senderMessageIds, "Cloud Scheduler (Fallback automático cada 15 minutos - cuenta SENDER)");
         totalProcesados += senderResults.exitosos || 0;
         totalFallidos += senderResults.fallidos || 0;
         totalSaltados += senderResults.saltados || 0;
@@ -872,7 +872,7 @@ app.post("/force-process", async (_req, res) => {
       
       if (messageIds.length > 0) {
         const { processMessageIds } = await import("./services/processor.js");
-        const results = await processMessageIds(gmail, messageIds);
+        const results = await processMessageIds(gmail, messageIds, "Force Process Endpoint (Manual - cuenta principal)");
         allResults.push(...results);
       }
       
@@ -918,7 +918,7 @@ app.post("/force-process", async (_req, res) => {
       if (senderMessageIds.length > 0) {
         console.log("[mfs] /force-process → Procesando", senderMessageIds.length, "mensajes de cuenta SENDER...");
         const { processMessageIds } = await import("./services/processor.js");
-        const senderResults = await processMessageIds(gmailSender, senderMessageIds);
+        const senderResults = await processMessageIds(gmailSender, senderMessageIds, "Force Process Endpoint (Manual - cuenta SENDER)");
         console.log("[mfs] /force-process → ✓ Procesamiento de cuenta SENDER completado:", senderResults.length, "resultados");
         allResults.push(...senderResults);
       } else {
