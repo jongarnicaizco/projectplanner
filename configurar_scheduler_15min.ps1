@@ -38,31 +38,11 @@ Write-Host ""
 Write-Host "[2] Configurando Cloud Scheduler..." -ForegroundColor Yellow
 
 if ($update) {
-    # Actualizar job existente
     Write-Host "  Actualizando job existente..." -ForegroundColor Gray
-    gcloud scheduler jobs update http $jobName `
-        --location=$region `
-        --project=$project `
-        --schedule="*/15 * * * *" `
-        --uri="$serviceUrl/control/process-unprocessed" `
-        --http-method=POST `
-        --headers="Content-Type=application/json" `
-        --time-zone="UTC" `
-        --attempt-deadline=540s `
-        2>&1 | Out-Host
+    gcloud scheduler jobs update http $jobName --location=$region --project=$project --schedule="*/15 * * * *" --uri="$serviceUrl/control/process-unprocessed" --http-method=POST --headers="Content-Type=application/json" --time-zone="UTC" --attempt-deadline=540s 2>&1 | Out-Host
 } else {
-    # Crear nuevo job
     Write-Host "  Creando nuevo job..." -ForegroundColor Gray
-    gcloud scheduler jobs create http $jobName `
-        --location=$region `
-        --project=$project `
-        --schedule="*/15 * * * *" `
-        --uri="$serviceUrl/control/process-unprocessed" `
-        --http-method=POST `
-        --headers="Content-Type=application/json" `
-        --time-zone="UTC" `
-        --attempt-deadline=540s `
-        2>&1 | Out-Host
+    gcloud scheduler jobs create http $jobName --location=$region --project=$project --schedule="*/15 * * * *" --uri="$serviceUrl/control/process-unprocessed" --http-method=POST --headers="Content-Type=application/json" --time-zone="UTC" --attempt-deadline=540s 2>&1 | Out-Host
 }
 
 if ($LASTEXITCODE -eq 0) {
@@ -76,15 +56,17 @@ Write-Host ""
 
 # 3. Verificar el job
 Write-Host "[3] Verificando configuración del job..." -ForegroundColor Yellow
-$jobInfo = gcloud scheduler jobs describe $jobName --location=$region --project=$project --format=json 2>&1 | ConvertFrom-Json
-
-if ($jobInfo) {
-    Write-Host "  ✓ Job configurado:" -ForegroundColor Green
-    Write-Host "    Nombre: $($jobInfo.name)" -ForegroundColor White
-    Write-Host "    Schedule: $($jobInfo.schedule)" -ForegroundColor White
-    Write-Host "    Estado: $($jobInfo.state)" -ForegroundColor White
-    Write-Host "    URI: $($jobInfo.httpTarget.uri)" -ForegroundColor White
-    Write-Host "    Método: $($jobInfo.httpTarget.httpMethod)" -ForegroundColor White
+$jobInfoJson = gcloud scheduler jobs describe $jobName --location=$region --project=$project --format=json 2>&1
+if ($LASTEXITCODE -eq 0) {
+    $jobInfo = $jobInfoJson | ConvertFrom-Json
+    if ($jobInfo) {
+        Write-Host "  ✓ Job configurado:" -ForegroundColor Green
+        Write-Host "    Nombre: $($jobInfo.name)" -ForegroundColor White
+        Write-Host "    Schedule: $($jobInfo.schedule)" -ForegroundColor White
+        Write-Host "    Estado: $($jobInfo.state)" -ForegroundColor White
+        Write-Host "    URI: $($jobInfo.httpTarget.uri)" -ForegroundColor White
+        Write-Host "    Método: $($jobInfo.httpTarget.httpMethod)" -ForegroundColor White
+    }
 } else {
     Write-Host "  ⚠ No se pudo obtener información del job" -ForegroundColor Yellow
 }
@@ -105,4 +87,3 @@ Write-Host ""
 Write-Host "Para ver logs de ejecuciones:" -ForegroundColor Yellow
 Write-Host "  gcloud scheduler jobs list --location=$region --project=$project" -ForegroundColor White
 Write-Host ""
-
