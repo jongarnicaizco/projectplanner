@@ -186,25 +186,7 @@ export async function processMessageIds(gmail, ids) {
       let processingSuccessful = false;
 
       try {
-        const basicHeaders = msg.data.payload?.headers || [];
-        const fromHeaderBasic = basicHeaders.find(h => h.name?.toLowerCase() === "from")?.value || "";
-        const subjectHeaderBasic = basicHeaders.find(h => h.name?.toLowerCase() === "subject")?.value || "";
-        
-        if (fromHeaderBasic && fromHeaderBasic.toLowerCase().includes("secretmedia@feverup.com")) {
-          releaseProcessingLock(id);
-          continue;
-        }
-        
-        if (subjectHeaderBasic && subjectHeaderBasic.toLowerCase().trim() === "test") {
-          releaseProcessingLock(id);
-          continue;
-        }
-        
-        if (fromHeaderBasic && fromHeaderBasic.toLowerCase().includes("jongarnicaizco@gmail.com")) {
-          releaseProcessingLock(id);
-          continue;
-        }
-
+        // Extraer todos los headers primero para poder verificar TO antes de filtrar
         getAllHeaders = (payload) => {
           const headersArray = [];
           if (payload && payload.headers && Array.isArray(payload.headers)) {
@@ -250,6 +232,7 @@ export async function processMessageIds(gmail, ids) {
         const subject = findHeader("Subject") || "";
         const body = bodyFromMessage(msg.data);
 
+        // Extraer emails para verificar filtros
         const fromEmailRaw = extractFromEmail(fromHeader, cc, bcc, replyTo);
         const from = String(fromEmailRaw || "").trim().toLowerCase();
         
@@ -263,6 +246,24 @@ export async function processMessageIds(gmail, ids) {
               to = toHeaderEmail.toLowerCase();
             }
           }
+        }
+
+        // FILTROS: Solo saltar emails que vienen DE secretmedia@feverup.com (no los que LLEGAN A)
+        // Los emails que LLEGAN A secretmedia@feverup.com deben procesarse
+        if (from && from.includes("secretmedia@feverup.com")) {
+          // Email enviado DESDE secretmedia@feverup.com - saltar (es un email que nosotros enviamos)
+          releaseProcessingLock(id);
+          continue;
+        }
+        
+        if (subject && subject.toLowerCase().trim() === "test") {
+          releaseProcessingLock(id);
+          continue;
+        }
+        
+        if (from && from.includes("jongarnicaizco@gmail.com")) {
+          releaseProcessingLock(id);
+          continue;
         }
 
         if (!from || !to) {
@@ -306,7 +307,8 @@ export async function processMessageIds(gmail, ids) {
         const internalDate = msg.data.internalDate;
         const timestamp = internalDate ? new Date(parseInt(internalDate, 10)).toISOString() : new Date().toISOString();
 
-        // VERIFICAR SI YA EXISTE EN AIRTABLE ANTES DE LLAMAR A GEMINI
+        // VERIFICAR SI YA EXISTE EN AIRTABLE ANTES DE LLAMAR A GEMINI (UNA SOLA VEZ)
+        // Esta verificación se reutiliza después para evitar llamada duplicada
         const existingRecord = await airtableFindByEmailId(id);
         if (existingRecord) {
           // Ya existe en Airtable - aplicar etiqueta processed y saltar
@@ -364,19 +366,9 @@ export async function processMessageIds(gmail, ids) {
 
         const brandName = senderName || from.split("@")[0] || subject.split(" ")[0] || "Client";
 
-        // Verificar una vez más ANTES de crear (race condition protection)
-        const doubleCheckRecord = await airtableFindByEmailId(id);
-        if (doubleCheckRecord) {
-          // Otra instancia ya creó el registro - aplicar etiqueta processed y saltar
-          try {
-            await applyProcessedLabel(gmail, id);
-          } catch (labelError) {
-            // No crítico
-          }
-          releaseProcessingLock(id);
-          results.push({ id, airtableId: doubleCheckRecord.id, intent: null, confidence: null, skipped: true });
-          continue;
-        }
+        // Verificar una vez más ANTES de crear usando el resultado anterior (sin llamada adicional)
+        // Si otra instancia creó el registro entre la verificación y ahora, createAirtableRecord fallará
+        // y no se duplicará el registro
 
         const airtableRecord = await createAirtableRecord({
           id, from, to, cc, subject, body, bodySummary, timestamp,
