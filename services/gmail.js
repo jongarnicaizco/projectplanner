@@ -241,14 +241,14 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
         );
 
         // Si tenemos una notificación válida con historyId más reciente, intentar obtener mensajes nuevos
-        // usando messages.list con filtro de tiempo reciente (últimas 24 horas)
+        // usando messages.list con filtro de tiempo reciente (últimos 15 minutos)
         if (notifHistoryId) {
           try {
-            console.log("[mfs] [history] Usando fallback: buscando mensajes nuevos en INBOX (últimas 24 horas, sin processed)");
+            console.log("[mfs] [history] Usando fallback: buscando mensajes nuevos en INBOX (últimos 15 minutos, sin processed)");
             
-            // Obtener mensajes de las últimas 24 horas que no tengan etiqueta "processed"
-            const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
-            const query = `in:inbox -label:processed after:${oneDayAgo}`;
+            // Obtener mensajes de los últimos 15 minutos que no tengan etiqueta "processed"
+            const fifteenMinutesAgo = Math.floor(Date.now() / 1000) - (15 * 60);
+            const query = `in:inbox -label:processed after:${fifteenMinutesAgo}`;
             
             const listResp = await backoff(
               () =>
@@ -261,7 +261,7 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
             );
             
             const messageIds = (listResp.data.messages || []).map(m => m.id);
-            console.log(`[mfs] [history] Fallback: encontrados ${messageIds.length} mensajes nuevos en INBOX (últimas 24h, sin processed)`);
+            console.log(`[mfs] [history] Fallback: encontrados ${messageIds.length} mensajes nuevos en INBOX (últimos 15min, sin processed)`);
             
             // Actualizar historyId al de la notificación para sincronizar
             if (useSenderState) {
