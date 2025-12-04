@@ -169,13 +169,13 @@ function incrementRateLimit() {
 export async function processMessageIds(gmail, ids) {
   // Verificar límite de ejecuciones por minuto ANTES de procesar
   if (!checkRateLimit()) {
-    console.error(`[mfs] ⚠️ PROCESAMIENTO DETENIDO: Límite de 10k ejecuciones por minuto alcanzado. Deteniendo para evitar costos excesivos.`);
+    console.error(`[mfs] ⚠️ PROCESAMIENTO DETENIDO: Límite de ${RATE_LIMIT_MAX} ejecuciones por minuto alcanzado. Deteniendo para evitar costos excesivos.`);
     return {
       exitosos: 0,
       fallidos: 0,
       saltados: ids.length,
       rateLimitExceeded: true,
-      resultados: ids.map(id => ({ id, skipped: true, reason: "rate_limit_exceeded_10k_per_minute" })),
+      resultados: ids.map(id => ({ id, skipped: true, reason: `rate_limit_exceeded_${RATE_LIMIT_MAX}_per_minute` })),
     };
   }
   
