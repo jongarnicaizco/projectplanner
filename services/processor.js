@@ -1236,6 +1236,31 @@ export async function processMessageIds(gmail, ids) {
       try {
         await applyProcessedLabel(gmail, id);
         console.log("[mfs] ✓✓✓ Etiqueta 'processed' aplicada exitosamente ✓✓✓");
+        
+        // IMPORTANTE: Incrementar el contador de rate limiting SOLO cuando se procesa exitosamente un email
+        // (se creó en Airtable Y se aplicó la etiqueta "processed")
+        console.log("[mfs] [rateLimit] Incrementando contador por email procesado exitosamente");
+        const rateLimitUpdate = await incrementRateLimit();
+        
+        // Si se excedió el límite después de incrementar, enviar notificación
+        if (!rateLimitUpdate.allowed && rateLimitUpdate.shouldSendNotification) {
+          try {
+            console.log("[mfs] [rateLimit] Límite excedido después de procesar email, enviando notificación...");
+            const notificationResult = await sendRateLimitNotificationEmail(
+              rateLimitUpdate.currentCount,
+              rateLimitUpdate.limit,
+              rateLimitUpdate.windowMinutes
+            );
+            
+            if (notificationResult.success) {
+              console.log("[mfs] [rateLimit] ✓ Email de notificación enviado exitosamente");
+            } else {
+              console.error("[mfs] [rateLimit] ✗ Error enviando email de notificación:", notificationResult.error);
+            }
+          } catch (notificationError) {
+            console.error("[mfs] [rateLimit] ✗ Excepción enviando email de notificación:", notificationError?.message || notificationError);
+          }
+        }
       } catch (labelError) {
         console.error("[mfs] ✗✗✗ ERROR aplicando etiqueta 'processed' ✗✗✗");
         console.error("[mfs] Email ID:", id);
@@ -1248,6 +1273,7 @@ export async function processMessageIds(gmail, ids) {
         }, null, 2));
         console.error("[mfs] Stack trace:", labelError?.stack);
         // No fallar el procesamiento si no se puede aplicar la etiqueta, pero loguear el error
+        // NO incrementar el contador si no se pudo aplicar la etiqueta
       }
 
       // Pequeño delay para evitar picos
