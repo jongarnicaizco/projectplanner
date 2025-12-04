@@ -559,14 +559,26 @@ export async function createAirtableRecord({
 
     return created;
   } catch (e) {
+    // Si el error es porque el registro ya existe (duplicado), no es un error crítico
+    const errorData = e?.response?.data;
+    const errorStatus = e?.response?.status;
+    
+    // Airtable puede devolver diferentes códigos para duplicados
+    if (errorStatus === 422 || (errorData?.error?.message && errorData.error.message.includes("duplicate"))) {
+      console.log("[mfs] Airtable: Registro ya existe (duplicado), continuando normalmente", {
+        emailId: id,
+      });
+      // Retornar null para indicar que no se creó (pero no es un error)
+      return { id: null, duplicate: true };
+    }
+    
     console.error("[mfs] Airtable: ✗ ERROR creando registro", {
       emailId: id,
       errorMessage: e?.message,
-      errorResponse: e?.response?.data,
-      errorStatus: e?.response?.status,
+      errorResponse: errorData,
+      errorStatus: errorStatus,
       errorStatusText: e?.response?.statusText,
     });
-    console.error("[mfs] Airtable: Stack trace:", e?.stack);
     return { id: null };
   }
 }

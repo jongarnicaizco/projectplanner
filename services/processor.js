@@ -34,7 +34,7 @@ function extractAllEmails(headerValue) {
 
 // Eliminadas todas las operaciones de storage para minimizar costes
 import { classifyIntent } from "./vertex.js";
-import { airtableFindByEmailId, airtableFindByEmailIdsBatch, createAirtableRecord } from "./airtable.js";
+import { createAirtableRecord } from "./airtable.js";
 import { sendBarterEmail, sendFreeCoverageEmail, sendRateLimitNotificationEmail } from "./email-sender.js";
 
 // Cache del label ID por cuenta (usando el objeto gmail como clave)
@@ -179,27 +179,15 @@ export async function processMessageIds(gmail, ids) {
     };
   }
   
-  // OPTIMIZACIÓN: Verificar todos los Email IDs en batch ANTES de procesar
-  // Esto reduce de N llamadas a Airtable a solo 1-2 llamadas (dependiendo del tamaño)
-  console.log(`[mfs] Verificando ${ids.length} Email IDs en batch antes de procesar...`);
-  const existingRecordsMap = await airtableFindByEmailIdsBatch(ids);
-  console.log(`[mfs] Batch verification: ${existingRecordsMap.size} registros ya existen en Airtable`);
-  
+  // Sistema de cola: procesar todos los mensajes que llegan sin verificar Airtable antes
+  // createAirtableRecord manejará duplicados (si ya existe, fallará y no se duplicará)
   const results = [];
 
   for (let i = 0; i < ids.length; i++) {
     const id = ids[i];
 
     try {
-      // Verificar si ya existe en Airtable ANTES de hacer cualquier llamada a Gmail
-      const existingRecord = existingRecordsMap.get(id);
-      if (existingRecord) {
-        // Ya existe - saltar sin hacer llamadas
-        results.push({ id, airtableId: existingRecord.id, intent: null, confidence: null, skipped: true, reason: "already_in_airtable" });
-        continue;
-      }
-
-      // Lock en memoria ANTES de obtener mensaje
+      // Lock en memoria ANTES de obtener mensaje (sistema de cola)
       if (!acquireProcessingLock(id)) {
         results.push({ id, airtableId: null, intent: null, confidence: null, skipped: true, reason: "concurrent_processing" });
         continue;
@@ -319,10 +307,8 @@ export async function processMessageIds(gmail, ids) {
 
         const brandName = senderName || from.split("@")[0] || subject.split(" ")[0] || "Client";
 
-        // Verificar una vez más ANTES de crear usando el resultado anterior (sin llamada adicional)
-        // Si otra instancia creó el registro entre la verificación y ahora, createAirtableRecord fallará
-        // y no se duplicará el registro
-
+        // Crear registro en Airtable directamente (sin verificación previa)
+        // Si ya existe, createAirtableRecord manejará el error y no se duplicará
         const airtableRecord = await createAirtableRecord({
           id, from, to, cc, subject, body, bodySummary, timestamp,
           intent: finalIntent, confidence: finalConfidence, reasoning: finalReasoning,
@@ -331,11 +317,11 @@ export async function processMessageIds(gmail, ids) {
           senderName, senderFirstName, language, location,
         });
 
-        // Si se creó exitosamente: enviar emails y aplicar etiqueta processed
-        if (airtableRecord?.id) {
+        // Si se creó exitosamente o ya existía (duplicado): enviar emails y aplicar etiqueta processed
+        if (airtableRecord?.id || airtableRecord?.duplicate) {
           // Verificar límite antes de continuar (cada mensaje procesado cuenta como ejecución)
           if (!checkRateLimit()) {
-            console.error(`[mfs] ⚠️ Límite de 10k ejecuciones por minuto alcanzado. Deteniendo procesamiento.`);
+            console.error(`[mfs] ⚠️ Límite de ${RATE_LIMIT_MAX} ejecuciones por minuto alcanzado. Deteniendo procesamiento.`);
             releaseProcessingLock(id);
             // Aplicar etiqueta processed aunque detengamos (para no reprocesar)
             try {
@@ -346,12 +332,14 @@ export async function processMessageIds(gmail, ids) {
             break; // Salir del loop
           }
 
-          // Enviar emails en paralelo (no bloqueante)
-          if (isBarter) {
-            sendBarterEmail(id, senderFirstName || "Client", brandName, subject).catch(() => {});
-          }
-          if (isFreeCoverage) {
-            sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject).catch(() => {});
+          // Enviar emails en paralelo (no bloqueante) - solo si se creó nuevo registro
+          if (airtableRecord?.id && !airtableRecord?.duplicate) {
+            if (isBarter) {
+              sendBarterEmail(id, senderFirstName || "Client", brandName, subject).catch(() => {});
+            }
+            if (isFreeCoverage) {
+              sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject).catch(() => {});
+            }
           }
 
           // APLICAR ETIQUETA PROCESSED SIEMPRE AL FINAL (bloqueante para asegurar que se aplica)
