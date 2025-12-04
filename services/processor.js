@@ -36,6 +36,7 @@ function extractAllEmails(headerValue) {
 import { classifyIntent } from "./vertex.js";
 import { createAirtableRecord, airtableFindByEmailId } from "./airtable.js";
 import { sendBarterEmail, sendFreeCoverageEmail, sendRateLimitNotificationEmail, sendCriticalAlertEmail } from "./email-sender.js";
+import { createSalesforceLead } from "./salesforce.js";
 
 // Función para resetear el contador de rate limit (llamada desde index.js cuando se activa el servicio)
 export function resetRateLimitCounter() {
@@ -508,6 +509,48 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           continue; // Continuar con el siguiente mensaje (SECUENCIAL)
         }
 
+        // CREAR LEAD EN SALESFORCE ANTES DE AIRTABLE (solo para Medium, High, Very High)
+        let salesforceLeadId = null;
+        if (finalIntent === "Medium" || finalIntent === "High" || finalIntent === "Very High") {
+          try {
+            // Construir MEDDIC Analysis string igual que en Airtable
+            const meddicParts = [];
+            if (meddicMetrics) meddicParts.push(`M: ${meddicMetrics}`);
+            if (meddicEconomicBuyer) meddicParts.push(`E: ${meddicEconomicBuyer}`);
+            if (meddicDecisionCriteria) meddicParts.push(`D: ${meddicDecisionCriteria}`);
+            if (meddicDecisionProcess) meddicParts.push(`D: ${meddicDecisionProcess}`);
+            if (meddicIdentifyPain) meddicParts.push(`I: ${meddicIdentifyPain}`);
+            if (meddicChampion) meddicParts.push(`C: ${meddicChampion}`);
+            const meddicAnalysis = meddicParts.join("\n\n").slice(0, 1000);
+
+            const salesforceResult = await createSalesforceLead({
+              lastName: senderName || from.split("@")[0] || "Unknown",
+              company: senderName || from.split("@")[0] || "Unknown",
+              email: from,
+              countryCode: location?.countryCode || null,
+              city: location?.city || null,
+              subject: subject || "",
+              body: body || "",
+              businessOppt: finalIntent,
+              meddicAnalysis: meddicAnalysis || null,
+            });
+
+            if (salesforceResult?.id) {
+              salesforceLeadId = salesforceResult.id;
+              console.log(`[mfs] ✓ Lead creado en Salesforce para ${id} - Lead ID: ${salesforceLeadId}`);
+            } else if (salesforceResult?.skipped) {
+              console.log(`[mfs] Salesforce: Lead no creado (integración detenida) para ${id}`);
+            } else if (salesforceResult?.duplicate) {
+              console.log(`[mfs] Salesforce: Lead duplicado detectado para ${id}`);
+            } else {
+              console.warn(`[mfs] Salesforce: No se pudo crear lead para ${id}:`, salesforceResult?.error);
+            }
+          } catch (salesforceError) {
+            // No bloquear el procesamiento si falla Salesforce
+            console.error(`[mfs] ✗ Error creando lead en Salesforce para ${id}:`, salesforceError?.message || salesforceError);
+          }
+        }
+
         // Crear registro en Airtable (solo si no existe)
         let airtableRecord;
         try {
@@ -577,21 +620,29 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           }
 
           // Enviar emails SECUENCIALMENTE (bloqueante) - solo si se creó nuevo registro
-          // Procesamiento secuencial: esperar a que se envíe antes de continuar
+          // Verificar estado de envío de emails antes de enviar
           if (airtableRecord?.id && !airtableRecord?.duplicate) {
-            if (isBarter) {
-              try {
-                await sendBarterEmail(id, senderFirstName || "Client", brandName, subject);
-              } catch (emailError) {
-                console.warn(`[mfs] Error enviando email barter para ${id}:`, emailError?.message);
+            const { readEmailSendingStatus } = await import("./storage.js");
+            const emailStatus = await readEmailSendingStatus();
+            
+            if (emailStatus.status === "active") {
+              // Procesamiento secuencial: esperar a que se envíe antes de continuar
+              if (isBarter) {
+                try {
+                  await sendBarterEmail(id, senderFirstName || "Client", brandName, subject);
+                } catch (emailError) {
+                  console.warn(`[mfs] Error enviando email barter para ${id}:`, emailError?.message);
+                }
               }
-            }
-            if (isFreeCoverage) {
-              try {
-                await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject);
-              } catch (emailError) {
-                console.warn(`[mfs] Error enviando email free coverage para ${id}:`, emailError?.message);
+              if (isFreeCoverage) {
+                try {
+                  await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject);
+                } catch (emailError) {
+                  console.warn(`[mfs] Error enviando email free coverage para ${id}:`, emailError?.message);
+                }
               }
+            } else {
+              console.log(`[mfs] Envío de emails detenido, no se enviarán emails automáticos para ${id}`);
             }
           }
 

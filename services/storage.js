@@ -301,4 +301,92 @@ export async function writeServiceStatus(status) {
   console.log(`[mfs] [service] ✓ Estado del servicio actualizado a: ${status}`);
 }
 
+/**
+ * Lee el estado de la integración con Salesforce
+ * Retorna { status: "active" | "stopped", updatedAt: string } o { status: "active", updatedAt: null } si no existe
+ */
+export async function readSalesforceStatus() {
+  if (!CFG.GCS_BUCKET) return { status: "active", updatedAt: null };
+
+  try {
+    const [buf] = await storage
+      .bucket(CFG.GCS_BUCKET)
+      .file("state/salesforce_status.json")
+      .download();
+    const j = JSON.parse(buf.toString("utf8"));
+    return {
+      status: j.status || "active",
+      updatedAt: j.updatedAt || null,
+    };
+  } catch {
+    // Si no existe, la integración está activa por defecto
+    return { status: "active", updatedAt: null };
+  }
+}
+
+/**
+ * Escribe el estado de la integración con Salesforce
+ */
+export async function writeSalesforceStatus(status) {
+  if (!CFG.GCS_BUCKET) return;
+
+  if (status !== "active" && status !== "stopped") {
+    throw new Error("Status debe ser 'active' o 'stopped'");
+  }
+
+  await saveToGCS(
+    "state/salesforce_status.json",
+    JSON.stringify({
+      status,
+      updatedAt: new Date().toISOString(),
+    }, null, 2),
+    "application/json"
+  );
+  console.log(`[mfs] [salesforce] ✓ Estado de Salesforce actualizado a: ${status}`);
+}
+
+/**
+ * Lee el estado del envío de emails automáticos
+ * Retorna { status: "active" | "stopped", updatedAt: string } o { status: "active", updatedAt: null } si no existe
+ */
+export async function readEmailSendingStatus() {
+  if (!CFG.GCS_BUCKET) return { status: "active", updatedAt: null };
+
+  try {
+    const [buf] = await storage
+      .bucket(CFG.GCS_BUCKET)
+      .file("state/email_sending_status.json")
+      .download();
+    const j = JSON.parse(buf.toString("utf8"));
+    return {
+      status: j.status || "active",
+      updatedAt: j.updatedAt || null,
+    };
+  } catch {
+    // Si no existe, el envío está activo por defecto
+    return { status: "active", updatedAt: null };
+  }
+}
+
+/**
+ * Escribe el estado del envío de emails automáticos
+ */
+export async function writeEmailSendingStatus(status) {
+  if (!CFG.GCS_BUCKET) return;
+
+  if (status !== "active" && status !== "stopped") {
+    throw new Error("Status debe ser 'active' o 'stopped'");
+  }
+
+  await saveToGCS(
+    "state/email_sending_status.json",
+    JSON.stringify({
+      status,
+      updatedAt: new Date().toISOString(),
+    }, null, 2),
+    "application/json"
+  );
+  console.log(`[mfs] [email] ✓ Estado de envío de emails actualizado a: ${status}`);
+}
+
 

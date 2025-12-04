@@ -40,11 +40,17 @@ app.get("/healthz", (_req, res) => res.send("ok"));
  */
 app.get("/control/status", async (_req, res) => {
   try {
-    const status = await readServiceStatus();
+    const { readServiceStatus, readSalesforceStatus, readEmailSendingStatus } = await import("./services/storage.js");
+    const serviceStatus = await readServiceStatus();
+    const salesforceStatus = await readSalesforceStatus();
+    const emailStatus = await readEmailSendingStatus();
+    
     res.json({
       ok: true,
-      status: status.status,
-      updatedAt: status.updatedAt,
+      status: serviceStatus.status,
+      salesforce: salesforceStatus.status,
+      emailSending: emailStatus.status,
+      updatedAt: serviceStatus.updatedAt,
     });
   } catch (e) {
     logErr("control/status error:", e);
@@ -124,6 +130,91 @@ app.post("/control/stop", async (_req, res) => {
     });
   } catch (e) {
     logErr("control/stop error:", e);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * Obtiene el estado de todos los servicios
+ */
+app.get("/control/status", async (_req, res) => {
+  try {
+    const { readServiceStatus, readSalesforceStatus, readEmailSendingStatus } = await import("./services/storage.js");
+    const serviceStatus = await readServiceStatus();
+    const salesforceStatus = await readSalesforceStatus();
+    const emailStatus = await readEmailSendingStatus();
+    
+    res.json({
+      ok: true,
+      status: serviceStatus.status,
+      salesforce: salesforceStatus.status,
+      emailSending: emailStatus.status,
+      updatedAt: serviceStatus.updatedAt,
+    });
+  } catch (e) {
+    logErr("control/status error:", e);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * Activa/Detiene la integración con Salesforce
+ */
+app.post("/control/salesforce", async (req, res) => {
+  try {
+    const { action } = req.body;
+    const { writeSalesforceStatus } = await import("./services/storage.js");
+    
+    if (action === "start") {
+      await writeSalesforceStatus("active");
+      res.json({
+        ok: true,
+        message: "Integración con Salesforce activada. Se crearán leads para Medium, High y Very High.",
+        status: "active",
+      });
+    } else if (action === "stop") {
+      await writeSalesforceStatus("stopped");
+      res.json({
+        ok: true,
+        message: "Integración con Salesforce detenida. No se crearán leads, pero se seguirán procesando emails en Airtable.",
+        status: "stopped",
+      });
+    } else {
+      res.status(400).json({ error: "Action debe ser 'start' o 'stop'" });
+    }
+  } catch (e) {
+    logErr("control/salesforce error:", e);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * Activa/Detiene el envío de emails automáticos
+ */
+app.post("/control/email-sending", async (req, res) => {
+  try {
+    const { action } = req.body;
+    const { writeEmailSendingStatus } = await import("./services/storage.js");
+    
+    if (action === "start") {
+      await writeEmailSendingStatus("active");
+      res.json({
+        ok: true,
+        message: "Envío de emails automáticos activado.",
+        status: "active",
+      });
+    } else if (action === "stop") {
+      await writeEmailSendingStatus("stopped");
+      res.json({
+        ok: true,
+        message: "Envío de emails automáticos detenido. Se seguirán procesando emails en Airtable y creando leads en Salesforce.",
+        status: "stopped",
+      });
+    } else {
+      res.status(400).json({ error: "Action debe ser 'start' o 'stop'" });
+    }
+  } catch (e) {
+    logErr("control/email-sending error:", e);
     res.status(500).json({ error: e?.message });
   }
 });
@@ -338,7 +429,10 @@ app.post("/control/process-interval", async (req, res) => {
  */
 app.get("/control", async (_req, res) => {
   try {
+    const { readServiceStatus, readSalesforceStatus, readEmailSendingStatus } = await import("./services/storage.js");
     const status = await readServiceStatus();
+    const salesforceStatus = await readSalesforceStatus();
+    const emailStatus = await readEmailSendingStatus();
     const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -562,6 +656,32 @@ app.get("/control", async (_req, res) => {
       </button>
     </div>
     
+    <div class="status ${salesforceStatus.status}" id="salesforceStatus" style="margin-top: 20px;">
+      Salesforce: ${salesforceStatus.status === "active" ? "🟢 ACTIVO" : "🔴 DETENIDO"}
+    </div>
+    
+    <div class="buttons">
+      <button class="btn-start" id="btnSalesforceStart" ${salesforceStatus.status === "active" ? "disabled" : ""}>
+        ▶ Activar Salesforce
+      </button>
+      <button class="btn-stop" id="btnSalesforceStop" ${salesforceStatus.status === "stopped" ? "disabled" : ""}>
+        ⏸ Detener Salesforce
+      </button>
+    </div>
+    
+    <div class="status ${emailStatus.status}" id="emailStatus" style="margin-top: 20px;">
+      Envío de Emails: ${emailStatus.status === "active" ? "🟢 ACTIVO" : "🔴 DETENIDO"}
+    </div>
+    
+    <div class="buttons">
+      <button class="btn-start" id="btnEmailStart" ${emailStatus.status === "active" ? "disabled" : ""}>
+        ▶ Activar Emails
+      </button>
+      <button class="btn-stop" id="btnEmailStop" ${emailStatus.status === "stopped" ? "disabled" : ""}>
+        ⏸ Detener Emails
+      </button>
+    </div>
+    
     <div class="process-interval">
       <h3>📧 Procesar Mensajes por Intervalo</h3>
       <div class="process-interval-input-group">
@@ -590,15 +710,35 @@ app.get("/control", async (_req, res) => {
     const statusEl = document.getElementById('status');
     const loading = document.getElementById('loading');
     
+    const btnSalesforceStart = document.getElementById('btnSalesforceStart');
+    const btnSalesforceStop = document.getElementById('btnSalesforceStop');
+    const salesforceStatusEl = document.getElementById('salesforceStatus');
+    const btnEmailStart = document.getElementById('btnEmailStart');
+    const btnEmailStop = document.getElementById('btnEmailStop');
+    const emailStatusEl = document.getElementById('emailStatus');
+    
     async function updateStatus() {
       try {
         const res = await fetch('/control/status');
         const data = await res.json();
         if (data.ok) {
+          // Actualizar estado del servicio principal
           statusEl.className = 'status ' + data.status;
           statusEl.textContent = data.status === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
           btnStart.disabled = data.status === 'active';
           btnStop.disabled = data.status === 'stopped';
+          
+          // Actualizar estado de Salesforce
+          salesforceStatusEl.className = 'status ' + data.salesforce;
+          salesforceStatusEl.textContent = 'Salesforce: ' + (data.salesforce === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO');
+          btnSalesforceStart.disabled = data.salesforce === 'active';
+          btnSalesforceStop.disabled = data.salesforce === 'stopped';
+          
+          // Actualizar estado de envío de emails
+          emailStatusEl.className = 'status ' + data.emailSending;
+          emailStatusEl.textContent = 'Envío de Emails: ' + (data.emailSending === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO');
+          btnEmailStart.disabled = data.emailSending === 'active';
+          btnEmailStop.disabled = data.emailSending === 'stopped';
         }
       } catch (e) {
         console.error('Error actualizando estado:', e);
@@ -649,6 +789,114 @@ app.get("/control", async (_req, res) => {
     
     btnStart.addEventListener('click', startService);
     btnStop.addEventListener('click', stopService);
+    
+    // Control de Salesforce
+    async function startSalesforce() {
+      loading.classList.add('show');
+      btnSalesforceStart.disabled = true;
+      btnSalesforceStop.disabled = true;
+      
+      try {
+        const res = await fetch('/control/salesforce', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'start' })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          await updateStatus();
+          alert('✅ Integración con Salesforce activada.');
+        } else {
+          alert('❌ Error: ' + (data.error || 'No se pudo activar Salesforce'));
+        }
+      } catch (e) {
+        alert('❌ Error: ' + e.message);
+      } finally {
+        loading.classList.remove('show');
+      }
+    }
+    
+    async function stopSalesforce() {
+      loading.classList.add('show');
+      btnSalesforceStart.disabled = true;
+      btnSalesforceStop.disabled = true;
+      
+      try {
+        const res = await fetch('/control/salesforce', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'stop' })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          await updateStatus();
+          alert('⏸ Integración con Salesforce detenida.');
+        } else {
+          alert('❌ Error: ' + (data.error || 'No se pudo detener Salesforce'));
+        }
+      } catch (e) {
+        alert('❌ Error: ' + e.message);
+      } finally {
+        loading.classList.remove('show');
+      }
+    }
+    
+    btnSalesforceStart.addEventListener('click', startSalesforce);
+    btnSalesforceStop.addEventListener('click', stopSalesforce);
+    
+    // Control de envío de emails
+    async function startEmailSending() {
+      loading.classList.add('show');
+      btnEmailStart.disabled = true;
+      btnEmailStop.disabled = true;
+      
+      try {
+        const res = await fetch('/control/email-sending', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'start' })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          await updateStatus();
+          alert('✅ Envío de emails automáticos activado.');
+        } else {
+          alert('❌ Error: ' + (data.error || 'No se pudo activar el envío de emails'));
+        }
+      } catch (e) {
+        alert('❌ Error: ' + e.message);
+      } finally {
+        loading.classList.remove('show');
+      }
+    }
+    
+    async function stopEmailSending() {
+      loading.classList.add('show');
+      btnEmailStart.disabled = true;
+      btnEmailStop.disabled = true;
+      
+      try {
+        const res = await fetch('/control/email-sending', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'stop' })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          await updateStatus();
+          alert('⏸ Envío de emails automáticos detenido.');
+        } else {
+          alert('❌ Error: ' + (data.error || 'No se pudo detener el envío de emails'));
+        }
+      } catch (e) {
+        alert('❌ Error: ' + e.message);
+      } finally {
+        loading.classList.remove('show');
+      }
+    }
+    
+    btnEmailStart.addEventListener('click', startEmailSending);
+    btnEmailStop.addEventListener('click', stopEmailSending);
     
     // Procesar intervalo de tiempo
     const btnProcessInterval = document.getElementById('btnProcessInterval');
