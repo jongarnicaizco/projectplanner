@@ -143,7 +143,7 @@ async function applyProcessedLabel(gmail, messageId) {
 let rateLimitCount = 0;
 let rateLimitWindowStart = Date.now();
 const RATE_LIMIT_MAX = 7000; // 7000 ejecuciones por minuto - si se supera, se detiene automáticamente
-const CRITICAL_ALERT_LIMIT = 3000; // 3000 ejecuciones por minuto - alerta crítica (email a jon.garnica@feverup.com)
+const CRITICAL_ALERT_LIMIT = 500; // 3000 ejecuciones por minuto - alerta crítica (email a jon.garnica@feverup.com)
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minuto
 
 // Flag para evitar múltiples correos de notificación
