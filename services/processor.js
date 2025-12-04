@@ -428,7 +428,14 @@ export async function processMessageIds(gmail, ids) {
   });
   const results = [];
 
-  for (const id of ids) {
+  // PROCESAMIENTO SECUENCIAL: Procesar un email a la vez, completamente, antes del siguiente
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
+    console.log("[mfs] ========================================");
+    console.log("[mfs] PROCESANDO EMAIL", i + 1, "DE", ids.length);
+    console.log("[mfs] Email ID:", id);
+    console.log("[mfs] ========================================");
+    
     let lockAcquired = false;
     // Declarar allHeaders al inicio del scope para evitar problemas de referencia
     let allHeaders = [];
