@@ -40,7 +40,7 @@ import {
   writeRateLimitState,
   resetRateLimitState,
 } from "./storage.js";
-import { classifyIntent, generateBodySummary } from "./vertex.js";
+import { classifyIntent } from "./vertex.js";
 import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
 import { sendBarterEmail, sendFreeCoverageEmail, sendRateLimitNotificationEmail } from "./email-sender.js";
 
@@ -403,11 +403,26 @@ export async function processMessageIds(gmail, ids) {
       const internalDate = msg.data.internalDate;
       const timestamp = internalDate ? new Date(parseInt(internalDate, 10)).toISOString() : new Date().toISOString();
 
+      // VERIFICAR SI YA EXISTE EN AIRTABLE ANTES DE LLAMAR A GEMINI
+      const existingRecord = await airtableFindByEmailId(id);
+      if (existingRecord) {
+        try {
+          await applyProcessedLabel(gmail, id);
+        } catch (labelError) {
+          // Continue
+        }
+        results.push({ id, airtableId: existingRecord.id, intent: null, confidence: null, skipped: true });
+        await releaseMessageLock(id);
+        continue;
+      }
+
+      // SOLO LLAMAR A GEMINI SI EL EMAIL NO EXISTE EN AIRTABLE
       const isReply = subject.toLowerCase().startsWith("re:") ||
                       subject.toLowerCase().startsWith("fwd:") ||
                       (findHeader("In-Reply-To") && findHeader("In-Reply-To").length > 0) ||
                       (msg.data.threadId && msg.data.threadId !== msg.data.id);
 
+      // ÚNICA LLAMADA A GEMINI: classifyIntent
       const {
         intent,
         confidence,
@@ -440,19 +455,8 @@ export async function processMessageIds(gmail, ids) {
         }
       }
 
-      const bodySummary = await generateBodySummary(body);
-
-      const existingRecord = await airtableFindByEmailId(id);
-      if (existingRecord) {
-        try {
-          await applyProcessedLabel(gmail, id);
-        } catch (labelError) {
-          // Continue
-        }
-        results.push({ id, airtableId: existingRecord.id, intent, confidence, skipped: true });
-        await releaseMessageLock(id);
-        continue;
-      }
+      // NO generar bodySummary para ahorrar llamadas a Gemini
+      const bodySummary = "";
 
       const brandName = senderName || from.split("@")[0] || subject.split(" ")[0] || "Client";
       
