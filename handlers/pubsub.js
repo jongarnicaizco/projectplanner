@@ -2,7 +2,7 @@
  * Handler de Pub/Sub para notificaciones de Gmail
  */
 import { getGmailClient, getGmailSenderClient, getNewInboxMessageIdsFromHistory } from "../services/gmail.js";
-import { writeHistoryState, writeHistoryStateSender } from "../services/storage.js";
+import { writeHistoryState, writeHistoryStateSender, readServiceStatus } from "../services/storage.js";
 import { processMessageIds } from "../services/processor.js";
 import { logErr } from "../utils/helpers.js";
 
@@ -11,6 +11,13 @@ import { logErr } from "../utils/helpers.js";
  */
 export async function handlePubSub(req, res) {
   try {
+    // Verificar si el servicio está activo
+    const isActive = await readServiceStatus();
+    if (!isActive) {
+      console.log("[mfs] _pubsub: ⏸️ Servicio PAUSADO - Ignorando notificación");
+      return res.status(204).send();
+    }
+
     const msg = req.body?.message;
     if (!msg?.data) {
       console.log("[mfs] _pubsub sin data → 204");

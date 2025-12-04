@@ -257,4 +257,41 @@ export async function resetRateLimitState() {
   console.log("[mfs] [rateLimit] ✓ Estado de rate limiting reseteado manualmente");
 }
 
+/**
+ * Lee el estado de activación del servicio desde GCS
+ * Retorna true si está activo, false si está pausado, null si no existe (por defecto activo)
+ */
+export async function readServiceStatus() {
+  if (!CFG.GCS_BUCKET) return true; // Por defecto activo si no hay GCS
+
+  try {
+    const [buf] = await storage
+      .bucket(CFG.GCS_BUCKET)
+      .file("state/service_status.json")
+      .download();
+    const j = JSON.parse(buf.toString("utf8"));
+    return j.active !== false; // Por defecto true si no existe la propiedad
+  } catch {
+    return true; // Por defecto activo si no existe el archivo
+  }
+}
+
+/**
+ * Escribe el estado de activación del servicio en GCS
+ * @param {boolean} active - true para activar, false para pausar
+ */
+export async function writeServiceStatus(active) {
+  if (!CFG.GCS_BUCKET) return;
+
+  await saveToGCS(
+    "state/service_status.json",
+    JSON.stringify({
+      active: active === true,
+      updatedAt: new Date().toISOString(),
+    }, null, 2),
+    "application/json"
+  );
+  console.log(`[mfs] [control] ✓ Estado del servicio actualizado: ${active ? "ACTIVO" : "PAUSADO"}`);
+}
+
 
