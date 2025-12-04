@@ -196,7 +196,7 @@ export async function checkLockAge(messageId) {
 
 /**
  * Lee el estado del rate limiting desde GCS
- * Retorna { count: número, windowStart: timestamp } o null si no existe
+ * Retorna { count: número, windowStart: timestamp, notificationSent: boolean } o null si no existe
  */
 export async function readRateLimitState() {
   if (!CFG.GCS_BUCKET) return null;
@@ -210,6 +210,7 @@ export async function readRateLimitState() {
     return {
       count: j.count || 0,
       windowStart: j.windowStart ? new Date(j.windowStart) : new Date(),
+      notificationSent: j.notificationSent || false,
     };
   } catch {
     return null;
@@ -219,7 +220,7 @@ export async function readRateLimitState() {
 /**
  * Escribe el estado del rate limiting en GCS
  */
-export async function writeRateLimitState(count, windowStart) {
+export async function writeRateLimitState(count, windowStart, notificationSent = false) {
   if (!CFG.GCS_BUCKET) return;
 
   await saveToGCS(
@@ -227,6 +228,7 @@ export async function writeRateLimitState(count, windowStart) {
     JSON.stringify({
       count,
       windowStart: windowStart.toISOString(),
+      notificationSent,
       updatedAt: new Date().toISOString(),
     }, null, 2),
     "application/json"

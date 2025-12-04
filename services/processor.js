@@ -207,7 +207,7 @@ async function applyProcessedLabel(gmail, messageId) {
 
 /**
  * Verifica y actualiza el contador de rate limiting
- * Retorna { allowed: boolean, currentCount: number, limit: number }
+ * Retorna { allowed: boolean, currentCount: number, limit: number, shouldSendNotification: boolean }
  */
 async function checkAndUpdateRateLimit(requestedCount) {
   const RATE_LIMIT_MAX = 200; // Máximo de emails procesados
@@ -219,23 +219,36 @@ async function checkAndUpdateRateLimit(requestedCount) {
     
     let currentCount = 0;
     let windowStart = now;
+    let notificationSent = false;
     
     if (state) {
       const windowAge = now.getTime() - state.windowStart.getTime();
       
-      // Si la ventana ha expirado (más de 30 minutos), reiniciar contador
+      // Si la ventana ha expirado (más de 30 minutos), reiniciar contador y flag de notificación
       if (windowAge >= RATE_LIMIT_WINDOW_MS) {
-        console.log("[mfs] [rateLimit] Ventana de tiempo expirada, reiniciando contador");
+        console.log("[mfs] [rateLimit] Ventana de tiempo expirada, reiniciando contador y flag de notificación");
         currentCount = 0;
         windowStart = now;
+        notificationSent = false; // Resetear flag cuando se reinicia la ventana
       } else {
         currentCount = state.count || 0;
         windowStart = state.windowStart;
+        notificationSent = state.notificationSent || false; // Mantener el flag si la ventana no ha expirado
       }
     }
     
     const newCount = currentCount + requestedCount;
     const allowed = newCount <= RATE_LIMIT_MAX;
+    
+    // Solo enviar notificación si:
+    // 1. Se excedió el límite (allowed = false)
+    // 2. Aún no se ha enviado la notificación en esta ventana (notificationSent = false)
+    const shouldSendNotification = !allowed && !notificationSent;
+    
+    // Si vamos a enviar notificación, marcar el flag como enviado
+    if (shouldSendNotification) {
+      notificationSent = true;
+    }
     
     console.log("[mfs] [rateLimit] Estado actual:", {
       currentCount,
@@ -243,18 +256,21 @@ async function checkAndUpdateRateLimit(requestedCount) {
       newCount,
       limit: RATE_LIMIT_MAX,
       allowed,
+      notificationSent,
+      shouldSendNotification,
       windowStart: windowStart.toISOString(),
       windowAgeMinutes: Math.floor((now.getTime() - windowStart.getTime()) / 60000),
     });
     
     // Actualizar el estado incluso si se excede el límite (para tracking)
-    await writeRateLimitState(newCount, windowStart);
+    await writeRateLimitState(newCount, windowStart, notificationSent);
     
     return {
       allowed,
       currentCount: newCount,
       limit: RATE_LIMIT_MAX,
       windowMinutes: 30,
+      shouldSendNotification,
     };
   } catch (error) {
     console.error("[mfs] [rateLimit] Error verificando rate limit:", error?.message || error);
@@ -264,6 +280,7 @@ async function checkAndUpdateRateLimit(requestedCount) {
       currentCount: 0,
       limit: RATE_LIMIT_MAX,
       windowMinutes: 30,
+      shouldSendNotification: false,
     };
   }
 }
@@ -292,22 +309,26 @@ export async function processMessageIds(gmail, ids) {
     console.error("[mfs] DETENIENDO PROCESAMIENTO PARA EVITAR BUCLES");
     console.error("[mfs] ========================================");
     
-    // Enviar email de notificación
-    try {
-      console.log("[mfs] [rateLimit] Enviando email de notificación...");
-      const notificationResult = await sendRateLimitNotificationEmail(
-        rateLimitCheck.currentCount,
-        rateLimitCheck.limit,
-        rateLimitCheck.windowMinutes
-      );
-      
-      if (notificationResult.success) {
-        console.log("[mfs] [rateLimit] ✓ Email de notificación enviado exitosamente");
-      } else {
-        console.error("[mfs] [rateLimit] ✗ Error enviando email de notificación:", notificationResult.error);
+    // Enviar email de notificación SOLO si aún no se ha enviado en esta ventana
+    if (rateLimitCheck.shouldSendNotification) {
+      try {
+        console.log("[mfs] [rateLimit] Enviando email de notificación (primera vez en esta ventana)...");
+        const notificationResult = await sendRateLimitNotificationEmail(
+          rateLimitCheck.currentCount,
+          rateLimitCheck.limit,
+          rateLimitCheck.windowMinutes
+        );
+        
+        if (notificationResult.success) {
+          console.log("[mfs] [rateLimit] ✓ Email de notificación enviado exitosamente");
+        } else {
+          console.error("[mfs] [rateLimit] ✗ Error enviando email de notificación:", notificationResult.error);
+        }
+      } catch (notificationError) {
+        console.error("[mfs] [rateLimit] ✗ Excepción enviando email de notificación:", notificationError?.message || notificationError);
       }
-    } catch (notificationError) {
-      console.error("[mfs] [rateLimit] ✗ Excepción enviando email de notificación:", notificationError?.message || notificationError);
+    } else {
+      console.log("[mfs] [rateLimit] Notificación ya enviada en esta ventana, omitiendo para evitar bucles");
     }
     
     // Retornar resultados vacíos indicando que se detuvo por rate limit
