@@ -295,11 +295,17 @@ export async function processMessageIds(gmail, ids) {
         const from = String(extractFromEmail(fromHeader, cc, bcc, replyTo) || "").trim().toLowerCase();
         let to = String(extractToEmail(toHeader || "", cc || "", bcc || "", replyTo || "", "") || "").trim().toLowerCase();
         
-        // FILTROS RÁPIDOS: saltar correos FROM secretmedia@feverup.com (correos antiguos/enviados)
-        // Estos NO deben procesarse nunca
+        // FILTROS RÁPIDOS: saltar correos FROM secretmedia@feverup.com SOLO si NO van TO secretmedia@feverup.com
+        // Esto permite procesar correos que LLEGAN a secretmedia@feverup.com (TO secretmedia@feverup.com)
+        // pero salta correos ENVIADOS desde secretmedia@feverup.com a otros (FROM secretmedia@feverup.com, TO != secretmedia@feverup.com)
         if (from && from.includes("secretmedia@feverup.com")) {
-          releaseProcessingLock(id);
-          continue;
+          const toEmailLower = (to || "").toLowerCase().trim();
+          // Si el correo NO va TO secretmedia@feverup.com, saltarlo (es un correo enviado a otros)
+          if (!toEmailLower.includes("secretmedia@feverup.com")) {
+            releaseProcessingLock(id);
+            continue;
+          }
+          // Si el correo SÍ va TO secretmedia@feverup.com, procesarlo (es un correo que llega a esa cuenta)
         }
         if (subject && subject.toLowerCase().trim() === "test") {
           releaseProcessingLock(id);
