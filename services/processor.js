@@ -32,14 +32,7 @@ function extractAllEmails(headerValue) {
   return matches.map(m => m[1].trim().toLowerCase()).filter(e => e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
 }
 
-import {
-  acquireMessageLock,
-  releaseMessageLock,
-  checkLockAge,
-  readRateLimitState,
-  writeRateLimitState,
-  resetRateLimitState,
-} from "./storage.js";
+// Eliminadas todas las operaciones de storage para minimizar costes
 import { classifyIntent } from "./vertex.js";
 import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
 import { sendBarterEmail, sendFreeCoverageEmail, sendRateLimitNotificationEmail } from "./email-sender.js";
@@ -88,150 +81,76 @@ async function applyProcessedLabel(gmail, messageId) {
   }
 }
 
-async function checkRateLimit() {
-  const RATE_LIMIT_MAX = 200;
-  const RATE_LIMIT_WINDOW_MS = 30 * 60 * 1000;
+// Rate limiting simplificado - solo en memoria (sin GCS)
+let rateLimitCount = 0;
+let rateLimitWindowStart = Date.now();
+const RATE_LIMIT_MAX = 200;
+const RATE_LIMIT_WINDOW_MS = 30 * 60 * 1000;
+
+function checkRateLimit() {
+  const now = Date.now();
+  const windowAge = now - rateLimitWindowStart;
   
-  try {
-    const state = await readRateLimitState();
-    const now = new Date();
-    
-    let currentCount = 0;
-    let windowStart = now;
-    let notificationSent = false;
-    
-    if (state) {
-      const windowAge = now.getTime() - state.windowStart.getTime();
-      if (windowAge >= RATE_LIMIT_WINDOW_MS) {
-        currentCount = 0;
-        windowStart = now;
-        notificationSent = false;
-        await writeRateLimitState(0, now, false);
-      } else {
-        currentCount = state.count || 0;
-        windowStart = state.windowStart;
-        notificationSent = state.notificationSent || false;
-      }
-    }
-    
-    const allowed = currentCount < RATE_LIMIT_MAX;
-    const shouldSendNotification = !allowed && !notificationSent;
-    
-    return { allowed, currentCount, limit: RATE_LIMIT_MAX, windowMinutes: 30, shouldSendNotification };
-  } catch (error) {
-    return { allowed: true, currentCount: 0, limit: RATE_LIMIT_MAX, windowMinutes: 30, shouldSendNotification: false };
+  if (windowAge >= RATE_LIMIT_WINDOW_MS) {
+    rateLimitCount = 0;
+    rateLimitWindowStart = now;
   }
+  
+  return rateLimitCount < RATE_LIMIT_MAX;
 }
 
-async function incrementRateLimit() {
-  const RATE_LIMIT_MAX = 200;
-  const RATE_LIMIT_WINDOW_MS = 30 * 60 * 1000;
+function incrementRateLimit() {
+  const now = Date.now();
+  const windowAge = now - rateLimitWindowStart;
   
-  try {
-    const state = await readRateLimitState();
-    const now = new Date();
-    
-    let currentCount = 0;
-    let windowStart = now;
-    let notificationSent = false;
-    
-    if (state) {
-      const windowAge = now.getTime() - state.windowStart.getTime();
-      if (windowAge >= RATE_LIMIT_WINDOW_MS) {
-        currentCount = 0;
-        windowStart = now;
-        notificationSent = false;
-      } else {
-        currentCount = state.count || 0;
-        windowStart = state.windowStart;
-        notificationSent = state.notificationSent || false;
-      }
-    }
-    
-    const newCount = currentCount + 1;
-    const allowed = newCount <= RATE_LIMIT_MAX;
-    const shouldSendNotification = !allowed && !notificationSent;
-    
-    if (shouldSendNotification) {
-      notificationSent = true;
-    }
-    
-    await writeRateLimitState(newCount, windowStart, notificationSent);
-    
-    return { allowed, currentCount: newCount, limit: RATE_LIMIT_MAX, windowMinutes: 30, shouldSendNotification };
-  } catch (error) {
-    return { allowed: true, currentCount: 0, limit: RATE_LIMIT_MAX, windowMinutes: 30, shouldSendNotification: false };
+  if (windowAge >= RATE_LIMIT_WINDOW_MS) {
+    rateLimitCount = 0;
+    rateLimitWindowStart = now;
   }
+  
+  rateLimitCount++;
+  return rateLimitCount <= RATE_LIMIT_MAX;
 }
 
 export async function processMessageIds(gmail, ids) {
-  const rateLimitCheck = await checkRateLimit();
-  
-  if (!rateLimitCheck.allowed) {
-    const state = await readRateLimitState();
-    let windowAgeMinutes = 0;
-    if (state && state.windowStart) {
-      windowAgeMinutes = Math.floor((new Date().getTime() - new Date(state.windowStart).getTime()) / 60000);
-    }
-    
-    if (windowAgeMinutes >= 30) {
-      await resetRateLimitState();
-    } else {
-      if (rateLimitCheck.shouldSendNotification) {
-        try {
-          await sendRateLimitNotificationEmail(rateLimitCheck.currentCount, rateLimitCheck.limit, rateLimitCheck.windowMinutes);
-        } catch (notificationError) {
-          // Silently fail
-        }
-      }
-      return {
-        exitosos: 0,
-        fallidos: 0,
-        saltados: ids.length,
-        rateLimitExceeded: true,
-        resultados: ids.map(id => ({ id, skipped: true, reason: "rate_limit_exceeded" })),
-      };
-    }
+  if (!checkRateLimit()) {
+    return {
+      exitosos: 0,
+      fallidos: 0,
+      saltados: ids.length,
+      rateLimitExceeded: true,
+      resultados: ids.map(id => ({ id, skipped: true, reason: "rate_limit_exceeded" })),
+    };
   }
   
   const results = [];
 
   for (let i = 0; i < ids.length; i++) {
     const id = ids[i];
-    let lockAcquired = false;
     let allHeaders = [];
     let getAllHeaders = null;
 
     try {
-      lockAcquired = await acquireMessageLock(id);
-      if (!lockAcquired) {
-        results.push({ id, success: false, skipped: true, reason: "lock_exists" });
-        continue;
-      }
 
       let msg;
       try {
         msg = await gmail.users.messages.get({ userId: "me", id, format: "full" });
       } catch (e) {
         if (String(e?.response?.status || e?.code || e?.status) === "404") {
-          await releaseMessageLock(id);
           continue;
         }
-        await releaseMessageLock(id);
         continue;
       }
 
       const msgLabelIds = msg.data.labelIds || [];
       if (!msgLabelIds.includes("INBOX")) {
-        await releaseMessageLock(id);
         continue;
       }
 
-      // Verificar etiqueta processed sin llamadas a API
-      const hasProcessedLabel = checkProcessedLabel(gmail, msgLabelIds);
+      // Verificar etiqueta processed localmente (sin API)
+      const hasProcessedLabel = msgLabelIds.includes("processed") || (processedLabelIdCache && msgLabelIds.includes(processedLabelIdCache));
       if (hasProcessedLabel) {
         results.push({ id, airtableId: null, intent: null, confidence: null, skipped: true, reason: "already_processed" });
-        await releaseMessageLock(id);
         continue;
       }
 
@@ -240,17 +159,14 @@ export async function processMessageIds(gmail, ids) {
       const subjectHeaderBasic = basicHeaders.find(h => h.name?.toLowerCase() === "subject")?.value || "";
       
       if (fromHeaderBasic && fromHeaderBasic.toLowerCase().includes("secretmedia@feverup.com")) {
-        await releaseMessageLock(id);
         continue;
       }
       
       if (subjectHeaderBasic && subjectHeaderBasic.toLowerCase().trim() === "test") {
-        await releaseMessageLock(id);
         continue;
       }
       
       if (fromHeaderBasic && fromHeaderBasic.toLowerCase().includes("jongarnicaizco@gmail.com")) {
-        await releaseMessageLock(id);
         continue;
       }
 
@@ -315,7 +231,6 @@ export async function processMessageIds(gmail, ids) {
       }
 
       if (!from || !to) {
-        await releaseMessageLock(id);
         continue;
       }
 
@@ -358,9 +273,7 @@ export async function processMessageIds(gmail, ids) {
       // VERIFICAR SI YA EXISTE EN AIRTABLE ANTES DE LLAMAR A GEMINI
       const existingRecord = await airtableFindByEmailId(id);
       if (existingRecord) {
-        // NO aplicar etiqueta si ya existe - ahorrar llamadas a API
         results.push({ id, airtableId: existingRecord.id, intent: null, confidence: null, skipped: true });
-        await releaseMessageLock(id);
         continue;
       }
 
@@ -437,12 +350,14 @@ export async function processMessageIds(gmail, ids) {
           }
         }
 
+        // Aplicar etiqueta solo si todo fue exitoso
         try {
           await applyProcessedLabel(gmail, id);
-          await incrementRateLimit();
         } catch (labelError) {
           // Continue
         }
+        
+        incrementRateLimit();
       }
 
       results.push({
@@ -452,11 +367,7 @@ export async function processMessageIds(gmail, ids) {
         confidence: finalConfidence,
       });
     } catch (e) {
-      logErr("[mfs] Error en el bucle de processMessageIds:", e);
-    } finally {
-      if (lockAcquired) {
-        await releaseMessageLock(id);
-      }
+      // Silently continue
     }
   }
 
