@@ -332,10 +332,18 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
       try {
         msg = await gmail.users.messages.get({ userId: "me", id, format: "full" });
       } catch (e) {
-        releaseProcessingLock(id);
+        // Si el mensaje no existe (404), no podemos aplicar etiqueta, solo liberar lock
         if (String(e?.response?.status || e?.code || e?.status) === "404") {
+          releaseProcessingLock(id);
           continue;
         }
+        // Para otros errores, intentar aplicar etiqueta processed antes de continuar
+        try {
+          await applyProcessedLabel(gmail, id);
+        } catch (labelError) {
+          // Si falla, continuar de todas formas
+        }
+        releaseProcessingLock(id);
         continue;
       }
 
@@ -349,6 +357,12 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
       }
       
       if (!msgLabelIds.includes("INBOX")) {
+        // Si no está en INBOX, aplicar etiqueta processed para evitar reprocesar
+        try {
+          await applyProcessedLabel(gmail, id);
+        } catch (labelError) {
+          console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
+        }
         releaseProcessingLock(id);
         continue;
       }
