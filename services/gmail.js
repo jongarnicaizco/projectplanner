@@ -127,10 +127,10 @@ export async function getGmailClient() {
 export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, useSenderState = false) {
   let startHistoryId = useSenderState ? await readHistoryStateSender() : await readHistoryState();
 
-  // Si no hay historyId guardado, hacemos fallback inicial
+  // Si no hay historyId guardado, obtenerlo del perfil y NO procesar nada antiguo
   if (!startHistoryId) {
     console.log(
-      "[mfs] [history] No hay historyId guardado todavía. Uso fallback de INBOX."
+      "[mfs] [history] No hay historyId guardado. Obteniendo del perfil y NO procesando nada antiguo."
     );
 
     try {
@@ -148,36 +148,19 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
         startHistoryId = String(profHist);
         console.log(
           "[mfs] [history] historyId inicial guardado desde getProfile:",
-          profHist
+          profHist,
+          "- NO se procesarán mensajes antiguos"
         );
       }
     } catch (e) {
       console.error("[mfs] [history] Error obteniendo historyId de perfil:", e);
     }
 
-    // Si no hay historyId, solo procesar mensajes de las últimas 24 horas (solo nuevos)
-    // Límite máximo de seguridad: 100 mensajes
-    const MAX_MESSAGES_PER_EXECUTION = 100;
-    const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
-    const list = await backoff(
-      () =>
-        gmail.users.messages.list({
-          userId: "me",
-          q: `in:inbox -label:processed after:${oneDayAgo}`,
-          maxResults: MAX_MESSAGES_PER_EXECUTION,
-        }),
-      "messages.list.fallback"
-    );
-
-    const ids = (list.data.messages || []).map((m) => m.id);
-    console.log(
-      "[mfs] [history] Fallback inicial (últimas 24h): mensajes INBOX a procesar:",
-      ids.length
-    );
-
-    const newHistoryId =
-      notifHistoryId || (startHistoryId ? String(startHistoryId) : null);
-    return { ids, newHistoryId, usedFallback: true };
+    // CRÍTICO: Si no hay historyId, NO procesar nada (retornar vacío)
+    // Esto evita procesar mensajes antiguos cuando se reactiva el servicio
+    console.log("[mfs] [history] No hay historyId previo. Retornando vacío para evitar procesar mensajes antiguos.");
+    const newHistoryId = notifHistoryId || (startHistoryId ? String(startHistoryId) : null);
+    return { ids: [], newHistoryId, usedFallback: false };
   }
 
   startHistoryId = String(startHistoryId);
@@ -254,24 +237,14 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
 
       if (code === "404" || status === "FAILED_PRECONDITION") {
         console.error(
-          "[mfs] [history] startHistoryId demasiado antiguo. Solo procesar mensajes de últimas 24h."
+          "[mfs] [history] startHistoryId demasiado antiguo. NO procesar mensajes antiguos - retornar vacío."
         );
 
-        // Solo procesar mensajes de las últimas 24 horas (solo nuevos)
-        const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
-        const list = await backoff(
-          () =>
-            gmail.users.messages.list({
-              userId: "me",
-              q: `in:inbox -label:processed after:${oneDayAgo}`,
-              maxResults: MAX_MESSAGES_PER_EXECUTION,
-            }),
-          "messages.list.fallback404"
-        );
-
-        const ids = (list.data.messages || []).map((m) => m.id);
-        console.log(`[mfs] [history] Fallback 404: ${ids.length} mensajes de últimas 24h`);
-        return { ids, newHistoryId: notifHistoryId || null, usedFallback: true };
+        // CRÍTICO: Si el historyId es demasiado antiguo, NO procesar nada
+        // Esto evita procesar mensajes antiguos cuando se reactiva el servicio
+        // Solo se procesarán mensajes nuevos que lleguen después de actualizar el historyId
+        console.log("[mfs] [history] HistoryId demasiado antiguo. Retornando vacío para evitar procesar mensajes antiguos.");
+        return { ids: [], newHistoryId: notifHistoryId || null, usedFallback: false };
       }
       throw e;
     }
@@ -290,7 +263,9 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
         const m = ma.message;
         if (!m) return;
         const labels = m.labelIds || [];
-        if (labels.includes("INBOX") && m.id) {
+        // CRÍTICO: Solo agregar mensajes que están en INBOX y NO tienen etiqueta "processed"
+        // Esto evita procesar mensajes antiguos que ya fueron procesados
+        if (labels.includes("INBOX") && !labels.includes("processed") && m.id) {
           idsSet.add(m.id);
         }
       });

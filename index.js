@@ -58,16 +58,17 @@ app.get("/control/status", async (_req, res) => {
  */
 app.post("/control/start", async (_req, res) => {
   try {
-    console.log("[mfs] /control/start → Activando servicio");
+    console.log("[mfs] /control/start → Activando servicio - DESCARTANDO TODO LO PENDIENTE");
     
-    // Actualizar historyId de ambas cuentas para solo procesar mensajes nuevos
+    // CRÍTICO: Actualizar historyId de ambas cuentas al MÁS RECIENTE para solo procesar mensajes nuevos
+    // Esto descarta cualquier mensaje pendiente y empieza desde 0
     try {
       const gmail = await getGmailClient();
       const prof = await gmail.users.getProfile({ userId: "me" });
       const currentHistoryId = String(prof.data.historyId || "");
       if (currentHistoryId) {
         await writeHistoryState(currentHistoryId);
-        console.log("[mfs] /control/start → historyId principal actualizado a:", currentHistoryId);
+        console.log("[mfs] /control/start → ✓ historyId principal actualizado a:", currentHistoryId, "(TODO LO ANTERIOR DEScartado)");
       }
     } catch (e) {
       console.warn("[mfs] /control/start → No se pudo actualizar historyId principal:", e.message);
@@ -79,7 +80,7 @@ app.post("/control/start", async (_req, res) => {
       const currentHistoryIdSender = String(profSender.data.historyId || "");
       if (currentHistoryIdSender) {
         await writeHistoryStateSender(currentHistoryIdSender);
-        console.log("[mfs] /control/start → historyId SENDER actualizado a:", currentHistoryIdSender);
+        console.log("[mfs] /control/start → ✓ historyId SENDER actualizado a:", currentHistoryIdSender, "(TODO LO ANTERIOR DEScartado)");
       }
     } catch (e) {
       console.warn("[mfs] /control/start → No se pudo actualizar historyId SENDER:", e.message);
@@ -89,7 +90,7 @@ app.post("/control/start", async (_req, res) => {
     try {
       const { resetRateLimitCounter } = await import("./services/processor.js");
       resetRateLimitCounter();
-      console.log("[mfs] /control/start → Contador de rate limit reseteado");
+      console.log("[mfs] /control/start → ✓ Contador de rate limit reseteado");
     } catch (resetError) {
       console.warn("[mfs] /control/start → No se pudo resetear contador de rate limit:", resetError?.message);
     }
@@ -99,7 +100,7 @@ app.post("/control/start", async (_req, res) => {
     
     res.json({
       ok: true,
-      message: "Servicio activado. Solo se procesarán mensajes nuevos a partir de ahora. Contador de ejecuciones reseteado.",
+      message: "Servicio activado. TODO LO PENDIENTE DEScartado. Solo se procesarán mensajes NUEVOS a partir de ahora.",
       status: "active",
     });
   } catch (e) {
