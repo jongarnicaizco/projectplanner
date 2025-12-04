@@ -87,6 +87,27 @@ let rateLimitWindowStart = Date.now();
 const RATE_LIMIT_MAX = 200;
 const RATE_LIMIT_WINDOW_MS = 30 * 60 * 1000;
 
+// Lock en memoria para evitar procesamiento concurrente del mismo mensaje
+// Se limpia automáticamente después de procesar (éxito o fallo)
+const processingLocks = new Set();
+const PROCESSING_LOCK_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutos máximo
+
+function acquireProcessingLock(messageId) {
+  if (processingLocks.has(messageId)) {
+    return false; // Ya está siendo procesado
+  }
+  processingLocks.add(messageId);
+  // Limpiar el lock después del timeout (protección contra locks huérfanos)
+  setTimeout(() => {
+    processingLocks.delete(messageId);
+  }, PROCESSING_LOCK_TIMEOUT_MS);
+  return true;
+}
+
+function releaseProcessingLock(messageId) {
+  processingLocks.delete(messageId);
+}
+
 function checkRateLimit() {
   const now = Date.now();
   const windowAge = now - rateLimitWindowStart;
@@ -154,242 +175,267 @@ export async function processMessageIds(gmail, ids) {
         continue;
       }
 
-      // APLICAR ETIQUETA "PROCESSED" INMEDIATAMENTE COMO LOCK OPTIMISTA
-      // Si falla, otra instancia ya está procesando este email
-      let labelApplied = false;
-      try {
-        const labelId = await getProcessedLabelId(gmail);
-        await gmail.users.messages.modify({
-          userId: "me",
-          id: id,
-          requestBody: { addLabelIds: [labelId] },
-        });
-        labelApplied = true;
-      } catch (labelError) {
-        // Si falla al aplicar etiqueta, otra instancia ya la aplicó - saltar
+      // Usar lock en memoria para evitar procesamiento concurrente del mismo mensaje
+      if (!acquireProcessingLock(id)) {
+        // Ya está siendo procesado por otra instancia o en esta misma ejecución
         results.push({ id, airtableId: null, intent: null, confidence: null, skipped: true, reason: "concurrent_processing" });
         continue;
       }
 
-      const basicHeaders = msg.data.payload?.headers || [];
-      const fromHeaderBasic = basicHeaders.find(h => h.name?.toLowerCase() === "from")?.value || "";
-      const subjectHeaderBasic = basicHeaders.find(h => h.name?.toLowerCase() === "subject")?.value || "";
-      
-      if (fromHeaderBasic && fromHeaderBasic.toLowerCase().includes("secretmedia@feverup.com")) {
-        continue;
-      }
-      
-      if (subjectHeaderBasic && subjectHeaderBasic.toLowerCase().trim() === "test") {
-        continue;
-      }
-      
-      if (fromHeaderBasic && fromHeaderBasic.toLowerCase().includes("jongarnicaizco@gmail.com")) {
-        continue;
-      }
+      // Variable para trackear si el procesamiento fue exitoso
+      let processingSuccessful = false;
 
-      getAllHeaders = (payload) => {
-        const headersArray = [];
-        if (payload && payload.headers && Array.isArray(payload.headers)) {
-          headersArray.push(...payload.headers);
+      try {
+        const basicHeaders = msg.data.payload?.headers || [];
+        const fromHeaderBasic = basicHeaders.find(h => h.name?.toLowerCase() === "from")?.value || "";
+        const subjectHeaderBasic = basicHeaders.find(h => h.name?.toLowerCase() === "subject")?.value || "";
+        
+        if (fromHeaderBasic && fromHeaderBasic.toLowerCase().includes("secretmedia@feverup.com")) {
+          releaseProcessingLock(id);
+          continue;
         }
-        const searchParts = (parts) => {
-          if (!parts || !Array.isArray(parts)) return;
-          for (const part of parts) {
-            if (part && part.headers && Array.isArray(part.headers)) {
-              headersArray.push(...part.headers);
-            }
-            if (part && part.parts) {
-              searchParts(part.parts);
-            }
+        
+        if (subjectHeaderBasic && subjectHeaderBasic.toLowerCase().trim() === "test") {
+          releaseProcessingLock(id);
+          continue;
+        }
+        
+        if (fromHeaderBasic && fromHeaderBasic.toLowerCase().includes("jongarnicaizco@gmail.com")) {
+          releaseProcessingLock(id);
+          continue;
+        }
+
+        getAllHeaders = (payload) => {
+          const headersArray = [];
+          if (payload && payload.headers && Array.isArray(payload.headers)) {
+            headersArray.push(...payload.headers);
           }
+          const searchParts = (parts) => {
+            if (!parts || !Array.isArray(parts)) return;
+            for (const part of parts) {
+              if (part && part.headers && Array.isArray(part.headers)) {
+                headersArray.push(...part.headers);
+              }
+              if (part && part.parts) {
+                searchParts(part.parts);
+              }
+            }
+          };
+          if (payload && payload.parts) {
+            searchParts(payload.parts);
+          }
+          return headersArray;
         };
-        if (payload && payload.parts) {
-          searchParts(payload.parts);
+        
+        if (msg && msg.data && msg.data.payload) {
+          allHeaders = getAllHeaders(msg.data.payload);
+        } else {
+          allHeaders = [];
         }
-        return headersArray;
-      };
-      
-      if (msg && msg.data && msg.data.payload) {
-        allHeaders = getAllHeaders(msg.data.payload);
-      } else {
-        allHeaders = [];
-      }
-      
-      if (!Array.isArray(allHeaders)) {
-        allHeaders = [];
-      }
-
-      const findHeader = (name) => {
-        const h = allHeaders.find(header => header.name?.toLowerCase() === name.toLowerCase());
-        return h ? h.value : "";
-      };
-
-      const fromHeader = findHeader("From");
-      const toHeader = findHeader("To");
-      const cc = findHeader("Cc");
-      const bcc = findHeader("Bcc");
-      const replyTo = findHeader("Reply-To");
-      const subject = findHeader("Subject") || "";
-      const body = bodyFromMessage(msg.data);
-
-      const fromEmailRaw = extractFromEmail(fromHeader, cc, bcc, replyTo);
-      const from = String(fromEmailRaw || "").trim().toLowerCase();
-      
-      const toEmailRaw = extractToEmail(toHeader || "", cc || "", bcc || "", replyTo || "", "");
-      let to = String(toEmailRaw || "").trim().toLowerCase();
-      
-      if (toHeader && toHeader.trim()) {
-        const toHeaderEmail = extractCleanEmail(toHeader);
-        if (toHeaderEmail && toHeaderEmail.trim() !== "") {
-          if (toHeaderEmail !== to || (from && from === to)) {
-            to = toHeaderEmail.toLowerCase();
-          }
+        
+        if (!Array.isArray(allHeaders)) {
+          allHeaders = [];
         }
-      }
 
-      if (!from || !to) {
-        continue;
-      }
+        const findHeader = (name) => {
+          const h = allHeaders.find(header => header.name?.toLowerCase() === name.toLowerCase());
+          return h ? h.value : "";
+        };
 
-      if (from === to && from) {
+        const fromHeader = findHeader("From");
+        const toHeader = findHeader("To");
+        const cc = findHeader("Cc");
+        const bcc = findHeader("Bcc");
+        const replyTo = findHeader("Reply-To");
+        const subject = findHeader("Subject") || "";
+        const body = bodyFromMessage(msg.data);
+
+        const fromEmailRaw = extractFromEmail(fromHeader, cc, bcc, replyTo);
+        const from = String(fromEmailRaw || "").trim().toLowerCase();
+        
+        const toEmailRaw = extractToEmail(toHeader || "", cc || "", bcc || "", replyTo || "", "");
+        let to = String(toEmailRaw || "").trim().toLowerCase();
+        
         if (toHeader && toHeader.trim()) {
           const toHeaderEmail = extractCleanEmail(toHeader);
-          if (toHeaderEmail && toHeaderEmail.toLowerCase() !== from) {
-            to = toHeaderEmail.toLowerCase();
+          if (toHeaderEmail && toHeaderEmail.trim() !== "") {
+            if (toHeaderEmail !== to || (from && from === to)) {
+              to = toHeaderEmail.toLowerCase();
+            }
           }
         }
-      }
 
-      let senderName = extractSenderName(fromHeader);
-      if (senderName) {
-        senderName = senderName.replace(/["'`]/g, "").trim();
-        if (/[<>{}|\\]/.test(senderName) || senderName.length > 100) {
-          const cleanName = senderName.split(/[<>{}|\\]/)[0].trim();
-          if (cleanName && cleanName.length > 0) {
-            senderName = cleanName;
+        if (!from || !to) {
+          releaseProcessingLock(id);
+          continue;
+        }
+
+        if (from === to && from) {
+          if (toHeader && toHeader.trim()) {
+            const toHeaderEmail = extractCleanEmail(toHeader);
+            if (toHeaderEmail && toHeaderEmail.toLowerCase() !== from) {
+              to = toHeaderEmail.toLowerCase();
+            }
           }
         }
-      }
-      
-      let senderFirstName = "";
-      if (senderName) {
-        const nameParts = senderName.split(/\s+/);
-        if (nameParts.length > 0) {
-          senderFirstName = nameParts[0];
-          if (senderName.length < 20 && nameParts.length <= 2) {
-            senderFirstName = senderName;
-          }
-        }
-      }
 
-      const language = detectLanguage(subject + " " + body);
-      const location = getLocationFromEmail(toHeader);
-      const internalDate = msg.data.internalDate;
-      const timestamp = internalDate ? new Date(parseInt(internalDate, 10)).toISOString() : new Date().toISOString();
-
-      // VERIFICAR SI YA EXISTE EN AIRTABLE ANTES DE LLAMAR A GEMINI
-      // (La etiqueta ya está aplicada como lock, pero verificamos Airtable por si acaso)
-      const existingRecord = await airtableFindByEmailId(id);
-      if (existingRecord) {
-        // Ya existe en Airtable, pero la etiqueta ya está aplicada - todo OK
-        results.push({ id, airtableId: existingRecord.id, intent: null, confidence: null, skipped: true });
-        continue;
-      }
-
-      // SOLO LLAMAR A GEMINI SI EL EMAIL NO EXISTE EN AIRTABLE
-      const isReply = subject.toLowerCase().startsWith("re:") ||
-                      subject.toLowerCase().startsWith("fwd:") ||
-                      (findHeader("In-Reply-To") && findHeader("In-Reply-To").length > 0) ||
-                      (msg.data.threadId && msg.data.threadId !== msg.data.id);
-
-      // ÚNICA LLAMADA A GEMINI: classifyIntent
-      const {
-        intent,
-        confidence,
-        reasoning,
-        meddicMetrics,
-        meddicEconomicBuyer,
-        meddicDecisionCriteria,
-        meddicDecisionProcess,
-        meddicIdentifyPain,
-        meddicChampion,
-        isFreeCoverage,
-        isBarter,
-        isPricing,
-      } = await classifyIntent({ subject, from, to, body });
-
-      const toEmailLower = (to || "").toLowerCase().trim();
-      const isSecretMediaEmail = toEmailLower.includes("secretmedia@feverup.com");
-      
-      let finalIntent = intent;
-      let finalConfidence = confidence;
-      let finalReasoning = reasoning;
-      
-      if (isSecretMediaEmail && isReply) {
-        finalIntent = "Medium";
-        finalConfidence = Math.max(finalConfidence || 0.75, 0.75);
-        if (!finalReasoning || finalReasoning.length === 0) {
-          finalReasoning = "Email is a reply to secretmedia@feverup.com, automatically classified as Medium intent.";
-        } else {
-          finalReasoning = finalReasoning + " Email is a reply to secretmedia@feverup.com, automatically classified as Medium intent.";
-        }
-      }
-
-      // NO generar bodySummary para ahorrar llamadas a Gemini
-      const bodySummary = "";
-
-      const brandName = senderName || from.split("@")[0] || subject.split(" ")[0] || "Client";
-      
-      // Enviar emails solo si se creó exitosamente en Airtable
-      // (se moverá después de crear en Airtable)
-
-      // Verificar una vez más ANTES de crear (race condition protection)
-      const doubleCheckRecord = await airtableFindByEmailId(id);
-      if (doubleCheckRecord) {
-        // Otra instancia ya creó el registro - saltar
-        results.push({ id, airtableId: doubleCheckRecord.id, intent: null, confidence: null, skipped: true });
-        continue;
-      }
-
-      const airtableRecord = await createAirtableRecord({
-        id, from, to, cc, subject, body, bodySummary, timestamp,
-        intent: finalIntent, confidence: finalConfidence, reasoning: finalReasoning,
-        meddicMetrics, meddicEconomicBuyer, meddicDecisionCriteria, meddicDecisionProcess,
-        meddicIdentifyPain, meddicChampion, isFreeCoverage, isBarter, isPricing,
-        senderName, senderFirstName, language, location,
-      });
-
-      // Solo enviar emails si se creó exitosamente
-      if (airtableRecord?.id) {
-        if (isBarter) {
-          try {
-            await sendBarterEmail(id, senderFirstName || "Client", brandName, subject);
-          } catch (barterError) {
-            // Continue
+        let senderName = extractSenderName(fromHeader);
+        if (senderName) {
+          senderName = senderName.replace(/["'`]/g, "").trim();
+          if (/[<>{}|\\]/.test(senderName) || senderName.length > 100) {
+            const cleanName = senderName.split(/[<>{}|\\]/)[0].trim();
+            if (cleanName && cleanName.length > 0) {
+              senderName = cleanName;
+            }
           }
         }
         
-        if (isFreeCoverage) {
-          try {
-            await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject);
-          } catch (freeCoverageError) {
-            // Continue
+        let senderFirstName = "";
+        if (senderName) {
+          const nameParts = senderName.split(/\s+/);
+          if (nameParts.length > 0) {
+            senderFirstName = nameParts[0];
+            if (senderName.length < 20 && nameParts.length <= 2) {
+              senderFirstName = senderName;
+            }
           }
         }
 
-        // La etiqueta ya está aplicada (se aplicó al inicio como lock)
-        // Solo incrementar rate limit
-        incrementRateLimit();
-      }
+        const language = detectLanguage(subject + " " + body);
+        const location = getLocationFromEmail(toHeader);
+        const internalDate = msg.data.internalDate;
+        const timestamp = internalDate ? new Date(parseInt(internalDate, 10)).toISOString() : new Date().toISOString();
 
-      results.push({
-        id,
-        airtableId: airtableRecord?.id || null,
-        intent: finalIntent,
-        confidence: finalConfidence,
-      });
+        // VERIFICAR SI YA EXISTE EN AIRTABLE ANTES DE LLAMAR A GEMINI
+        const existingRecord = await airtableFindByEmailId(id);
+        if (existingRecord) {
+          // Ya existe en Airtable - aplicar etiqueta processed y saltar
+          try {
+            await applyProcessedLabel(gmail, id);
+          } catch (labelError) {
+            // No crítico
+          }
+          releaseProcessingLock(id);
+          results.push({ id, airtableId: existingRecord.id, intent: null, confidence: null, skipped: true });
+          continue;
+        }
+
+        // SOLO LLAMAR A GEMINI SI EL EMAIL NO EXISTE EN AIRTABLE
+        const isReply = subject.toLowerCase().startsWith("re:") ||
+                        subject.toLowerCase().startsWith("fwd:") ||
+                        (findHeader("In-Reply-To") && findHeader("In-Reply-To").length > 0) ||
+                        (msg.data.threadId && msg.data.threadId !== msg.data.id);
+
+        // ÚNICA LLAMADA A GEMINI: classifyIntent
+        const {
+          intent,
+          confidence,
+          reasoning,
+          meddicMetrics,
+          meddicEconomicBuyer,
+          meddicDecisionCriteria,
+          meddicDecisionProcess,
+          meddicIdentifyPain,
+          meddicChampion,
+          isFreeCoverage,
+          isBarter,
+          isPricing,
+        } = await classifyIntent({ subject, from, to, body });
+
+        const toEmailLower = (to || "").toLowerCase().trim();
+        const isSecretMediaEmail = toEmailLower.includes("secretmedia@feverup.com");
+        
+        let finalIntent = intent;
+        let finalConfidence = confidence;
+        let finalReasoning = reasoning;
+        
+        if (isSecretMediaEmail && isReply) {
+          finalIntent = "Medium";
+          finalConfidence = Math.max(finalConfidence || 0.75, 0.75);
+          if (!finalReasoning || finalReasoning.length === 0) {
+            finalReasoning = "Email is a reply to secretmedia@feverup.com, automatically classified as Medium intent.";
+          } else {
+            finalReasoning = finalReasoning + " Email is a reply to secretmedia@feverup.com, automatically classified as Medium intent.";
+          }
+        }
+
+        // NO generar bodySummary para ahorrar llamadas a Gemini
+        const bodySummary = "";
+
+        const brandName = senderName || from.split("@")[0] || subject.split(" ")[0] || "Client";
+
+        // Verificar una vez más ANTES de crear (race condition protection)
+        const doubleCheckRecord = await airtableFindByEmailId(id);
+        if (doubleCheckRecord) {
+          // Otra instancia ya creó el registro - aplicar etiqueta processed y saltar
+          try {
+            await applyProcessedLabel(gmail, id);
+          } catch (labelError) {
+            // No crítico
+          }
+          releaseProcessingLock(id);
+          results.push({ id, airtableId: doubleCheckRecord.id, intent: null, confidence: null, skipped: true });
+          continue;
+        }
+
+        const airtableRecord = await createAirtableRecord({
+          id, from, to, cc, subject, body, bodySummary, timestamp,
+          intent: finalIntent, confidence: finalConfidence, reasoning: finalReasoning,
+          meddicMetrics, meddicEconomicBuyer, meddicDecisionCriteria, meddicDecisionProcess,
+          meddicIdentifyPain, meddicChampion, isFreeCoverage, isBarter, isPricing,
+          senderName, senderFirstName, language, location,
+        });
+
+        // Solo enviar emails si se creó exitosamente
+        if (airtableRecord?.id) {
+          if (isBarter) {
+            try {
+              await sendBarterEmail(id, senderFirstName || "Client", brandName, subject);
+            } catch (barterError) {
+              // Continue
+            }
+          }
+          
+          if (isFreeCoverage) {
+            try {
+              await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject);
+            } catch (freeCoverageError) {
+              // Continue
+            }
+          }
+
+          // Marcar como exitoso para aplicar etiqueta "processed" al final
+          processingSuccessful = true;
+          incrementRateLimit();
+        }
+
+        // APLICAR ETIQUETA "PROCESSED" SOLO AL FINAL SI EL PROCESAMIENTO FUE EXITOSO
+        if (processingSuccessful && airtableRecord?.id) {
+          try {
+            await applyProcessedLabel(gmail, id);
+          } catch (labelError) {
+            // Si falla al aplicar etiqueta, no es crítico - el registro ya está en Airtable
+            // El mensaje se procesará de nuevo en la próxima ejecución, pero se saltará por Airtable
+          }
+        }
+
+        results.push({
+          id,
+          airtableId: airtableRecord?.id || null,
+          intent: finalIntent,
+          confidence: finalConfidence,
+        });
+      } catch (e) {
+        // En caso de error, no marcar como procesado
+        // El mensaje se intentará procesar de nuevo en la próxima ejecución
+      } finally {
+        // Liberar el lock siempre, incluso si hubo error o continue
+        releaseProcessingLock(id);
+      }
     } catch (e) {
-      // Silently continue
+      // Error en el procesamiento del mensaje - liberar lock si existe
+      releaseProcessingLock(id);
+      // Silently continue - el mensaje se intentará procesar de nuevo
     }
   }
 
