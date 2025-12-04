@@ -37,6 +37,14 @@ import { classifyIntent } from "./vertex.js";
 import { createAirtableRecord } from "./airtable.js";
 import { sendBarterEmail, sendFreeCoverageEmail, sendRateLimitNotificationEmail } from "./email-sender.js";
 
+// Función para resetear el contador de rate limit (llamada desde index.js cuando se activa el servicio)
+export function resetRateLimitCounter() {
+  rateLimitCount = 0;
+  rateLimitWindowStart = Date.now();
+  rateLimitNotificationSent = false;
+  console.log(`[mfs] ✓ Contador de rate limit reseteado`);
+}
+
 // Cache del label ID por cuenta (usando el objeto gmail como clave)
 // Esto permite que cada cuenta (principal y SENDER) tenga su propio cache
 const processedLabelIdCache = new WeakMap();
@@ -100,11 +108,14 @@ async function applyProcessedLabel(gmail, messageId) {
   }
 }
 
-// Rate limiting por minuto - límite de seguridad reducido
+// Rate limiting por minuto - límite de seguridad
 let rateLimitCount = 0;
 let rateLimitWindowStart = Date.now();
-const RATE_LIMIT_MAX = 500; // 500 ejecuciones por minuto (reducido de 10k)
+const RATE_LIMIT_MAX = 7000; // 7000 ejecuciones por minuto - si se supera, se detiene automáticamente
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minuto
+
+// Flag para evitar múltiples correos de notificación
+let rateLimitNotificationSent = false;
 
 // Lock en memoria para evitar procesamiento concurrente del mismo mensaje
 // Se limpia automáticamente después de procesar (éxito o fallo)
@@ -127,7 +138,7 @@ function releaseProcessingLock(messageId) {
   processingLocks.delete(messageId);
 }
 
-function checkRateLimit() {
+async function checkRateLimit() {
   const now = Date.now();
   const windowAge = now - rateLimitWindowStart;
   
@@ -135,18 +146,41 @@ function checkRateLimit() {
   if (windowAge >= RATE_LIMIT_WINDOW_MS) {
     rateLimitCount = 0;
     rateLimitWindowStart = now;
+    // Resetear flag de notificación cuando se resetea el contador
+    rateLimitNotificationSent = false;
   }
   
-  // Si superamos el límite, detener procesamiento
+  // Si superamos el límite, detener servicio automáticamente
   if (rateLimitCount >= RATE_LIMIT_MAX) {
-    console.error(`[mfs] ⚠️ LÍMITE DE SEGURIDAD ALCANZADO: ${rateLimitCount} ejecuciones en el último minuto. Límite: ${RATE_LIMIT_MAX}. DETENIENDO PROCESAMIENTO.`);
+    console.error(`[mfs] ⚠️ LÍMITE DE SEGURIDAD ALCANZADO: ${rateLimitCount} ejecuciones en el último minuto. Límite: ${RATE_LIMIT_MAX}. DETENIENDO SERVICIO AUTOMÁTICAMENTE.`);
+    
+    // Detener servicio automáticamente (como si se hubiera presionado STOP)
+    try {
+      const { writeServiceStatus } = await import("./storage.js");
+      await writeServiceStatus("stopped");
+      console.log(`[mfs] ✓ Servicio detenido automáticamente por límite de ejecuciones`);
+    } catch (stopError) {
+      console.error(`[mfs] ✗ Error deteniendo servicio automáticamente:`, stopError?.message);
+    }
+    
+    // Enviar UN SOLO correo de notificación (solo si no se ha enviado ya)
+    if (!rateLimitNotificationSent) {
+      rateLimitNotificationSent = true;
+      try {
+        await sendRateLimitNotificationEmail(rateLimitCount, RATE_LIMIT_MAX, 1);
+        console.log(`[mfs] ✓ Email de notificación enviado`);
+      } catch (emailError) {
+        console.error(`[mfs] ✗ Error enviando email de notificación:`, emailError?.message);
+      }
+    }
+    
     return false;
   }
   
   return true;
 }
 
-function incrementRateLimit() {
+async function incrementRateLimit() {
   const now = Date.now();
   const windowAge = now - rateLimitWindowStart;
   
@@ -154,13 +188,35 @@ function incrementRateLimit() {
   if (windowAge >= RATE_LIMIT_WINDOW_MS) {
     rateLimitCount = 0;
     rateLimitWindowStart = now;
+    // Resetear flag de notificación cuando se resetea el contador
+    rateLimitNotificationSent = false;
   }
   
   rateLimitCount++;
   
-  // Si superamos el límite después de incrementar, loguear advertencia
+  // Si superamos el límite después de incrementar, detener servicio automáticamente
   if (rateLimitCount >= RATE_LIMIT_MAX) {
-    console.error(`[mfs] ⚠️ LÍMITE DE SEGURIDAD SUPERADO: ${rateLimitCount} ejecuciones en el último minuto. Límite: ${RATE_LIMIT_MAX}.`);
+    console.error(`[mfs] ⚠️ LÍMITE DE SEGURIDAD SUPERADO: ${rateLimitCount} ejecuciones en el último minuto. Límite: ${RATE_LIMIT_MAX}. DETENIENDO SERVICIO AUTOMÁTICAMENTE.`);
+    
+    // Detener servicio automáticamente (como si se hubiera presionado STOP)
+    try {
+      const { writeServiceStatus } = await import("./storage.js");
+      await writeServiceStatus("stopped");
+      console.log(`[mfs] ✓ Servicio detenido automáticamente por límite de ejecuciones`);
+    } catch (stopError) {
+      console.error(`[mfs] ✗ Error deteniendo servicio automáticamente:`, stopError?.message);
+    }
+    
+    // Enviar UN SOLO correo de notificación (solo si no se ha enviado ya)
+    if (!rateLimitNotificationSent) {
+      rateLimitNotificationSent = true;
+      try {
+        await sendRateLimitNotificationEmail(rateLimitCount, RATE_LIMIT_MAX, 1);
+        console.log(`[mfs] ✓ Email de notificación enviado`);
+      } catch (emailError) {
+        console.error(`[mfs] ✗ Error enviando email de notificación:`, emailError?.message);
+      }
+    }
   }
   
   return rateLimitCount <= RATE_LIMIT_MAX;
@@ -168,8 +224,8 @@ function incrementRateLimit() {
 
 export async function processMessageIds(gmail, ids) {
   // Verificar límite de ejecuciones por minuto ANTES de procesar
-  if (!checkRateLimit()) {
-    console.error(`[mfs] ⚠️ PROCESAMIENTO DETENIDO: Límite de ${RATE_LIMIT_MAX} ejecuciones por minuto alcanzado. Deteniendo para evitar costos excesivos.`);
+  if (!(await checkRateLimit())) {
+    console.error(`[mfs] ⚠️ PROCESAMIENTO DETENIDO: Límite de ${RATE_LIMIT_MAX} ejecuciones por minuto alcanzado. Servicio detenido automáticamente.`);
     return {
       exitosos: 0,
       fallidos: 0,
@@ -320,8 +376,8 @@ export async function processMessageIds(gmail, ids) {
         // Si se creó exitosamente o ya existía (duplicado): enviar emails y aplicar etiqueta processed
         if (airtableRecord?.id || airtableRecord?.duplicate) {
           // Verificar límite antes de continuar (cada mensaje procesado cuenta como ejecución)
-          if (!checkRateLimit()) {
-            console.error(`[mfs] ⚠️ Límite de ${RATE_LIMIT_MAX} ejecuciones por minuto alcanzado. Deteniendo procesamiento.`);
+          if (!(await checkRateLimit())) {
+            console.error(`[mfs] ⚠️ Límite de ${RATE_LIMIT_MAX} ejecuciones por minuto alcanzado. Servicio detenido automáticamente.`);
             releaseProcessingLock(id);
             // Aplicar etiqueta processed aunque detengamos (para no reprocesar)
             try {
@@ -351,7 +407,7 @@ export async function processMessageIds(gmail, ids) {
           }
           
           // Incrementar contador de ejecuciones (cada mensaje procesado = 1 ejecución)
-          incrementRateLimit();
+          await incrementRateLimit();
         }
 
         results.push({

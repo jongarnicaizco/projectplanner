@@ -297,19 +297,23 @@ export async function sendRateLimitNotificationEmail(count, limit, windowMinutes
     
     const from = "secretmedia@feverup.com";
     const to = "jon.garnica@feverup.com";
-    const subject = `⚠️ ALERTA: Límite de procesamiento de emails excedido`;
+    const subject = `⚠️ ALERTA: Servicio detenido automáticamente - Límite de ejecuciones excedido`;
     const body = `Hola,
 
-Se ha excedido el límite de procesamiento de emails configurado en el sistema.
+El servicio de procesamiento de emails se ha detenido AUTOMÁTICAMENTE porque se ha excedido el límite de ejecuciones configurado.
 
 Detalles:
-- Emails procesados: ${count}
-- Límite máximo: ${limit} emails
-- Ventana de tiempo: ${windowMinutes} minutos
+- Ejecuciones en el último minuto: ${count}
+- Límite máximo permitido: ${limit} ejecuciones por minuto
+- Ventana de tiempo: ${windowMinutes} minuto(s)
 
-El procesamiento de emails se ha detenido automáticamente para evitar bucles o sobrecarga del sistema.
+El servicio se ha detenido automáticamente (como si hubieras presionado el botón STOP) para evitar costos excesivos o bucles.
 
-Por favor, revisa los logs y la configuración del sistema.
+Para reactivar el servicio:
+1. Ve al web app de control: https://mfs-lead-generation-ai-vtlrnibdxq-uc.a.run.app/control
+2. Presiona el botón "ACTIVAR"
+3. El contador de ejecuciones se reseteará automáticamente
+4. Solo se procesarán mensajes nuevos a partir de ese momento
 
 Este es un mensaje automático del sistema de procesamiento de leads.
 

@@ -85,12 +85,21 @@ app.post("/control/start", async (_req, res) => {
       console.warn("[mfs] /control/start → No se pudo actualizar historyId SENDER:", e.message);
     }
     
+    // Resetear contador de rate limit antes de activar
+    try {
+      const { resetRateLimitCounter } = await import("./services/processor.js");
+      resetRateLimitCounter();
+      console.log("[mfs] /control/start → Contador de rate limit reseteado");
+    } catch (resetError) {
+      console.warn("[mfs] /control/start → No se pudo resetear contador de rate limit:", resetError?.message);
+    }
+    
     // Activar servicio
     await writeServiceStatus("active");
     
     res.json({
       ok: true,
-      message: "Servicio activado. Solo se procesarán mensajes nuevos a partir de ahora.",
+      message: "Servicio activado. Solo se procesarán mensajes nuevos a partir de ahora. Contador de ejecuciones reseteado.",
       status: "active",
     });
   } catch (e) {
