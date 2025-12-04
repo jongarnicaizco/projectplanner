@@ -377,22 +377,20 @@ export async function createAirtableRecord({
       fields[name] = val;
     };
 
-    // Log crítico antes de guardar From y To
-    console.log("[mfs] ===== AIRTABLE: VALORES ANTES DE GUARDAR =====");
-    console.log("[mfs] from (recibido):", JSON.stringify(from));
-    console.log("[mfs] to (recibido):", JSON.stringify(to));
-    console.log("[mfs] from type:", typeof from);
-    console.log("[mfs] to type:", typeof to);
-    console.log("[mfs] from !== to?", from !== to);
-    
     // Guardar campos básicos usando nombres (más robusto)
     // Asegurar que from y to son strings y diferentes
     const fromValue = String(from || "").trim();
     const toValue = String(to || "").trim();
     
-    console.log("[mfs] fromValue (limpio):", JSON.stringify(fromValue));
-    console.log("[mfs] toValue (limpio):", JSON.stringify(toValue));
-    console.log("[mfs] fromValue !== toValue?", fromValue !== toValue);
+    // Verificación crítica: asegurar que from y to son diferentes
+    if (fromValue === toValue && fromValue) {
+      console.error("[mfs] Airtable: ERROR - from y to son iguales! No se guardará hasta corregir.", {
+        from: fromValue,
+        to: toValue,
+        emailId: id,
+      });
+      return { id: null };
+    }
     
     putNameSync("Email ID", id);
     putNameSync("From", fromValue);
@@ -401,11 +399,6 @@ export async function createAirtableRecord({
     putNameSync("Subject", subject);
     putNameSync("Body", SAFE_BODY);
     putNameSync("Business Oppt", intentCap);
-    
-    // Log después de guardar
-    console.log("[mfs] ===== AIRTABLE: VALORES GUARDADOS EN FIELDS =====");
-    console.log("[mfs] fields['From']:", JSON.stringify(fields["From"]));
-    console.log("[mfs] fields['To']:", JSON.stringify(fields["To"]));
 
     const putName = async (name, val) => {
       if (val === undefined || val === null || val === "") return;
@@ -467,27 +460,6 @@ export async function createAirtableRecord({
       }
     }
 
-    // Log crítico antes de guardar en Airtable
-    console.log("[mfs] Airtable: Valores que se van a guardar:", {
-      from: from,
-      to: to,
-      fromLength: from?.length || 0,
-      toLength: to?.length || 0,
-      fromIsEmpty: !from || from === "",
-      toIsEmpty: !to || to === "",
-      fromEqualsTo: from === to,
-    });
-    
-    // Verificación crítica: asegurar que from y to son diferentes
-    if (from === to && from) {
-      console.error("[mfs] Airtable: ERROR - from y to son iguales! No se guardará hasta corregir.", {
-        from,
-        to,
-        emailId: id,
-      });
-      // No continuar si hay este error crítico
-      return { id: null };
-    }
     
     // Campos básicos ya guardados arriba con putNameSync
     // Solo guardar campos adicionales con putName (async)
@@ -502,13 +474,6 @@ export async function createAirtableRecord({
     await putName("Media Kits/Pricing Request", !!isPricing);
     
     // Nuevos campos: nombre del cliente
-    console.log("[mfs] Airtable: valores extraídos:", {
-      senderName: senderName || "(vacío)",
-      senderFirstName: senderFirstName || "(vacío)",
-      language: language || "(vacío)",
-      location: location ? `${location.city}, ${location.country} (${location.countryCode})` : "(no encontrada)",
-    });
-    
     await putName("Client Name", senderName);
     await putName("Client First Name", senderFirstName);
     
@@ -522,20 +487,8 @@ export async function createAirtableRecord({
       await putName("Country Code", location.countryCode);
     }
 
-    console.log("[mfs] Airtable: Preparando registro final:", {
-      id,
-      businessOppt: intentCap,
-      from,
-      to,
-      language,
-      location: location ? `${location.city}, ${location.country}` : null,
-      camposCount: Object.keys(fields).length,
-      campos: Object.keys(fields).slice(0, 10), // Primeros 10 campos
-    });
-
     const bodyReq = { records: [{ fields }], typecast: true };
     
-    console.log("[mfs] Airtable: Enviando request a Airtable API...");
     const res = await axios.post(baseUrl, bodyReq, {
       headers: {
         Authorization: `Bearer ${token}`,

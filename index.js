@@ -150,24 +150,30 @@ app.post("/control/process-interval", async (req, res) => {
     try {
       const gmail = await getGmailClient();
       
-      // Activar watch y actualizar historyId
+      // Actualizar historyId PRIMERO para solo procesar mensajes nuevos a partir de ahora
       try {
-        const { setupWatch } = await import("./services/gmail.js");
         const { writeHistoryState } = await import("./services/storage.js");
-        const watchResp = await setupWatch(gmail);
-        const hist = String(watchResp.historyId || "");
-        if (hist) {
-          await writeHistoryState(hist);
-          console.log(`[mfs] /control/process-interval → Watch activado y historyId actualizado: ${hist}`);
+        const prof = await gmail.users.getProfile({ userId: "me" });
+        const currentHistoryId = String(prof.data.historyId || "");
+        if (currentHistoryId) {
+          await writeHistoryState(currentHistoryId);
+          console.log(`[mfs] /control/process-interval → historyId principal actualizado: ${currentHistoryId} (solo procesará mensajes nuevos)`);
         }
-      } catch (watchError) {
-        console.warn(`[mfs] /control/process-interval → No se pudo activar watch (puede ser normal):`, watchError?.message);
-        // Continuar aunque falle el watch
+      } catch (historyError) {
+        console.warn(`[mfs] /control/process-interval → No se pudo actualizar historyId principal:`, historyError?.message);
       }
       
-      // Query: INBOX, sin etiqueta processed, dentro del intervalo de tiempo
-      const MAX_MESSAGES_PER_EXECUTION = 100;
-      const query = `in:inbox -label:processed after:${timestampAgo}`;
+      // Activar watch después de actualizar historyId
+      try {
+        const { setupWatch } = await import("./services/gmail.js");
+        await setupWatch(gmail);
+      } catch (watchError) {
+        console.warn(`[mfs] /control/process-interval → No se pudo activar watch (puede ser normal):`, watchError?.message);
+      }
+      
+      // NO procesar mensajes antiguos - solo los que lleguen después de actualizar historyId
+      // Por lo tanto, no hacemos query de mensajes antiguos
+      const messageIds = [];
       
       console.log(`[mfs] /control/process-interval → Query cuenta principal: ${query}`);
       
@@ -177,18 +183,7 @@ app.post("/control/process-interval", async (req, res) => {
         maxResults: MAX_MESSAGES_PER_EXECUTION,
       });
       
-      const messageIds = (list.data.messages || []).map(m => m.id);
-      totalEncontrados += messageIds.length;
-      console.log(`[mfs] /control/process-interval → Encontrados ${messageIds.length} mensajes en INBOX (cuenta principal, últimos ${minutesNum} min)`);
-      
-      if (messageIds.length > 0) {
-        const { processMessageIds } = await import("./services/processor.js");
-        const results = await processMessageIds(gmail, messageIds);
-        totalProcesados += results.exitosos || 0;
-        totalFallidos += results.fallidos || 0;
-        totalSaltados += results.saltados || 0;
-        console.log(`[mfs] /control/process-interval → Cuenta principal: ${results.exitosos} procesados, ${results.fallidos} fallidos, ${results.saltados} saltados`);
-      }
+      console.log(`[mfs] /control/process-interval → Cuenta principal: historyId actualizado, solo se procesarán mensajes nuevos (no antiguos)`);
     } catch (e) {
       console.error(`[mfs] /control/process-interval → Error procesando cuenta principal:`, e?.message || e);
       logErr("control/process-interval error (cuenta principal):", e);
@@ -198,45 +193,28 @@ app.post("/control/process-interval", async (req, res) => {
     try {
       const gmailSender = await getGmailSenderClient();
       
-      // Activar watch y actualizar historyId
+      // Actualizar historyId PRIMERO para solo procesar mensajes nuevos a partir de ahora
+      try {
+        const { writeHistoryStateSender } = await import("./services/storage.js");
+        const profSender = await gmailSender.users.getProfile({ userId: "me" });
+        const currentHistoryIdSender = String(profSender.data.historyId || "");
+        if (currentHistoryIdSender) {
+          await writeHistoryStateSender(currentHistoryIdSender);
+          console.log(`[mfs] /control/process-interval → historyId SENDER actualizado: ${currentHistoryIdSender} (solo procesará mensajes nuevos)`);
+        }
+      } catch (historyError) {
+        console.warn(`[mfs] /control/process-interval → No se pudo actualizar historyId SENDER:`, historyError?.message);
+      }
+      
+      // Activar watch después de actualizar historyId
       try {
         const { setupWatchSender } = await import("./services/gmail.js");
-        const { writeHistoryStateSender } = await import("./services/storage.js");
-        const watchRespSender = await setupWatchSender(gmailSender);
-        const histSender = String(watchRespSender.historyId || "");
-        if (histSender) {
-          await writeHistoryStateSender(histSender);
-          console.log(`[mfs] /control/process-interval → Watch SENDER activado y historyId actualizado: ${histSender}`);
-        }
+        await setupWatchSender(gmailSender);
       } catch (watchError) {
         console.warn(`[mfs] /control/process-interval → No se pudo activar watch SENDER (puede ser normal):`, watchError?.message);
-        // Continuar aunque falle el watch
       }
       
-      // Query: INBOX, sin etiqueta processed, dentro del intervalo de tiempo
-      const MAX_MESSAGES_PER_EXECUTION = 100;
-      const query = `in:inbox -label:processed after:${timestampAgo}`;
-      
-      console.log(`[mfs] /control/process-interval → Query cuenta SENDER: ${query}`);
-      
-      const list = await gmailSender.users.messages.list({
-        userId: "me",
-        q: query,
-        maxResults: MAX_MESSAGES_PER_EXECUTION,
-      });
-      
-      const senderMessageIds = (list.data.messages || []).map(m => m.id);
-      totalEncontrados += senderMessageIds.length;
-      console.log(`[mfs] /control/process-interval → Encontrados ${senderMessageIds.length} mensajes en INBOX (cuenta SENDER, últimos ${minutesNum} min)`);
-      
-      if (senderMessageIds.length > 0) {
-        const { processMessageIds } = await import("./services/processor.js");
-        const senderResults = await processMessageIds(gmailSender, senderMessageIds);
-        totalProcesados += senderResults.exitosos || 0;
-        totalFallidos += senderResults.fallidos || 0;
-        totalSaltados += senderResults.saltados || 0;
-        console.log(`[mfs] /control/process-interval → Cuenta SENDER: ${senderResults.exitosos} procesados, ${senderResults.fallidos} fallidos, ${senderResults.saltados} saltados`);
-      }
+      console.log(`[mfs] /control/process-interval → Cuenta SENDER: historyId actualizado, solo se procesarán mensajes nuevos (no antiguos)`);
     } catch (e) {
       console.error(`[mfs] /control/process-interval → Error procesando cuenta SENDER:`, e?.message || e);
       logErr("control/process-interval error (cuenta SENDER):", e);
@@ -244,12 +222,12 @@ app.post("/control/process-interval", async (req, res) => {
     
     res.json({
       ok: true,
-      message: `Procesamiento completado: ${totalProcesados} procesados, ${totalFallidos} fallidos, ${totalSaltados} saltados`,
+      message: `Watch activado y historyId actualizado. Solo se procesarán mensajes nuevos a partir de ahora (no mensajes antiguos).`,
       minutos: minutesNum,
-      totalEncontrados,
-      procesados: totalProcesados,
-      fallidos: totalFallidos,
-      saltados: totalSaltados,
+      totalEncontrados: 0,
+      procesados: 0,
+      fallidos: 0,
+      saltados: 0,
     });
   } catch (e) {
     logErr("control/process-interval error:", e);
