@@ -172,9 +172,9 @@ app.post("/force-process", async (_req, res) => {
     try {
       const gmail = await getGmailClient();
       
-      // Obtener mensajes recientes de INBOX (últimas 2 horas)
+      // Obtener mensajes recientes de INBOX (últimas 2 horas) excluyendo procesados
       const twoHoursAgo = Math.floor(Date.now() / 1000) - (2 * 60 * 60);
-      const query = `in:inbox after:${twoHoursAgo}`;
+      const query = `in:inbox -label:processed after:${twoHoursAgo}`;
       
       const list = await gmail.users.messages.list({
         userId: "me",
@@ -216,7 +216,7 @@ app.post("/force-process", async (_req, res) => {
       console.log("[mfs] /force-process → ✓ Cliente Gmail SENDER obtenido exitosamente");
       
       const twoHoursAgo = Math.floor(Date.now() / 1000) - (2 * 60 * 60);
-      const query = `in:inbox after:${twoHoursAgo}`;
+      const query = `in:inbox -label:processed after:${twoHoursAgo}`;
       console.log("[mfs] /force-process → Buscando mensajes con query:", query);
       
       const list = await gmailSender.users.messages.list({

@@ -155,12 +155,12 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
       console.error("[mfs] [history] Error obteniendo historyId de perfil:", e);
     }
 
-    // Fallback: escaneo INBOX
+    // Fallback: escaneo INBOX (excluyendo mensajes ya procesados)
     const list = await backoff(
       () =>
         gmail.users.messages.list({
           userId: "me",
-          q: "in:inbox",
+          q: "in:inbox -label:processed",
           maxResults: 100,
         }),
       "messages.list.fallback"
@@ -206,7 +206,7 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
           () =>
             gmail.users.messages.list({
               userId: "me",
-              q: "in:inbox",
+              q: "in:inbox -label:processed",
               maxResults: 50,
             }),
           "messages.list.fallback_negativo"
@@ -266,7 +266,7 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
           () =>
             gmail.users.messages.list({
               userId: "me",
-              q: "in:inbox",
+              q: "in:inbox -label:processed",
               maxResults: 100,
             }),
           "messages.list.fallback404"
@@ -312,7 +312,7 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
         () =>
           gmail.users.messages.list({
             userId: "me",
-            q: "in:inbox",
+            q: "in:inbox -label:processed",
             maxResults: 50,
           }),
         "messages.list.fallback_siempre"
