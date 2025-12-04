@@ -281,6 +281,96 @@ export async function sendBarterEmail(emailId, firstName, brandName, originalSub
 }
 
 /**
+ * Envía un email de notificación de rate limit excedido
+ * @param {number} count - Número de emails procesados
+ * @param {number} limit - Límite máximo permitido
+ * @param {number} windowMinutes - Ventana de tiempo en minutos
+ */
+export async function sendRateLimitNotificationEmail(count, limit, windowMinutes) {
+  try {
+    console.log("[mfs] ===== ENVIANDO EMAIL DE NOTIFICACIÓN DE RATE LIMIT =====");
+    console.log("[mfs] Count:", count);
+    console.log("[mfs] Limit:", limit);
+    console.log("[mfs] Window (minutes):", windowMinutes);
+    
+    const gmail = await getEmailSenderClient();
+    
+    const from = "secretmedia@feverup.com";
+    const to = "jon.garnica@feverup.com";
+    const subject = `⚠️ ALERTA: Límite de procesamiento de emails excedido`;
+    const body = `Hola,
+
+Se ha excedido el límite de procesamiento de emails configurado en el sistema.
+
+Detalles:
+- Emails procesados: ${count}
+- Límite máximo: ${limit} emails
+- Ventana de tiempo: ${windowMinutes} minutos
+
+El procesamiento de emails se ha detenido automáticamente para evitar bucles o sobrecarga del sistema.
+
+Por favor, revisa los logs y la configuración del sistema.
+
+Este es un mensaje automático del sistema de procesamiento de leads.
+
+Saludos,
+Sistema de Automatización MFS`;
+
+    const messageHeaders = [
+      `To: ${to}`,
+      `From: ${from}`,
+      `Subject: ${subject}`,
+      `Content-Type: text/plain; charset=utf-8`,
+    ];
+    
+    messageHeaders.push("");
+    messageHeaders.push(body);
+    
+    const message = messageHeaders.join("\n");
+    const encodedMessage = Buffer.from(message)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    
+    const response = await gmail.users.messages.send({
+      userId: "me",
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+    
+    console.log("[mfs] ===== EMAIL DE NOTIFICACIÓN ENVIADO EXITOSAMENTE =====");
+    console.log("[mfs] Message ID:", response.data.id);
+    console.log("[mfs] Thread ID:", response.data.threadId);
+    
+    return {
+      success: true,
+      messageId: response.data.id,
+      threadId: response.data.threadId,
+    };
+  } catch (error) {
+    console.error("[mfs] ===== ERROR ENVIANDO EMAIL DE NOTIFICACIÓN =====");
+    console.error("[mfs] Error message:", error?.message || error);
+    console.error("[mfs] Error code:", error?.code || error?.response?.status || "unknown");
+    console.error("[mfs] Error details:", JSON.stringify({
+      error: error?.response?.data?.error || error?.error || "unknown",
+      errorDescription: error?.response?.data?.error_description || error?.error_description || "unknown",
+      status: error?.response?.status || error?.status || "unknown",
+    }, null, 2));
+    
+    return {
+      success: false,
+      error: error?.message || "Unknown error",
+      code: error?.code || error?.response?.status || "unknown",
+      status: error?.response?.status || error?.status || "unknown",
+      errorType: error?.response?.data?.error || error?.error || "unknown",
+      errorDescription: error?.response?.data?.error_description || error?.error_description || "unknown",
+    };
+  }
+}
+
+/**
  * Envía un email de free coverage request a jongarnicaizco@gmail.com (TEST - NO se envía al cliente)
  * @param {string} emailId - ID del email que se está procesando (para logging)
  * @param {string} firstName - Primer nombre del cliente

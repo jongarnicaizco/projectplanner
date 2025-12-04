@@ -194,4 +194,43 @@ export async function checkLockAge(messageId) {
   }
 }
 
+/**
+ * Lee el estado del rate limiting desde GCS
+ * Retorna { count: número, windowStart: timestamp } o null si no existe
+ */
+export async function readRateLimitState() {
+  if (!CFG.GCS_BUCKET) return null;
+
+  try {
+    const [buf] = await storage
+      .bucket(CFG.GCS_BUCKET)
+      .file("state/rate_limit.json")
+      .download();
+    const j = JSON.parse(buf.toString("utf8"));
+    return {
+      count: j.count || 0,
+      windowStart: j.windowStart ? new Date(j.windowStart) : new Date(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Escribe el estado del rate limiting en GCS
+ */
+export async function writeRateLimitState(count, windowStart) {
+  if (!CFG.GCS_BUCKET) return;
+
+  await saveToGCS(
+    "state/rate_limit.json",
+    JSON.stringify({
+      count,
+      windowStart: windowStart.toISOString(),
+      updatedAt: new Date().toISOString(),
+    }, null, 2),
+    "application/json"
+  );
+}
+
 
