@@ -154,6 +154,23 @@ export async function processMessageIds(gmail, ids) {
         continue;
       }
 
+      // APLICAR ETIQUETA "PROCESSED" INMEDIATAMENTE COMO LOCK OPTIMISTA
+      // Si falla, otra instancia ya está procesando este email
+      let labelApplied = false;
+      try {
+        const labelId = await getProcessedLabelId(gmail);
+        await gmail.users.messages.modify({
+          userId: "me",
+          id: id,
+          requestBody: { addLabelIds: [labelId] },
+        });
+        labelApplied = true;
+      } catch (labelError) {
+        // Si falla al aplicar etiqueta, otra instancia ya la aplicó - saltar
+        results.push({ id, airtableId: null, intent: null, confidence: null, skipped: true, reason: "concurrent_processing" });
+        continue;
+      }
+
       const basicHeaders = msg.data.payload?.headers || [];
       const fromHeaderBasic = basicHeaders.find(h => h.name?.toLowerCase() === "from")?.value || "";
       const subjectHeaderBasic = basicHeaders.find(h => h.name?.toLowerCase() === "subject")?.value || "";
@@ -271,8 +288,10 @@ export async function processMessageIds(gmail, ids) {
       const timestamp = internalDate ? new Date(parseInt(internalDate, 10)).toISOString() : new Date().toISOString();
 
       // VERIFICAR SI YA EXISTE EN AIRTABLE ANTES DE LLAMAR A GEMINI
+      // (La etiqueta ya está aplicada como lock, pero verificamos Airtable por si acaso)
       const existingRecord = await airtableFindByEmailId(id);
       if (existingRecord) {
+        // Ya existe en Airtable, pero la etiqueta ya está aplicada - todo OK
         results.push({ id, airtableId: existingRecord.id, intent: null, confidence: null, skipped: true });
         continue;
       }
@@ -324,6 +343,14 @@ export async function processMessageIds(gmail, ids) {
       // Enviar emails solo si se creó exitosamente en Airtable
       // (se moverá después de crear en Airtable)
 
+      // Verificar una vez más ANTES de crear (race condition protection)
+      const doubleCheckRecord = await airtableFindByEmailId(id);
+      if (doubleCheckRecord) {
+        // Otra instancia ya creó el registro - saltar
+        results.push({ id, airtableId: doubleCheckRecord.id, intent: null, confidence: null, skipped: true });
+        continue;
+      }
+
       const airtableRecord = await createAirtableRecord({
         id, from, to, cc, subject, body, bodySummary, timestamp,
         intent: finalIntent, confidence: finalConfidence, reasoning: finalReasoning,
@@ -332,7 +359,7 @@ export async function processMessageIds(gmail, ids) {
         senderName, senderFirstName, language, location,
       });
 
-      // Solo enviar emails y aplicar etiqueta si se creó exitosamente
+      // Solo enviar emails si se creó exitosamente
       if (airtableRecord?.id) {
         if (isBarter) {
           try {
@@ -350,13 +377,8 @@ export async function processMessageIds(gmail, ids) {
           }
         }
 
-        // Aplicar etiqueta solo si todo fue exitoso
-        try {
-          await applyProcessedLabel(gmail, id);
-        } catch (labelError) {
-          // Continue
-        }
-        
+        // La etiqueta ya está aplicada (se aplicó al inicio como lock)
+        // Solo incrementar rate limit
         incrementRateLimit();
       }
 
