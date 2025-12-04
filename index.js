@@ -128,6 +128,94 @@ app.post("/control/stop", async (_req, res) => {
   }
 });
 
+/**
+ * Endpoint para procesar correos sin etiqueta "processed" (fallback automático cada 15 minutos)
+ * Procesa correos de las últimas 24 horas que no tengan la etiqueta "processed"
+ */
+app.post("/control/process-unprocessed", async (_req, res) => {
+  try {
+    console.log(`[mfs] /control/process-unprocessed → Procesando correos sin etiqueta "processed" (fallback automático)`);
+    
+    const MAX_MESSAGES_PER_EXECUTION = 100;
+    const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
+    const query = `in:inbox -label:processed after:${oneDayAgo}`;
+    
+    let totalProcesados = 0;
+    let totalFallidos = 0;
+    let totalSaltados = 0;
+    let totalEncontrados = 0;
+    
+    // Procesar cuenta principal (media.manager@feverup.com)
+    try {
+      const gmail = await getGmailClient();
+      
+      console.log(`[mfs] /control/process-unprocessed → Query cuenta principal: ${query}`);
+      
+      const list = await gmail.users.messages.list({
+        userId: "me",
+        q: query,
+        maxResults: MAX_MESSAGES_PER_EXECUTION,
+      });
+      
+      const messageIds = (list.data.messages || []).map(m => m.id);
+      totalEncontrados += messageIds.length;
+      console.log(`[mfs] /control/process-unprocessed → Encontrados ${messageIds.length} mensajes sin processed (cuenta principal)`);
+      
+      if (messageIds.length > 0) {
+        const { processMessageIds } = await import("./services/processor.js");
+        const results = await processMessageIds(gmail, messageIds);
+        totalProcesados += results.exitosos || 0;
+        totalFallidos += results.fallidos || 0;
+        totalSaltados += results.saltados || 0;
+        console.log(`[mfs] /control/process-unprocessed → Cuenta principal: ${results.exitosos} procesados, ${results.fallidos} fallidos, ${results.saltados} saltados`);
+      }
+    } catch (e) {
+      console.error(`[mfs] /control/process-unprocessed → Error procesando cuenta principal:`, e?.message || e);
+      logErr("control/process-unprocessed error (cuenta principal):", e);
+    }
+    
+    // Procesar cuenta SENDER (secretmedia@feverup.com)
+    try {
+      const gmailSender = await getGmailSenderClient();
+      
+      console.log(`[mfs] /control/process-unprocessed → Query cuenta SENDER: ${query}`);
+      
+      const list = await gmailSender.users.messages.list({
+        userId: "me",
+        q: query,
+        maxResults: MAX_MESSAGES_PER_EXECUTION,
+      });
+      
+      const senderMessageIds = (list.data.messages || []).map(m => m.id);
+      totalEncontrados += senderMessageIds.length;
+      console.log(`[mfs] /control/process-unprocessed → Encontrados ${senderMessageIds.length} mensajes sin processed (cuenta SENDER)`);
+      
+      if (senderMessageIds.length > 0) {
+        const { processMessageIds } = await import("./services/processor.js");
+        const senderResults = await processMessageIds(gmailSender, senderMessageIds);
+        totalProcesados += senderResults.exitosos || 0;
+        totalFallidos += senderResults.fallidos || 0;
+        totalSaltados += senderResults.saltados || 0;
+        console.log(`[mfs] /control/process-unprocessed → Cuenta SENDER: ${senderResults.exitosos} procesados, ${senderResults.fallidos} fallidos, ${senderResults.saltados} saltados`);
+      }
+    } catch (e) {
+      console.error(`[mfs] /control/process-unprocessed → Error procesando cuenta SENDER:`, e?.message || e);
+      logErr("control/process-unprocessed error (cuenta SENDER):", e);
+    }
+    
+    res.json({
+      ok: true,
+      message: `Fallback completado: ${totalProcesados} procesados, ${totalFallidos} fallidos, ${totalSaltados} saltados`,
+      totalEncontrados,
+      procesados: totalProcesados,
+      fallidos: totalFallidos,
+      saltados: totalSaltados,
+    });
+  } catch (e) {
+    logErr("control/process-unprocessed error:", e);
+    res.status(500).json({ error: e?.message });
+  }
+});
 
 /**
  * Procesa mensajes no procesados en un intervalo de tiempo específico (en minutos)
