@@ -100,10 +100,10 @@ async function applyProcessedLabel(gmail, messageId) {
   }
 }
 
-// Rate limiting por minuto - límite de seguridad de 10k ejecuciones por minuto
+// Rate limiting por minuto - límite de seguridad reducido
 let rateLimitCount = 0;
 let rateLimitWindowStart = Date.now();
-const RATE_LIMIT_MAX = 10000; // 10k ejecuciones por minuto
+const RATE_LIMIT_MAX = 500; // 500 ejecuciones por minuto (reducido de 10k)
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minuto
 
 // Lock en memoria para evitar procesamiento concurrente del mismo mensaje
