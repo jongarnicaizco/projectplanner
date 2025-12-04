@@ -42,7 +42,7 @@ import {
   readRateLimitState,
   writeRateLimitState,
 } from "./storage.js";
-import { classifyIntent, generateBodySummary, callModelText } from "./vertex.js";
+import { classifyIntent, generateBodySummary } from "./vertex.js";
 import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
 import { sendBarterEmail, sendFreeCoverageEmail, sendRateLimitNotificationEmail } from "./email-sender.js";
 
@@ -828,24 +828,39 @@ export async function processMessageIds(gmail, ids) {
         });
       }
       
-      // Extraer nombre del remitente
+      // Extraer nombre del remitente (sin usar IA para evitar múltiples llamadas a Gemini)
+      // SOLO se hará UNA llamada a Gemini en classifyIntent
       let senderName = extractSenderName(fromHeader);
       
-      // Si el nombre extraído tiene problemas (comillas, caracteres extra, etc.), usar IA
-      if (senderName && (senderName.includes('"') || senderName.includes("'") || senderName.includes("`") || 
-          /[<>{}|\\]/.test(senderName) || senderName.length > 100)) {
-        console.log("[mfs] Nombre extraído tiene problemas, intentando con IA:", senderName);
-        const aiName = await extractSenderNameWithAI(fromHeader, callModelText);
-        if (aiName && aiName.length > 0) {
-          console.log("[mfs] IA extrajo nombre limpio:", aiName);
-          senderName = aiName;
-        } else {
-          console.warn("[mfs] IA no pudo extraer nombre mejor, usando el extraído básico");
+      // Limpiar el nombre extraído sin usar IA
+      if (senderName) {
+        // Remover comillas y caracteres problemáticos
+        senderName = senderName.replace(/["'`]/g, "").trim();
+        // Si tiene caracteres problemáticos o es muy largo, usar solo la parte antes del primer carácter problemático
+        if (/[<>{}|\\]/.test(senderName) || senderName.length > 100) {
+          const cleanName = senderName.split(/[<>{}|\\]/)[0].trim();
+          if (cleanName && cleanName.length > 0) {
+            senderName = cleanName;
+          }
         }
       }
       
-      // Extraer primer nombre del nombre limpio usando IA para determinar si es empresa o persona
-      const senderFirstName = await extractFirstName(senderName, callModelText);
+      // Extraer primer nombre de forma simple (sin IA)
+      // Tomar la primera palabra del nombre, o el nombre completo si es corto
+      let senderFirstName = "";
+      if (senderName) {
+        const nameParts = senderName.split(/\s+/);
+        if (nameParts.length > 0) {
+          senderFirstName = nameParts[0];
+          // Si el nombre completo es corto (menos de 20 caracteres), usar el nombre completo
+          if (senderName.length < 20 && nameParts.length <= 2) {
+            senderFirstName = senderName;
+          }
+        }
+      }
+      
+      console.log("[mfs] Nombre extraído (sin IA):", senderName);
+      console.log("[mfs] Primer nombre extraído (sin IA):", senderFirstName);
       
       // Detectar idioma
       const language = detectLanguage(subject + " " + body);
@@ -1026,7 +1041,12 @@ export async function processMessageIds(gmail, ids) {
 
       await saveToGCS(`${baseName}_body.txt`, body, "text/plain");
 
-      // Clasificar el lead
+      // ===== PASO 1: LLAMADA A GEMINI (ÚNICA LLAMADA POR EMAIL) =====
+      console.log("[mfs] ===== INICIANDO LLAMADA A GEMINI (classifyIntent) =====");
+      console.log("[mfs] Email ID:", id);
+      console.log("[mfs] Esta es la ÚNICA llamada a Gemini para este email");
+      
+      // Clasificar el lead (ÚNICA llamada a Gemini por email)
       const {
         intent,
         confidence,
@@ -1046,6 +1066,11 @@ export async function processMessageIds(gmail, ids) {
         to,
         body,
       });
+      
+      console.log("[mfs] ===== LLAMADA A GEMINI COMPLETADA =====");
+      console.log("[mfs] Resultado:", { intent, confidence, isFreeCoverage, isBarter, isPricing });
+      
+      // ===== PASO 2: PARSEAR JSON Y APLICAR REGLAS =====
 
       // REGLA ESPECIAL: Para emails recibidos en secretmedia@feverup.com
       // - Si es una RESPUESTA (reply) → Medium automáticamente
