@@ -154,91 +154,45 @@ export async function processMessageIds(gmail, ids) {
 
   for (let i = 0; i < ids.length; i++) {
     const id = ids[i];
-    let allHeaders = [];
-    let getAllHeaders = null;
 
     try {
-      // OPTIMIZACIÓN CRÍTICA: Verificar labels primero con metadata (sin cuerpo)
-      // Esto evita obtener el mensaje completo si ya está procesado
-      let msgMetadata;
-      try {
-        msgMetadata = await gmail.users.messages.get({ userId: "me", id, format: "metadata", metadataHeaders: [] });
-      } catch (e) {
-        if (String(e?.response?.status || e?.code || e?.status) === "404") {
-          continue;
-        }
+      // Verificar si ya existe en Airtable ANTES de hacer cualquier llamada a Gmail
+      const existingRecord = existingRecordsMap.get(id);
+      if (existingRecord) {
+        // Ya existe - saltar sin hacer llamadas
+        results.push({ id, airtableId: existingRecord.id, intent: null, confidence: null, skipped: true, reason: "already_in_airtable" });
         continue;
       }
 
-      const msgLabelIds = msgMetadata.data.labelIds || [];
-      if (!msgLabelIds.includes("INBOX")) {
-        continue;
-      }
-
-      // Verificar etiqueta processed ANTES de obtener el mensaje completo
-      const hasProcessedLabel = msgLabelIds.includes("processed") || (processedLabelIdCache && msgLabelIds.includes(processedLabelIdCache));
-      if (hasProcessedLabel) {
-        results.push({ id, airtableId: null, intent: null, confidence: null, skipped: true, reason: "already_processed" });
-        continue;
-      }
-
-      // Solo ahora obtener el mensaje completo si no está procesado
-      let msg;
-      try {
-        msg = await gmail.users.messages.get({ userId: "me", id, format: "full" });
-      } catch (e) {
-        if (String(e?.response?.status || e?.code || e?.status) === "404") {
-          continue;
-        }
-        continue;
-      }
-
-      // Usar lock en memoria para evitar procesamiento concurrente del mismo mensaje
+      // Lock en memoria ANTES de obtener mensaje
       if (!acquireProcessingLock(id)) {
-        // Ya está siendo procesado por otra instancia o en esta misma ejecución
         results.push({ id, airtableId: null, intent: null, confidence: null, skipped: true, reason: "concurrent_processing" });
         continue;
       }
 
-      // Variable para trackear si el procesamiento fue exitoso
-      let processingSuccessful = false;
+      // Obtener mensaje completo (ya filtramos procesados en query)
+      let msg;
+      try {
+        msg = await gmail.users.messages.get({ userId: "me", id, format: "full" });
+      } catch (e) {
+        releaseProcessingLock(id);
+        if (String(e?.response?.status || e?.code || e?.status) === "404") {
+          continue;
+        }
+        continue;
+      }
+
+      const msgLabelIds = msg.data.labelIds || [];
+      if (!msgLabelIds.includes("INBOX")) {
+        releaseProcessingLock(id);
+        continue;
+      }
 
       try {
-        // Extraer todos los headers primero para poder verificar TO antes de filtrar
-        getAllHeaders = (payload) => {
-          const headersArray = [];
-          if (payload && payload.headers && Array.isArray(payload.headers)) {
-            headersArray.push(...payload.headers);
-          }
-          const searchParts = (parts) => {
-            if (!parts || !Array.isArray(parts)) return;
-            for (const part of parts) {
-              if (part && part.headers && Array.isArray(part.headers)) {
-                headersArray.push(...part.headers);
-              }
-              if (part && part.parts) {
-                searchParts(part.parts);
-              }
-            }
-          };
-          if (payload && payload.parts) {
-            searchParts(payload.parts);
-          }
-          return headersArray;
-        };
-        
-        if (msg && msg.data && msg.data.payload) {
-          allHeaders = getAllHeaders(msg.data.payload);
-        } else {
-          allHeaders = [];
-        }
-        
-        if (!Array.isArray(allHeaders)) {
-          allHeaders = [];
-        }
-
+        // Simplificado: usar headers básicos directamente (más rápido)
+        const basicHeaders = msg.data.payload?.headers || [];
         const findHeader = (name) => {
-          const h = allHeaders.find(header => header.name?.toLowerCase() === name.toLowerCase());
+          const h = basicHeaders.find(header => header.name?.toLowerCase() === name.toLowerCase());
           return h ? h.value : "";
         };
 
@@ -250,101 +204,39 @@ export async function processMessageIds(gmail, ids) {
         const subject = findHeader("Subject") || "";
         const body = bodyFromMessage(msg.data);
 
-        // Extraer emails para verificar filtros
-        const fromEmailRaw = extractFromEmail(fromHeader, cc, bcc, replyTo);
-        const from = String(fromEmailRaw || "").trim().toLowerCase();
+        // Extraer emails (simplificado)
+        const from = String(extractFromEmail(fromHeader, cc, bcc, replyTo) || "").trim().toLowerCase();
+        let to = String(extractToEmail(toHeader || "", cc || "", bcc || "", replyTo || "", "") || "").trim().toLowerCase();
         
-        const toEmailRaw = extractToEmail(toHeader || "", cc || "", bcc || "", replyTo || "", "");
-        let to = String(toEmailRaw || "").trim().toLowerCase();
-        
-        if (toHeader && toHeader.trim()) {
-          const toHeaderEmail = extractCleanEmail(toHeader);
-          if (toHeaderEmail && toHeaderEmail.trim() !== "") {
-            if (toHeaderEmail !== to || (from && from === to)) {
-              to = toHeaderEmail.toLowerCase();
-            }
-          }
-        }
-
-        // FILTROS: Solo saltar emails que vienen DE secretmedia@feverup.com (no los que LLEGAN A)
-        // Los emails que LLEGAN A secretmedia@feverup.com deben procesarse
+        // FILTROS RÁPIDOS: saltar antes de procesar más
         if (from && from.includes("secretmedia@feverup.com")) {
-          // Email enviado DESDE secretmedia@feverup.com - saltar (es un email que nosotros enviamos)
           releaseProcessingLock(id);
           continue;
         }
-        
         if (subject && subject.toLowerCase().trim() === "test") {
           releaseProcessingLock(id);
           continue;
         }
-        
         if (from && from.includes("jongarnicaizco@gmail.com")) {
           releaseProcessingLock(id);
           continue;
         }
-
         if (!from || !to) {
           releaseProcessingLock(id);
           continue;
         }
 
-        if (from === to && from) {
-          if (toHeader && toHeader.trim()) {
-            const toHeaderEmail = extractCleanEmail(toHeader);
-            if (toHeaderEmail && toHeaderEmail.toLowerCase() !== from) {
-              to = toHeaderEmail.toLowerCase();
-            }
-          }
-        }
+        // Simplificar senderName
+        const senderName = extractSenderName(fromHeader)?.replace(/["'`]/g, "").trim().slice(0, 100) || "";
+        const senderFirstName = senderName.split(/\s+/)[0] || "";
 
-        let senderName = extractSenderName(fromHeader);
-        if (senderName) {
-          senderName = senderName.replace(/["'`]/g, "").trim();
-          if (/[<>{}|\\]/.test(senderName) || senderName.length > 100) {
-            const cleanName = senderName.split(/[<>{}|\\]/)[0].trim();
-            if (cleanName && cleanName.length > 0) {
-              senderName = cleanName;
-            }
-          }
-        }
-        
-        let senderFirstName = "";
-        if (senderName) {
-          const nameParts = senderName.split(/\s+/);
-          if (nameParts.length > 0) {
-            senderFirstName = nameParts[0];
-            if (senderName.length < 20 && nameParts.length <= 2) {
-              senderFirstName = senderName;
-            }
-          }
-        }
-
+        // Datos básicos (simplificado)
         const language = detectLanguage(subject + " " + body);
         const location = getLocationFromEmail(toHeader);
-        const internalDate = msg.data.internalDate;
-        const timestamp = internalDate ? new Date(parseInt(internalDate, 10)).toISOString() : new Date().toISOString();
+        const timestamp = msg.data.internalDate ? new Date(parseInt(msg.data.internalDate, 10)).toISOString() : new Date().toISOString();
 
-        // VERIFICAR SI YA EXISTE EN AIRTABLE (usando el resultado del batch check)
-        // Ya no hacemos llamada individual - usamos el resultado del batch check al inicio
-        const existingRecord = existingRecordsMap.get(id);
-        if (existingRecord) {
-          // Ya existe en Airtable - aplicar etiqueta processed y saltar
-          try {
-            await applyProcessedLabel(gmail, id);
-          } catch (labelError) {
-            // No crítico
-          }
-          releaseProcessingLock(id);
-          results.push({ id, airtableId: existingRecord.id, intent: null, confidence: null, skipped: true });
-          continue;
-        }
-
-        // SOLO LLAMAR A GEMINI SI EL EMAIL NO EXISTE EN AIRTABLE
-        const isReply = subject.toLowerCase().startsWith("re:") ||
-                        subject.toLowerCase().startsWith("fwd:") ||
-                        (findHeader("In-Reply-To") && findHeader("In-Reply-To").length > 0) ||
-                        (msg.data.threadId && msg.data.threadId !== msg.data.id);
+        // Verificar si es reply (simplificado)
+        const isReply = subject.toLowerCase().startsWith("re:") || subject.toLowerCase().startsWith("fwd:") || (msg.data.threadId && msg.data.threadId !== msg.data.id);
 
         // ÚNICA LLAMADA A GEMINI: classifyIntent
         const {
@@ -396,37 +288,19 @@ export async function processMessageIds(gmail, ids) {
           senderName, senderFirstName, language, location,
         });
 
-        // Solo enviar emails si se creó exitosamente
+        // Si se creó exitosamente: enviar emails y aplicar etiqueta
         if (airtableRecord?.id) {
+          // Enviar emails en paralelo (no bloqueante)
           if (isBarter) {
-            try {
-              await sendBarterEmail(id, senderFirstName || "Client", brandName, subject);
-            } catch (barterError) {
-              // Continue
-            }
+            sendBarterEmail(id, senderFirstName || "Client", brandName, subject).catch(() => {});
           }
-          
           if (isFreeCoverage) {
-            try {
-              await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject);
-            } catch (freeCoverageError) {
-              // Continue
-            }
+            sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject).catch(() => {});
           }
 
-          // Marcar como exitoso para aplicar etiqueta "processed" al final
-          processingSuccessful = true;
+          // Aplicar etiqueta processed (no bloqueante)
+          applyProcessedLabel(gmail, id).catch(() => {});
           incrementRateLimit();
-        }
-
-        // APLICAR ETIQUETA "PROCESSED" SOLO AL FINAL SI EL PROCESAMIENTO FUE EXITOSO
-        if (processingSuccessful && airtableRecord?.id) {
-          try {
-            await applyProcessedLabel(gmail, id);
-          } catch (labelError) {
-            // Si falla al aplicar etiqueta, no es crítico - el registro ya está en Airtable
-            // El mensaje se procesará de nuevo en la próxima ejecución, pero se saltará por Airtable
-          }
         }
 
         results.push({
