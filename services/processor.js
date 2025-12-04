@@ -35,45 +35,14 @@ function extractAllEmails(headerValue) {
 // Eliminadas todas las operaciones de storage para minimizar costes
 import { classifyIntent } from "./vertex.js";
 import { createAirtableRecord, airtableFindByEmailId } from "./airtable.js";
-import { sendBarterEmail, sendFreeCoverageEmail, sendRateLimitNotificationEmail, sendCriticalAlertEmail } from "./email-sender.js";
+import { sendBarterEmail, sendFreeCoverageEmail } from "./email-sender.js";
 import { createSalesforceLead } from "./salesforce.js";
 
 // Función para resetear el contador de rate limit (llamada desde index.js cuando se activa el servicio)
 export function resetRateLimitCounter() {
   rateLimitCount = 0;
   rateLimitWindowStart = Date.now();
-  rateLimitNotificationSent = false;
-  criticalAlertSent = false;
   console.log(`[mfs] ✓ Contador de rate limit reseteado`);
-}
-
-// Función para detectar el origen del servicio desde el stack trace
-function detectServiceSource() {
-  try {
-    const stack = new Error().stack;
-    if (!stack) return "Unknown";
-    
-    // Detectar desde dónde se está llamando
-    if (stack.includes("_pubsub") || stack.includes("pubsub")) {
-      return "Google Cloud Pub/Sub (Gmail Watch notifications)";
-    }
-    if (stack.includes("process-unprocessed") || stack.includes("fallback")) {
-      return "Cloud Scheduler (Fallback automático cada 15 minutos)";
-    }
-    if (stack.includes("force-process")) {
-      return "Force Process Endpoint (Manual)";
-    }
-    if (stack.includes("process-interval")) {
-      return "Process Interval Endpoint (Manual)";
-    }
-    if (stack.includes("control/start")) {
-      return "Control Start Endpoint (Manual)";
-    }
-    
-    return "Unknown Cloud Service";
-  } catch (e) {
-    return "Unknown";
-  }
 }
 
 // Cache del label ID por cuenta (usando el objeto gmail como clave)
@@ -143,12 +112,7 @@ async function applyProcessedLabel(gmail, messageId) {
 let rateLimitCount = 0;
 let rateLimitWindowStart = Date.now();
 const RATE_LIMIT_MAX = 7000; // 7000 ejecuciones por minuto - si se supera, se detiene automáticamente
-const CRITICAL_ALERT_LIMIT = 500; // 3000 ejecuciones por minuto - alerta crítica (email a jon.garnica@feverup.com)
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minuto
-
-// Flag para evitar múltiples correos de notificación
-let rateLimitNotificationSent = false;
-let criticalAlertSent = false; // Flag para alerta crítica de 20k
 
 // Lock en memoria para evitar procesamiento concurrente del mismo mensaje
 // Se limpia automáticamente después de procesar (éxito o fallo)
@@ -179,23 +143,6 @@ async function checkRateLimit() {
   if (windowAge >= RATE_LIMIT_WINDOW_MS) {
     rateLimitCount = 0;
     rateLimitWindowStart = now;
-    // Resetear flags de notificación cuando se resetea el contador
-    rateLimitNotificationSent = false;
-    criticalAlertSent = false;
-  }
-  
-  // ALERTA CRÍTICA: Si superamos 20k ejecuciones por minuto, enviar email inmediatamente
-  if (rateLimitCount >= CRITICAL_ALERT_LIMIT && !criticalAlertSent) {
-    criticalAlertSent = true;
-    const serviceSource = detectServiceSource();
-    console.error(`[mfs] 🚨🚨🚨 ALERTA CRÍTICA: ${rateLimitCount} ejecuciones en el último minuto. Límite crítico: ${CRITICAL_ALERT_LIMIT}. Servicio: ${serviceSource}`);
-    
-    try {
-      await sendCriticalAlertEmail(rateLimitCount, CRITICAL_ALERT_LIMIT, serviceSource);
-      console.log(`[mfs] ✓ Email de alerta crítica enviado a jon.garnica@feverup.com`);
-    } catch (emailError) {
-      console.error(`[mfs] ✗ Error enviando email de alerta crítica:`, emailError?.message);
-    }
   }
   
   // Si superamos el límite, detener servicio automáticamente
@@ -209,17 +156,6 @@ async function checkRateLimit() {
       console.log(`[mfs] ✓ Servicio detenido automáticamente por límite de ejecuciones`);
     } catch (stopError) {
       console.error(`[mfs] ✗ Error deteniendo servicio automáticamente:`, stopError?.message);
-    }
-    
-    // Enviar UN SOLO correo de notificación (solo si no se ha enviado ya)
-    if (!rateLimitNotificationSent) {
-      rateLimitNotificationSent = true;
-      try {
-        await sendRateLimitNotificationEmail(rateLimitCount, RATE_LIMIT_MAX, 1);
-        console.log(`[mfs] ✓ Email de notificación enviado`);
-      } catch (emailError) {
-        console.error(`[mfs] ✗ Error enviando email de notificación:`, emailError?.message);
-      }
     }
     
     return false;
@@ -236,26 +172,9 @@ async function incrementRateLimit() {
   if (windowAge >= RATE_LIMIT_WINDOW_MS) {
     rateLimitCount = 0;
     rateLimitWindowStart = now;
-    // Resetear flags de notificación cuando se resetea el contador
-    rateLimitNotificationSent = false;
-    criticalAlertSent = false;
   }
   
   rateLimitCount++;
-  
-  // ALERTA CRÍTICA: Si superamos 20k ejecuciones por minuto, enviar email inmediatamente
-  if (rateLimitCount >= CRITICAL_ALERT_LIMIT && !criticalAlertSent) {
-    criticalAlertSent = true;
-    const serviceSource = detectServiceSource();
-    console.error(`[mfs] 🚨🚨🚨 ALERTA CRÍTICA: ${rateLimitCount} ejecuciones en el último minuto. Límite crítico: ${CRITICAL_ALERT_LIMIT}. Servicio: ${serviceSource}`);
-    
-    try {
-      await sendCriticalAlertEmail(rateLimitCount, CRITICAL_ALERT_LIMIT, serviceSource);
-      console.log(`[mfs] ✓ Email de alerta crítica enviado a jon.garnica@feverup.com`);
-    } catch (emailError) {
-      console.error(`[mfs] ✗ Error enviando email de alerta crítica:`, emailError?.message);
-    }
-  }
   
   // Si superamos el límite después de incrementar, detener servicio automáticamente
   if (rateLimitCount >= RATE_LIMIT_MAX) {
@@ -269,17 +188,6 @@ async function incrementRateLimit() {
     } catch (stopError) {
       console.error(`[mfs] ✗ Error deteniendo servicio automáticamente:`, stopError?.message);
     }
-    
-    // Enviar UN SOLO correo de notificación (solo si no se ha enviado ya)
-    if (!rateLimitNotificationSent) {
-      rateLimitNotificationSent = true;
-      try {
-        await sendRateLimitNotificationEmail(rateLimitCount, RATE_LIMIT_MAX, 1);
-        console.log(`[mfs] ✓ Email de notificación enviado`);
-      } catch (emailError) {
-        console.error(`[mfs] ✗ Error enviando email de notificación:`, emailError?.message);
-      }
-    }
   }
   
   return rateLimitCount <= RATE_LIMIT_MAX;
@@ -287,7 +195,6 @@ async function incrementRateLimit() {
 
 export async function processMessageIds(gmail, ids, serviceSource = null) {
   // Verificar límite de ejecuciones por minuto ANTES de procesar
-  // Si se proporciona serviceSource, se usará para la alerta crítica
   if (!(await checkRateLimit())) {
     console.error(`[mfs] ⚠️ PROCESAMIENTO DETENIDO: Límite de ${RATE_LIMIT_MAX} ejecuciones por minuto alcanzado. Servicio detenido automáticamente.`);
     return {
@@ -297,20 +204,6 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
       rateLimitExceeded: true,
       resultados: ids.map(id => ({ id, skipped: true, reason: `rate_limit_exceeded_${RATE_LIMIT_MAX}_per_minute` })),
     };
-  }
-  
-  // Verificar alerta crítica ANTES de procesar
-  if (rateLimitCount >= CRITICAL_ALERT_LIMIT && !criticalAlertSent) {
-    criticalAlertSent = true;
-    const detectedSource = serviceSource || detectServiceSource();
-    console.error(`[mfs] 🚨🚨🚨 ALERTA CRÍTICA: ${rateLimitCount} ejecuciones en el último minuto. Límite crítico: ${CRITICAL_ALERT_LIMIT}. Servicio: ${detectedSource}`);
-    
-    try {
-      await sendCriticalAlertEmail(rateLimitCount, CRITICAL_ALERT_LIMIT, detectedSource);
-      console.log(`[mfs] ✓ Email de alerta crítica enviado a jon.garnica@feverup.com`);
-    } catch (emailError) {
-      console.error(`[mfs] ✗ Error enviando email de alerta crítica:`, emailError?.message);
-    }
   }
   
   // Sistema de cola: procesar todos los mensajes que llegan sin verificar Airtable antes
@@ -355,12 +248,12 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         releaseProcessingLock(id);
         continue;
       }
-      
+
       if (!msgLabelIds.includes("INBOX")) {
         // Si no está en INBOX, aplicar etiqueta processed para evitar reprocesar
         try {
           await applyProcessedLabel(gmail, id);
-        } catch (labelError) {
+      } catch (labelError) {
           console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
         }
         releaseProcessingLock(id);
@@ -369,19 +262,19 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
 
       try {
         // Simplificado: usar headers básicos directamente (más rápido)
-        const basicHeaders = msg.data.payload?.headers || [];
-        const findHeader = (name) => {
+      const basicHeaders = msg.data.payload?.headers || [];
+      const findHeader = (name) => {
           const h = basicHeaders.find(header => header.name?.toLowerCase() === name.toLowerCase());
-          return h ? h.value : "";
-        };
+        return h ? h.value : "";
+      };
 
-        const fromHeader = findHeader("From");
-        const toHeader = findHeader("To");
-        const cc = findHeader("Cc");
-        const bcc = findHeader("Bcc");
-        const replyTo = findHeader("Reply-To");
-        const subject = findHeader("Subject") || "";
-        const body = bodyFromMessage(msg.data);
+      const fromHeader = findHeader("From");
+      const toHeader = findHeader("To");
+      const cc = findHeader("Cc");
+      const bcc = findHeader("Bcc");
+      const replyTo = findHeader("Reply-To");
+      const subject = findHeader("Subject") || "";
+      const body = bodyFromMessage(msg.data);
 
         // Extraer emails (sin logs para reducir carga operacional)
         const from = String(extractFromEmail(fromHeader, cc, bcc, replyTo) || "").trim().toLowerCase();
@@ -408,8 +301,8 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
               console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
             }
             releaseProcessingLock(id);
-            continue;
-          }
+        continue;
+      }
           // Si el correo SÍ va TO secretmedia@feverup.com, procesarlo (es un correo que llega a esa cuenta)
           console.log(`[mfs] ✓ Procesando correo FROM secretmedia@feverup.com TO secretmedia@feverup.com (reply/forward) - ID: ${id}`);
         }
@@ -455,14 +348,14 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         const senderFirstName = senderName.split(/\s+/)[0] || "";
 
         // Datos básicos (simplificado)
-        const language = detectLanguage(subject + " " + body);
-        const location = getLocationFromEmail(toHeader);
+      const language = detectLanguage(subject + " " + body);
+      const location = getLocationFromEmail(toHeader);
         const timestamp = msg.data.internalDate ? new Date(parseInt(msg.data.internalDate, 10)).toISOString() : new Date().toISOString();
 
         // Verificar si es reply (simplificado)
         const isReply = subject.toLowerCase().startsWith("re:") || subject.toLowerCase().startsWith("fwd:") || (msg.data.threadId && msg.data.threadId !== msg.data.id);
 
-        // ÚNICA LLAMADA A GEMINI: classifyIntent
+      // ÚNICA LLAMADA A GEMINI: classifyIntent
         let intent, confidence, reasoning, meddicMetrics, meddicEconomicBuyer, meddicDecisionCriteria, meddicDecisionProcess, meddicIdentifyPain, meddicChampion, isFreeCoverage, isBarter, isPricing;
         
         try {
@@ -496,28 +389,28 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           isPricing = false;
         }
 
-        const toEmailLower = (to || "").toLowerCase().trim();
-        const isSecretMediaEmail = toEmailLower.includes("secretmedia@feverup.com");
-        
-        let finalIntent = intent;
-        let finalConfidence = confidence;
-        let finalReasoning = reasoning;
-        
-        if (isSecretMediaEmail && isReply) {
-          finalIntent = "Medium";
-          finalConfidence = Math.max(finalConfidence || 0.75, 0.75);
-          if (!finalReasoning || finalReasoning.length === 0) {
-            finalReasoning = "Email is a reply to secretmedia@feverup.com, automatically classified as Medium intent.";
-          } else {
-            finalReasoning = finalReasoning + " Email is a reply to secretmedia@feverup.com, automatically classified as Medium intent.";
-          }
+      const toEmailLower = (to || "").toLowerCase().trim();
+      const isSecretMediaEmail = toEmailLower.includes("secretmedia@feverup.com");
+      
+      let finalIntent = intent;
+      let finalConfidence = confidence;
+      let finalReasoning = reasoning;
+      
+      if (isSecretMediaEmail && isReply) {
+        finalIntent = "Medium";
+        finalConfidence = Math.max(finalConfidence || 0.75, 0.75);
+        if (!finalReasoning || finalReasoning.length === 0) {
+          finalReasoning = "Email is a reply to secretmedia@feverup.com, automatically classified as Medium intent.";
+        } else {
+          finalReasoning = finalReasoning + " Email is a reply to secretmedia@feverup.com, automatically classified as Medium intent.";
         }
+      }
 
-        // NO generar bodySummary para ahorrar llamadas a Gemini
-        const bodySummary = "";
+      // NO generar bodySummary para ahorrar llamadas a Gemini
+      const bodySummary = "";
 
-        const brandName = senderName || from.split("@")[0] || subject.split(" ")[0] || "Client";
-
+      const brandName = senderName || from.split("@")[0] || subject.split(" ")[0] || "Client";
+      
         // VERIFICACIÓN DE DUPLICADOS: Verificar ANTES de crear para evitar duplicados
         // Procesamiento SECUENCIAL: un mensaje a la vez, completamente procesado antes del siguiente
         let existingRecord = null;
@@ -600,12 +493,12 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         let airtableRecord;
         try {
           airtableRecord = await createAirtableRecord({
-            id, from, to, cc, subject, body, bodySummary, timestamp,
-            intent: finalIntent, confidence: finalConfidence, reasoning: finalReasoning,
-            meddicMetrics, meddicEconomicBuyer, meddicDecisionCriteria, meddicDecisionProcess,
-            meddicIdentifyPain, meddicChampion, isFreeCoverage, isBarter, isPricing,
-            senderName, senderFirstName, language, location,
-          });
+        id, from, to, cc, subject, body, bodySummary, timestamp,
+        intent: finalIntent, confidence: finalConfidence, reasoning: finalReasoning,
+        meddicMetrics, meddicEconomicBuyer, meddicDecisionCriteria, meddicDecisionProcess,
+        meddicIdentifyPain, meddicChampion, isFreeCoverage, isBarter, isPricing,
+        senderName, senderFirstName, language, location,
+      });
         } catch (airtableError) {
           // Si falla Airtable, verificar si es porque ya existe (duplicado)
           const errorData = airtableError?.response?.data;
@@ -672,16 +565,16 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
             
             if (emailStatus.status === "active") {
               // Procesamiento secuencial: esperar a que se envíe antes de continuar
-              if (isBarter) {
-                try {
-                  await sendBarterEmail(id, senderFirstName || "Client", brandName, subject);
+        if (isBarter) {
+          try {
+            await sendBarterEmail(id, senderFirstName || "Client", brandName, subject);
                 } catch (emailError) {
                   console.warn(`[mfs] Error enviando email barter para ${id}:`, emailError?.message);
-                }
-              }
-              if (isFreeCoverage) {
-                try {
-                  await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject);
+          }
+        }
+        if (isFreeCoverage) {
+          try {
+            await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject);
                 } catch (emailError) {
                   console.warn(`[mfs] Error enviando email free coverage para ${id}:`, emailError?.message);
                 }
@@ -715,15 +608,15 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           } catch (labelError) {
             console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
           }
-        }
+      }
 
-        results.push({
-          id,
-          airtableId: airtableRecord?.id || null,
-          intent: finalIntent,
-          confidence: finalConfidence,
-        });
-      } catch (e) {
+      results.push({
+        id,
+        airtableId: airtableRecord?.id || null,
+        intent: finalIntent,
+        confidence: finalConfidence,
+      });
+    } catch (e) {
         // En caso de error, loguear y aplicar etiqueta processed para evitar bucles infinitos
         console.error(`[mfs] ✗ Error procesando mensaje ${id}:`, e?.message || e);
         console.error(`[mfs] Stack trace:`, e?.stack);
