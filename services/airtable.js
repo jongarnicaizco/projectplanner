@@ -141,6 +141,86 @@ export async function getAirtableRecords(date) {
   }
 }
 
+/**
+ * Verifica múltiples Email IDs en batch (una sola llamada a Airtable)
+ * Retorna un Map<emailId, record> con los registros encontrados
+ */
+export async function airtableFindByEmailIdsBatch(emailIds) {
+  if (!emailIds || emailIds.length === 0) {
+    return new Map();
+  }
+
+  try {
+    const token = await getAirtableToken();
+    if (!token) {
+      console.warn("[mfs] Airtable: No se pudo obtener el token de Airtable. Continuando sin verificar duplicados.");
+      return new Map();
+    }
+
+    if (!CFG.AIRTABLE_BASE_ID || !CFG.AIRTABLE_TABLE) {
+      console.warn("[mfs] Airtable: Base ID o Table ID no configurados. Continuando sin verificar duplicados.", {
+        baseId: CFG.AIRTABLE_BASE_ID,
+        table: CFG.AIRTABLE_TABLE,
+      });
+      return new Map();
+    }
+
+    const url = `https://api.airtable.com/v0/${CFG.AIRTABLE_BASE_ID}/${encodeURIComponent(
+      CFG.AIRTABLE_TABLE
+    )}`;
+
+    // Dividir en chunks para evitar fórmulas muy largas (límite ~10,000 caracteres)
+    // Cada condición OR es aproximadamente: ({Email ID} = "id") = ~25 caracteres
+    // Con seguridad, usar chunks de 200 IDs (5000 caracteres aprox)
+    const CHUNK_SIZE = 200;
+    const resultMap = new Map();
+
+    for (let i = 0; i < emailIds.length; i += CHUNK_SIZE) {
+      const chunk = emailIds.slice(i, i + CHUNK_SIZE);
+      
+      // Construir fórmula OR: OR({Email ID} = "id1", {Email ID} = "id2", ...)
+      const conditions = chunk.map(id => 
+        `({Email ID} = "${String(id).replace(/"/g, '\\"')}")`
+      );
+      const formula = `OR(${conditions.join(",")})`;
+
+      try {
+        const res = await axios.get(url, {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { 
+            maxRecords: chunk.length, 
+            filterByFormula: formula 
+          },
+        });
+
+        // Mapear resultados por Email ID
+        (res.data.records || []).forEach(record => {
+          const emailId = record.fields?.["Email ID"];
+          if (emailId) {
+            resultMap.set(emailId, record);
+          }
+        });
+      } catch (e) {
+        // Si falla un chunk, continuar con los demás
+        console.warn("[mfs] Airtable: Error verificando chunk de Email IDs", {
+          chunkSize: chunk.length,
+          status: e?.response?.status,
+          message: e?.message?.substring(0, 100),
+        });
+      }
+    }
+
+    console.log(`[mfs] Airtable: Batch verification completada: ${resultMap.size} de ${emailIds.length} encontrados`);
+    return resultMap;
+  } catch (e) {
+    console.warn("[mfs] Airtable: Error en batch verification. Continuando sin verificar duplicados.", {
+      status: e?.response?.status,
+      message: e?.message?.substring(0, 100),
+    });
+    return new Map();
+  }
+}
+
 export async function airtableFindByEmailId(emailId) {
   try {
     const token = await getAirtableToken();

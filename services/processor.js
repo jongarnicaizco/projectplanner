@@ -34,7 +34,7 @@ function extractAllEmails(headerValue) {
 
 // Eliminadas todas las operaciones de storage para minimizar costes
 import { classifyIntent } from "./vertex.js";
-import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
+import { airtableFindByEmailId, airtableFindByEmailIdsBatch, createAirtableRecord } from "./airtable.js";
 import { sendBarterEmail, sendFreeCoverageEmail, sendRateLimitNotificationEmail } from "./email-sender.js";
 
 // Cache global del label ID - solo se obtiene una vez
@@ -143,6 +143,12 @@ export async function processMessageIds(gmail, ids) {
       resultados: ids.map(id => ({ id, skipped: true, reason: "rate_limit_exceeded" })),
     };
   }
+  
+  // OPTIMIZACIÓN: Verificar todos los Email IDs en batch ANTES de procesar
+  // Esto reduce de N llamadas a Airtable a solo 1-2 llamadas (dependiendo del tamaño)
+  console.log(`[mfs] Verificando ${ids.length} Email IDs en batch antes de procesar...`);
+  const existingRecordsMap = await airtableFindByEmailIdsBatch(ids);
+  console.log(`[mfs] Batch verification: ${existingRecordsMap.size} registros ya existen en Airtable`);
   
   const results = [];
 
@@ -307,9 +313,9 @@ export async function processMessageIds(gmail, ids) {
         const internalDate = msg.data.internalDate;
         const timestamp = internalDate ? new Date(parseInt(internalDate, 10)).toISOString() : new Date().toISOString();
 
-        // VERIFICAR SI YA EXISTE EN AIRTABLE ANTES DE LLAMAR A GEMINI (UNA SOLA VEZ)
-        // Esta verificación se reutiliza después para evitar llamada duplicada
-        const existingRecord = await airtableFindByEmailId(id);
+        // VERIFICAR SI YA EXISTE EN AIRTABLE (usando el resultado del batch check)
+        // Ya no hacemos llamada individual - usamos el resultado del batch check al inicio
+        const existingRecord = existingRecordsMap.get(id);
         if (existingRecord) {
           // Ya existe en Airtable - aplicar etiqueta processed y saltar
           try {
