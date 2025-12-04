@@ -155,20 +155,21 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
       console.error("[mfs] [history] Error obteniendo historyId de perfil:", e);
     }
 
-    // Fallback: escaneo INBOX (excluyendo mensajes ya procesados)
+    // Si no hay historyId, solo procesar mensajes de las últimas 24 horas (solo nuevos)
+    const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
     const list = await backoff(
       () =>
         gmail.users.messages.list({
           userId: "me",
-          q: "in:inbox -label:processed",
-          maxResults: 100,
+          q: `in:inbox -label:processed after:${oneDayAgo}`,
+          maxResults: 50,
         }),
       "messages.list.fallback"
     );
 
     const ids = (list.data.messages || []).map((m) => m.id);
     console.log(
-      "[mfs] [history] Fallback inicial: mensajes INBOX a procesar ahora:",
+      "[mfs] [history] Fallback inicial (últimas 24h): mensajes INBOX a procesar:",
       ids.length
     );
 
@@ -200,26 +201,9 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
           "[mfs] [history] Notificación con historyId <= al ya procesado:",
           { startHistoryId, notifHistoryId, diferencia: String(diferencia) }
         );
-        console.log("[mfs] [history] Aún así, haré fallback a INBOX para verificar si hay mensajes nuevos");
-        // Hacer fallback inmediato si la diferencia es <= 0
-        const list = await backoff(
-          () =>
-            gmail.users.messages.list({
-              userId: "me",
-              q: "in:inbox -label:processed",
-              maxResults: 50,
-            }),
-          "messages.list.fallback_negativo"
-        );
-        const fallbackIds = (list.data.messages || []).map((m) => m.id);
-        console.log("[mfs] [history] Fallback (diferencia <= 0): mensajes encontrados en INBOX:", fallbackIds.length);
-        
-        if (fallbackIds.length > 0) {
-          console.log("[mfs] [history] Usando mensajes de INBOX como fallback (historyId desincronizado)");
-          const newHistoryId = notifHistoryId || startHistoryId;
-          return { ids: fallbackIds, newHistoryId, usedFallback: true };
-        }
-        // Si no hay mensajes en el fallback, continuar con history.list por si acaso
+        // Si diferencia <= 0, no hay mensajes nuevos - retornar vacío
+        console.log("[mfs] [history] No hay mensajes nuevos (historyId <= ya procesado). Retornando vacío.");
+        return { ids: [], newHistoryId: notifHistoryId || startHistoryId, usedFallback: false };
       } else if (diferencia < 10n) {
         console.warn("[mfs] [history] Diferencia muy pequeña entre historyId. Podría haber desincronización. Continuando con consulta...");
       } else {
@@ -259,20 +243,23 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
 
       if (code === "404" || status === "FAILED_PRECONDITION") {
         console.error(
-          "[mfs] [history] startHistoryId demasiado antiguo. Hago fallback de INBOX."
+          "[mfs] [history] startHistoryId demasiado antiguo. Solo procesar mensajes de últimas 24h."
         );
 
+        // Solo procesar mensajes de las últimas 24 horas (solo nuevos)
+        const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
         const list = await backoff(
           () =>
             gmail.users.messages.list({
               userId: "me",
-              q: "in:inbox -label:processed",
-              maxResults: 100,
+              q: `in:inbox -label:processed after:${oneDayAgo}`,
+              maxResults: 50,
             }),
           "messages.list.fallback404"
         );
 
         const ids = (list.data.messages || []).map((m) => m.id);
+        console.log(`[mfs] [history] Fallback 404: ${ids.length} mensajes de últimas 24h`);
         return { ids, newHistoryId: notifHistoryId || null, usedFallback: true };
       }
       throw e;
@@ -303,33 +290,10 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
     idsEncontrados: Array.from(idsSet).slice(0, 10),
   });
   
-  // Si no encontramos mensajes en history.list, hacer fallback SIEMPRE para verificar
-  // Esto es importante porque a veces history.list no detecta mensajes aunque existan
+  // Si no encontramos mensajes en history.list, no hacer fallback
+  // Solo procesar mensajes que realmente son nuevos según historyId
   if (idsSet.size === 0) {
-    console.warn("[mfs] [history] No se encontraron mensajes en history.list. Haciendo fallback a INBOX para verificar...");
-    try {
-      const list = await backoff(
-        () =>
-          gmail.users.messages.list({
-            userId: "me",
-            q: "in:inbox -label:processed",
-            maxResults: 50,
-          }),
-        "messages.list.fallback_siempre"
-      );
-      const fallbackIds = (list.data.messages || []).map((m) => m.id);
-      console.log("[mfs] [history] Fallback (sin mensajes en history): mensajes encontrados en INBOX:", fallbackIds.length);
-      
-      if (fallbackIds.length > 0) {
-        console.warn("[mfs] [history] ADVERTENCIA: Desincronización detectada. Usando mensajes de INBOX como fallback.");
-        const newHistoryId = notifHistoryId || startHistoryId;
-        return { ids: fallbackIds, newHistoryId, usedFallback: true };
-      } else {
-        console.log("[mfs] [history] No hay mensajes nuevos en INBOX. Todo está sincronizado.");
-      }
-    } catch (e) {
-      console.warn("[mfs] [history] Error en fallback automático:", e?.message);
-    }
+    console.log("[mfs] [history] No hay mensajes nuevos según history.list. Todo está sincronizado.");
   }
 
   const newHistoryId = notifHistoryId || startHistoryId;

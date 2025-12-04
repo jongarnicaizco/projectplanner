@@ -288,7 +288,7 @@ export async function processMessageIds(gmail, ids) {
           senderName, senderFirstName, language, location,
         });
 
-        // Si se creó exitosamente: enviar emails y aplicar etiqueta
+        // Si se creó exitosamente: enviar emails y aplicar etiqueta processed
         if (airtableRecord?.id) {
           // Enviar emails en paralelo (no bloqueante)
           if (isBarter) {
@@ -298,8 +298,13 @@ export async function processMessageIds(gmail, ids) {
             sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject).catch(() => {});
           }
 
-          // Aplicar etiqueta processed (no bloqueante)
-          applyProcessedLabel(gmail, id).catch(() => {});
+          // APLICAR ETIQUETA PROCESSED SIEMPRE AL FINAL (bloqueante para asegurar que se aplica)
+          try {
+            await applyProcessedLabel(gmail, id);
+          } catch (labelError) {
+            // Si falla, loguear pero continuar
+            console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
+          }
           incrementRateLimit();
         }
 

@@ -172,14 +172,14 @@ app.post("/force-process", async (_req, res) => {
     try {
       const gmail = await getGmailClient();
       
-      // Obtener mensajes recientes de INBOX (últimas 2 horas) excluyendo procesados
-      const twoHoursAgo = Math.floor(Date.now() / 1000) - (2 * 60 * 60);
-      const query = `in:inbox -label:processed after:${twoHoursAgo}`;
+      // Obtener mensajes recientes de INBOX (últimas 24 horas) excluyendo procesados
+      const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
+      const query = `in:inbox -label:processed after:${oneDayAgo}`;
       
       const list = await gmail.users.messages.list({
         userId: "me",
         q: query,
-        maxResults: 100,
+        maxResults: 50,
       });
       
       const messageIds = (list.data.messages || []).map(m => m.id);
@@ -215,14 +215,14 @@ app.post("/force-process", async (_req, res) => {
       const gmailSender = await getGmailSenderClient();
       console.log("[mfs] /force-process → ✓ Cliente Gmail SENDER obtenido exitosamente");
       
-      const twoHoursAgo = Math.floor(Date.now() / 1000) - (2 * 60 * 60);
-      const query = `in:inbox -label:processed after:${twoHoursAgo}`;
+      const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
+      const query = `in:inbox -label:processed after:${oneDayAgo}`;
       console.log("[mfs] /force-process → Buscando mensajes con query:", query);
       
       const list = await gmailSender.users.messages.list({
         userId: "me",
         q: query,
-        maxResults: 100,
+        maxResults: 50,
       });
       
       const senderMessageIds = (list.data.messages || []).map(m => m.id);
