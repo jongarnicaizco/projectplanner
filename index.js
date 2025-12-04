@@ -119,6 +119,105 @@ app.post("/control/stop", async (_req, res) => {
 });
 
 /**
+ * Procesa mensajes no procesados en un intervalo de tiempo específico (en minutos)
+ * IMPORTANTE: Solo procesa mensajes SIN etiqueta "processed" y dentro del intervalo
+ */
+app.post("/control/process-interval", async (req, res) => {
+  try {
+    const { minutes } = req.body;
+    
+    if (!minutes || isNaN(minutes) || minutes <= 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "Debes proporcionar un número de minutos válido (mayor que 0)",
+      });
+    }
+    
+    const minutesNum = parseInt(minutes, 10);
+    const secondsAgo = minutesNum * 60;
+    const timestampAgo = Math.floor(Date.now() / 1000) - secondsAgo;
+    
+    console.log(`[mfs] /control/process-interval → Procesando mensajes de los últimos ${minutesNum} minutos`);
+    console.log(`[mfs] /control/process-interval → Timestamp desde: ${timestampAgo} (hace ${minutesNum} minutos)`);
+    
+    const allResults = [];
+    
+    // Procesar cuenta principal (media.manager@feverup.com)
+    try {
+      const gmail = await getGmailClient();
+      
+      // Query: INBOX, sin etiqueta processed, dentro del intervalo de tiempo
+      const MAX_MESSAGES_PER_EXECUTION = 100;
+      const query = `in:inbox -label:processed after:${timestampAgo}`;
+      
+      console.log(`[mfs] /control/process-interval → Query cuenta principal: ${query}`);
+      
+      const list = await gmail.users.messages.list({
+        userId: "me",
+        q: query,
+        maxResults: MAX_MESSAGES_PER_EXECUTION,
+      });
+      
+      const messageIds = (list.data.messages || []).map(m => m.id);
+      console.log(`[mfs] /control/process-interval → Encontrados ${messageIds.length} mensajes en INBOX (cuenta principal, últimos ${minutesNum} min)`);
+      
+      if (messageIds.length > 0) {
+        const { processMessageIds } = await import("./services/processor.js");
+        const results = await processMessageIds(gmail, messageIds);
+        allResults.push(...(results.resultados || []));
+      }
+    } catch (e) {
+      logErr("control/process-interval error (cuenta principal):", e);
+    }
+    
+    // Procesar cuenta SENDER (secretmedia@feverup.com)
+    try {
+      const gmailSender = await getGmailSenderClient();
+      
+      // Query: INBOX, sin etiqueta processed, dentro del intervalo de tiempo
+      const MAX_MESSAGES_PER_EXECUTION = 100;
+      const query = `in:inbox -label:processed after:${timestampAgo}`;
+      
+      console.log(`[mfs] /control/process-interval → Query cuenta SENDER: ${query}`);
+      
+      const list = await gmailSender.users.messages.list({
+        userId: "me",
+        q: query,
+        maxResults: MAX_MESSAGES_PER_EXECUTION,
+      });
+      
+      const senderMessageIds = (list.data.messages || []).map(m => m.id);
+      console.log(`[mfs] /control/process-interval → Encontrados ${senderMessageIds.length} mensajes en INBOX (cuenta SENDER, últimos ${minutesNum} min)`);
+      
+      if (senderMessageIds.length > 0) {
+        const { processMessageIds } = await import("./services/processor.js");
+        const senderResults = await processMessageIds(gmailSender, senderMessageIds);
+        allResults.push(...(senderResults.resultados || []));
+      }
+    } catch (e) {
+      logErr("control/process-interval error (cuenta SENDER):", e);
+    }
+    
+    const procesados = allResults.filter(r => r.airtableId && !r.skipped).length;
+    const fallidos = allResults.filter(r => !r.airtableId && !r.skipped).length;
+    const saltados = allResults.filter(r => r.skipped).length;
+    
+    res.json({
+      ok: true,
+      message: `Procesamiento completado: ${procesados} procesados, ${fallidos} fallidos, ${saltados} saltados`,
+      minutos: minutesNum,
+      totalEncontrados: allResults.length,
+      procesados,
+      fallidos,
+      saltados,
+    });
+  } catch (e) {
+    logErr("control/process-interval error:", e);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
  * Web app simple para controlar el servicio
  */
 app.get("/control", async (_req, res) => {
@@ -267,6 +366,66 @@ app.get("/control", async (_req, res) => {
       font-size: 12px;
       margin-top: 20px;
     }
+    .process-interval {
+      background: #f3f4f6;
+      border-radius: 10px;
+      padding: 20px;
+      margin-top: 20px;
+      text-align: left;
+    }
+    .process-interval h3 {
+      color: #333;
+      margin-bottom: 15px;
+      font-size: 16px;
+    }
+    .process-interval-input-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .process-interval input {
+      flex: 1;
+      padding: 12px;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 16px;
+      transition: border-color 0.3s;
+    }
+    .process-interval input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    .btn-process {
+      background: #667eea;
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      white-space: nowrap;
+    }
+    .btn-process:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+    }
+    .btn-process:active {
+      transform: translateY(0);
+    }
+    .btn-process:disabled {
+      background: #d1d5db;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .process-interval p {
+      color: #666;
+      font-size: 13px;
+      line-height: 1.6;
+      margin-top: 10px;
+    }
   </style>
 </head>
 <body>
@@ -285,6 +444,15 @@ app.get("/control", async (_req, res) => {
       <button class="btn-stop" id="btnStop" ${status.status === "stopped" ? "disabled" : ""}>
         ⏸ Detener
       </button>
+    </div>
+    
+    <div class="process-interval">
+      <h3>📧 Procesar Mensajes por Intervalo</h3>
+      <div class="process-interval-input-group">
+        <input type="number" id="minutesInput" placeholder="Minutos (ej: 60)" min="1" value="60">
+        <button class="btn-process" id="btnProcessInterval">Procesar</button>
+      </div>
+      <p>Procesa todos los mensajes NO procesados recibidos en los últimos X minutos. Solo se procesarán mensajes sin etiqueta "processed".</p>
     </div>
     
     <div class="loading" id="loading">Procesando...</div>
@@ -365,6 +533,50 @@ app.get("/control", async (_req, res) => {
     
     btnStart.addEventListener('click', startService);
     btnStop.addEventListener('click', stopService);
+    
+    // Procesar intervalo de tiempo
+    const btnProcessInterval = document.getElementById('btnProcessInterval');
+    const minutesInput = document.getElementById('minutesInput');
+    
+    async function processInterval() {
+      const minutes = parseInt(minutesInput.value, 10);
+      
+      if (!minutes || minutes <= 0) {
+        alert('❌ Por favor, introduce un número de minutos válido (mayor que 0)');
+        return;
+      }
+      
+      loading.classList.add('show');
+      btnProcessInterval.disabled = true;
+      
+      try {
+        const res = await fetch('/control/process-interval', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ minutes }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          alert(\`✅ \${data.message}\`);
+        } else {
+          alert('❌ Error: ' + (data.error || 'No se pudo procesar el intervalo'));
+        }
+      } catch (e) {
+        alert('❌ Error: ' + e.message);
+      } finally {
+        loading.classList.remove('show');
+        btnProcessInterval.disabled = false;
+      }
+    }
+    
+    btnProcessInterval.addEventListener('click', processInterval);
+    
+    // Permitir Enter en el input
+    minutesInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        processInterval();
+      }
+    });
     
     // Actualizar estado cada 5 segundos
     setInterval(updateStatus, 5000);
