@@ -258,11 +258,11 @@ export async function resetRateLimitState() {
 }
 
 /**
- * Lee el estado de activación del servicio desde GCS
- * Retorna true si está activo, false si está pausado, null si no existe (por defecto activo)
+ * Lee el estado del servicio (START/STOP)
+ * Retorna { status: "active" | "stopped", updatedAt: string } o { status: "active", updatedAt: null } si no existe
  */
 export async function readServiceStatus() {
-  if (!CFG.GCS_BUCKET) return true; // Por defecto activo si no hay GCS
+  if (!CFG.GCS_BUCKET) return { status: "active", updatedAt: null };
 
   try {
     const [buf] = await storage
@@ -270,28 +270,35 @@ export async function readServiceStatus() {
       .file("state/service_status.json")
       .download();
     const j = JSON.parse(buf.toString("utf8"));
-    return j.active !== false; // Por defecto true si no existe la propiedad
+    return {
+      status: j.status || "active",
+      updatedAt: j.updatedAt || null,
+    };
   } catch {
-    return true; // Por defecto activo si no existe el archivo
+    // Si no existe, el servicio está activo por defecto
+    return { status: "active", updatedAt: null };
   }
 }
 
 /**
- * Escribe el estado de activación del servicio en GCS
- * @param {boolean} active - true para activar, false para pausar
+ * Escribe el estado del servicio (START/STOP)
  */
-export async function writeServiceStatus(active) {
+export async function writeServiceStatus(status) {
   if (!CFG.GCS_BUCKET) return;
+
+  if (status !== "active" && status !== "stopped") {
+    throw new Error("Status debe ser 'active' o 'stopped'");
+  }
 
   await saveToGCS(
     "state/service_status.json",
     JSON.stringify({
-      active: active === true,
+      status,
       updatedAt: new Date().toISOString(),
     }, null, 2),
     "application/json"
   );
-  console.log(`[mfs] [control] ✓ Estado del servicio actualizado: ${active ? "ACTIVO" : "PAUSADO"}`);
+  console.log(`[mfs] [service] ✓ Estado del servicio actualizado a: ${status}`);
 }
 
 

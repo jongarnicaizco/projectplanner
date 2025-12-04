@@ -199,6 +199,14 @@ export async function processMessageIds(gmail, ids) {
       }
 
       const msgLabelIds = msg.data.labelIds || [];
+      
+      // NUNCA procesar mensajes con etiqueta "processed" - bajo ningún concepto
+      if (msgLabelIds.includes("processed")) {
+        console.log(`[mfs] Mensaje ${id} tiene etiqueta "processed". SALTANDO (nunca se procesan).`);
+        releaseProcessingLock(id);
+        continue;
+      }
+      
       if (!msgLabelIds.includes("INBOX")) {
         releaseProcessingLock(id);
         continue;

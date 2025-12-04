@@ -11,13 +11,13 @@ import { logErr } from "../utils/helpers.js";
  */
 export async function handlePubSub(req, res) {
   try {
-    // Verificar si el servicio está activo
-    const isActive = await readServiceStatus();
-    if (!isActive) {
-      console.log("[mfs] _pubsub: ⏸️ Servicio PAUSADO - Ignorando notificación");
+    // Verificar estado del servicio ANTES de procesar
+    const serviceStatus = await readServiceStatus();
+    if (serviceStatus.status === "stopped") {
+      console.log("[mfs] _pubsub: Servicio detenido. Ignorando notificación.");
       return res.status(204).send();
     }
-
+    
     const msg = req.body?.message;
     if (!msg?.data) {
       console.log("[mfs] _pubsub sin data → 204");

@@ -33,6 +33,351 @@ app.use(express.json());
 
 app.get("/healthz", (_req, res) => res.send("ok"));
 
+// ───────────────────────────── Control del Servicio (START/STOP) ─────────────────────────────
+
+/**
+ * Obtiene el estado actual del servicio
+ */
+app.get("/control/status", async (_req, res) => {
+  try {
+    const status = await readServiceStatus();
+    res.json({
+      ok: true,
+      status: status.status,
+      updatedAt: status.updatedAt,
+    });
+  } catch (e) {
+    logErr("control/status error:", e);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * Activa el servicio (START)
+ * Al activar, actualiza el historyId para solo procesar mensajes nuevos
+ */
+app.post("/control/start", async (_req, res) => {
+  try {
+    console.log("[mfs] /control/start → Activando servicio");
+    
+    // Actualizar historyId de ambas cuentas para solo procesar mensajes nuevos
+    try {
+      const gmail = await getGmailClient();
+      const prof = await gmail.users.getProfile({ userId: "me" });
+      const currentHistoryId = String(prof.data.historyId || "");
+      if (currentHistoryId) {
+        await writeHistoryState(currentHistoryId);
+        console.log("[mfs] /control/start → historyId principal actualizado a:", currentHistoryId);
+      }
+    } catch (e) {
+      console.warn("[mfs] /control/start → No se pudo actualizar historyId principal:", e.message);
+    }
+    
+    try {
+      const gmailSender = await getGmailSenderClient();
+      const profSender = await gmailSender.users.getProfile({ userId: "me" });
+      const currentHistoryIdSender = String(profSender.data.historyId || "");
+      if (currentHistoryIdSender) {
+        await writeHistoryStateSender(currentHistoryIdSender);
+        console.log("[mfs] /control/start → historyId SENDER actualizado a:", currentHistoryIdSender);
+      }
+    } catch (e) {
+      console.warn("[mfs] /control/start → No se pudo actualizar historyId SENDER:", e.message);
+    }
+    
+    // Activar servicio
+    await writeServiceStatus("active");
+    
+    res.json({
+      ok: true,
+      message: "Servicio activado. Solo se procesarán mensajes nuevos a partir de ahora.",
+      status: "active",
+    });
+  } catch (e) {
+    logErr("control/start error:", e);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * Detiene el servicio (STOP)
+ */
+app.post("/control/stop", async (_req, res) => {
+  try {
+    console.log("[mfs] /control/stop → Deteniendo servicio");
+    await writeServiceStatus("stopped");
+    
+    res.json({
+      ok: true,
+      message: "Servicio detenido. No se procesarán mensajes hasta que se reactive.",
+      status: "stopped",
+    });
+  } catch (e) {
+    logErr("control/stop error:", e);
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+/**
+ * Web app simple para controlar el servicio
+ */
+app.get("/control", async (_req, res) => {
+  try {
+    const status = await readServiceStatus();
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Control del Servicio - MFS Lead Generation</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      padding: 40px;
+      max-width: 500px;
+      width: 100%;
+      text-align: center;
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+    .status {
+      display: inline-block;
+      padding: 12px 24px;
+      border-radius: 50px;
+      font-weight: 600;
+      font-size: 16px;
+      margin-bottom: 30px;
+      transition: all 0.3s;
+    }
+    .status.active {
+      background: #10b981;
+      color: white;
+    }
+    .status.stopped {
+      background: #ef4444;
+      color: white;
+    }
+    .buttons {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+    button {
+      flex: 1;
+      padding: 15px 30px;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    .btn-start {
+      background: #10b981;
+      color: white;
+    }
+    .btn-start:hover {
+      background: #059669;
+    }
+    .btn-start:disabled {
+      background: #d1d5db;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .btn-stop {
+      background: #ef4444;
+      color: white;
+    }
+    .btn-stop:hover {
+      background: #dc2626;
+    }
+    .btn-stop:disabled {
+      background: #d1d5db;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .info {
+      background: #f3f4f6;
+      border-radius: 10px;
+      padding: 20px;
+      margin-top: 20px;
+      text-align: left;
+    }
+    .info h3 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+    .info p {
+      color: #666;
+      font-size: 13px;
+      line-height: 1.6;
+      margin-bottom: 8px;
+    }
+    .info ul {
+      color: #666;
+      font-size: 13px;
+      line-height: 1.6;
+      margin-left: 20px;
+    }
+    .loading {
+      display: none;
+      color: #666;
+      font-size: 14px;
+      margin-top: 10px;
+    }
+    .loading.show {
+      display: block;
+    }
+    .updated-at {
+      color: #999;
+      font-size: 12px;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 Control del Servicio</h1>
+    <p class="subtitle">MFS Lead Generation AI</p>
+    
+    <div class="status ${status.status}" id="status">
+      ${status.status === "active" ? "🟢 ACTIVO" : "🔴 DETENIDO"}
+    </div>
+    
+    <div class="buttons">
+      <button class="btn-start" id="btnStart" ${status.status === "active" ? "disabled" : ""}>
+        ▶ Iniciar
+      </button>
+      <button class="btn-stop" id="btnStop" ${status.status === "stopped" ? "disabled" : ""}>
+        ⏸ Detener
+      </button>
+    </div>
+    
+    <div class="loading" id="loading">Procesando...</div>
+    
+    <div class="info">
+      <h3>ℹ️ Información</h3>
+      <p><strong>Estado actual:</strong> ${status.status === "active" ? "El servicio está procesando mensajes nuevos" : "El servicio está detenido y no procesa mensajes"}</p>
+      <p><strong>Al iniciar:</strong> Se actualiza el historyId para solo procesar mensajes nuevos a partir de ahora. Los mensajes antiguos NO se procesarán.</p>
+      <p><strong>Al detener:</strong> El servicio deja de procesar mensajes completamente. Las notificaciones de Pub/Sub se ignoran.</p>
+      <p><strong>Importante:</strong> Los mensajes con etiqueta "processed" NUNCA se procesarán, sin importar el estado del servicio.</p>
+    </div>
+    
+    ${status.updatedAt ? `<div class="updated-at">Última actualización: ${new Date(status.updatedAt).toLocaleString("es-ES")}</div>` : ""}
+  </div>
+  
+  <script>
+    const btnStart = document.getElementById('btnStart');
+    const btnStop = document.getElementById('btnStop');
+    const statusEl = document.getElementById('status');
+    const loading = document.getElementById('loading');
+    
+    async function updateStatus() {
+      try {
+        const res = await fetch('/control/status');
+        const data = await res.json();
+        if (data.ok) {
+          statusEl.className = 'status ' + data.status;
+          statusEl.textContent = data.status === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
+          btnStart.disabled = data.status === 'active';
+          btnStop.disabled = data.status === 'stopped';
+        }
+      } catch (e) {
+        console.error('Error actualizando estado:', e);
+      }
+    }
+    
+    async function startService() {
+      loading.classList.add('show');
+      btnStart.disabled = true;
+      btnStop.disabled = true;
+      
+      try {
+        const res = await fetch('/control/start', { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          await updateStatus();
+          alert('✅ Servicio activado. Solo se procesarán mensajes nuevos.');
+        } else {
+          alert('❌ Error: ' + (data.error || 'No se pudo activar el servicio'));
+        }
+      } catch (e) {
+        alert('❌ Error: ' + e.message);
+      } finally {
+        loading.classList.remove('show');
+      }
+    }
+    
+    async function stopService() {
+      loading.classList.add('show');
+      btnStart.disabled = true;
+      btnStop.disabled = true;
+      
+      try {
+        const res = await fetch('/control/stop', { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          await updateStatus();
+          alert('⏸ Servicio detenido. No se procesarán mensajes hasta que se reactive.');
+        } else {
+          alert('❌ Error: ' + (data.error || 'No se pudo detener el servicio'));
+        }
+      } catch (e) {
+        alert('❌ Error: ' + e.message);
+      } finally {
+        loading.classList.remove('show');
+      }
+    }
+    
+    btnStart.addEventListener('click', startService);
+    btnStop.addEventListener('click', stopService);
+    
+    // Actualizar estado cada 5 segundos
+    setInterval(updateStatus, 5000);
+  </script>
+</body>
+</html>`;
+    res.send(html);
+  } catch (e) {
+    logErr("control web app error:", e);
+    res.status(500).send("Error cargando la página de control");
+  }
+});
+
 app.get("/vertex/status", (_req, res) => {
   res.json({
     active: true,
@@ -165,17 +510,16 @@ app.get("/diagnostico", async (_req, res) => {
 // Endpoint para forzar procesamiento directo de INBOX (ignora historyId)
 app.post("/force-process", async (_req, res) => {
   try {
-    // Verificar si el servicio está activo
-    const isActive = await readServiceStatus();
-    if (!isActive) {
-      console.log("[mfs] /force-process → ⏸️ Servicio PAUSADO - No se procesarán mensajes");
-      return res.status(200).json({
+    // Verificar estado del servicio ANTES de procesar
+    const serviceStatus = await readServiceStatus();
+    if (serviceStatus.status === "stopped") {
+      return res.status(403).json({
         ok: false,
-        message: "Servicio pausado. Activa el servicio primero para procesar mensajes.",
-        active: false,
+        error: "Servicio detenido. Activa el servicio primero usando /control/start",
+        status: "stopped",
       });
     }
-
+    
     console.log("[mfs] /force-process → Procesando mensajes directamente de INBOX");
     const allResults = [];
     
@@ -365,346 +709,6 @@ app.get("/metrics/auto-correct", async (req, res) => {
     logErr("[mfs] [metrics] Error en auto-correct:", error);
     res.status(500).json({ error: error.message });
   }
-});
-
-// Endpoints de control del servicio (start/stop)
-app.get("/control/status", async (_req, res) => {
-  try {
-    const isActive = await readServiceStatus();
-    res.json({
-      active: isActive,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    logErr("[mfs] [control] Error leyendo estado:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post("/control/stop", async (_req, res) => {
-  try {
-    await writeServiceStatus(false);
-    console.log("[mfs] [control] ⏸️ SERVICIO PAUSADO - No se procesarán mensajes nuevos");
-    res.json({
-      ok: true,
-      active: false,
-      message: "Servicio pausado. No se procesarán mensajes nuevos.",
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    logErr("[mfs] [control] Error pausando servicio:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post("/control/start", async (_req, res) => {
-  try {
-    // Activar servicio
-    await writeServiceStatus(true);
-    
-    // Actualizar historyId para ambas cuentas para que solo procese mensajes nuevos desde ahora
-    const results = {};
-    
-    // Actualizar historyId cuenta principal
-    try {
-      const gmail = await getGmailClient();
-      const prof = await gmail.users.getProfile({ userId: "me" });
-      const currentHistoryId = String(prof.data.historyId || "");
-      if (currentHistoryId) {
-        await writeHistoryState(currentHistoryId);
-        console.log("[mfs] [control] ✓ historyId actualizado (cuenta principal):", currentHistoryId);
-        results.principal = { historyId: currentHistoryId };
-      }
-    } catch (e) {
-      logErr("[mfs] [control] Error actualizando historyId (cuenta principal):", e);
-      results.principal = { error: e?.message };
-    }
-    
-    // Actualizar historyId cuenta SENDER
-    try {
-      const gmailSender = await getGmailSenderClient();
-      const profSender = await gmailSender.users.getProfile({ userId: "me" });
-      const currentHistoryIdSender = String(profSender.data.historyId || "");
-      if (currentHistoryIdSender) {
-        await writeHistoryStateSender(currentHistoryIdSender);
-        console.log("[mfs] [control] ✓ historyId actualizado (cuenta SENDER):", currentHistoryIdSender);
-        results.sender = { historyId: currentHistoryIdSender };
-      }
-    } catch (e) {
-      logErr("[mfs] [control] Error actualizando historyId (cuenta SENDER):", e);
-      results.sender = { error: e?.message };
-    }
-    
-    console.log("[mfs] [control] ▶️ SERVICIO ACTIVADO - Solo se procesarán mensajes nuevos desde ahora");
-    res.json({
-      ok: true,
-      active: true,
-      message: "Servicio activado. Solo se procesarán mensajes nuevos desde ahora.",
-      timestamp: new Date().toISOString(),
-      historyIds: results,
-    });
-  } catch (error) {
-    logErr("[mfs] [control] Error activando servicio:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Página HTML simple para controlar el servicio
-app.get("/control", (_req, res) => {
-  res.send(`
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Control de Servicio - MFS Lead Generation</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
-    }
-    .container {
-      background: white;
-      border-radius: 20px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-      padding: 40px;
-      max-width: 500px;
-      width: 100%;
-      text-align: center;
-    }
-    h1 {
-      color: #333;
-      margin-bottom: 10px;
-      font-size: 28px;
-    }
-    .subtitle {
-      color: #666;
-      margin-bottom: 30px;
-      font-size: 14px;
-    }
-    .status {
-      padding: 20px;
-      border-radius: 12px;
-      margin-bottom: 30px;
-      font-size: 18px;
-      font-weight: 600;
-      transition: all 0.3s;
-    }
-    .status.active {
-      background: #d4edda;
-      color: #155724;
-      border: 2px solid #c3e6cb;
-    }
-    .status.inactive {
-      background: #f8d7da;
-      color: #721c24;
-      border: 2px solid #f5c6cb;
-    }
-    .status.loading {
-      background: #fff3cd;
-      color: #856404;
-      border: 2px solid #ffeaa7;
-    }
-    .buttons {
-      display: flex;
-      gap: 15px;
-      flex-direction: column;
-    }
-    button {
-      padding: 15px 30px;
-      border: none;
-      border-radius: 10px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.3s;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-    button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-    }
-    button:active {
-      transform: translateY(0);
-    }
-    .btn-start {
-      background: #28a745;
-      color: white;
-    }
-    .btn-start:hover {
-      background: #218838;
-    }
-    .btn-stop {
-      background: #dc3545;
-      color: white;
-    }
-    .btn-stop:hover {
-      background: #c82333;
-    }
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none;
-    }
-    .info {
-      margin-top: 30px;
-      padding: 15px;
-      background: #f8f9fa;
-      border-radius: 8px;
-      font-size: 12px;
-      color: #666;
-      line-height: 1.6;
-    }
-    .timestamp {
-      margin-top: 15px;
-      font-size: 11px;
-      color: #999;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>🚀 Control de Servicio</h1>
-    <p class="subtitle">MFS Lead Generation AI</p>
-    
-    <div id="status" class="status loading">Cargando estado...</div>
-    
-    <div class="buttons">
-      <button id="btnStart" class="btn-start" onclick="startService()">▶️ Activar</button>
-      <button id="btnStop" class="btn-stop" onclick="stopService()">⏸️ Pausar</button>
-    </div>
-    
-    <div class="info">
-      <strong>ℹ️ Información:</strong><br>
-      • Al <strong>pausar</strong>: El servicio dejará de procesar mensajes nuevos.<br>
-      • Al <strong>activar</strong>: Solo se procesarán mensajes nuevos que lleguen después de la activación.<br>
-      • Los mensajes antiguos no se procesarán al reactivar.
-    </div>
-    
-    <div id="timestamp" class="timestamp"></div>
-  </div>
-
-  <script>
-    let currentStatus = null;
-
-    async function loadStatus() {
-      try {
-        const res = await fetch('/control/status');
-        const data = await res.json();
-        currentStatus = data.active;
-        updateUI();
-      } catch (error) {
-        console.error('Error cargando estado:', error);
-        document.getElementById('status').textContent = 'Error cargando estado';
-        document.getElementById('status').className = 'status inactive';
-      }
-    }
-
-    function updateUI() {
-      const statusEl = document.getElementById('status');
-      const btnStart = document.getElementById('btnStart');
-      const btnStop = document.getElementById('btnStop');
-      const timestampEl = document.getElementById('timestamp');
-
-      if (currentStatus === null) {
-        statusEl.textContent = 'Cargando estado...';
-        statusEl.className = 'status loading';
-        btnStart.disabled = true;
-        btnStop.disabled = true;
-        return;
-      }
-
-      if (currentStatus) {
-        statusEl.textContent = '✅ SERVICIO ACTIVO';
-        statusEl.className = 'status active';
-        btnStart.disabled = true;
-        btnStop.disabled = false;
-      } else {
-        statusEl.textContent = '⏸️ SERVICIO PAUSADO';
-        statusEl.className = 'status inactive';
-        btnStart.disabled = false;
-        btnStop.disabled = true;
-      }
-
-      timestampEl.textContent = 'Última actualización: ' + new Date().toLocaleString('es-ES');
-    }
-
-    async function startService() {
-      if (!confirm('¿Activar el servicio? Solo se procesarán mensajes nuevos desde ahora.')) {
-        return;
-      }
-
-      const btnStart = document.getElementById('btnStart');
-      btnStart.disabled = true;
-      btnStart.textContent = 'Activando...';
-
-      try {
-        const res = await fetch('/control/start', { method: 'POST' });
-        const data = await res.json();
-        
-        if (data.ok) {
-          currentStatus = true;
-          updateUI();
-          alert('✅ Servicio activado correctamente. Solo se procesarán mensajes nuevos.');
-        } else {
-          alert('Error: ' + (data.error || 'No se pudo activar el servicio'));
-          loadStatus();
-        }
-      } catch (error) {
-        console.error('Error activando servicio:', error);
-        alert('Error al activar el servicio: ' + error.message);
-        loadStatus();
-      }
-    }
-
-    async function stopService() {
-      if (!confirm('¿Pausar el servicio? No se procesarán mensajes nuevos hasta que lo reactives.')) {
-        return;
-      }
-
-      const btnStop = document.getElementById('btnStop');
-      btnStop.disabled = true;
-      btnStop.textContent = 'Pausando...';
-
-      try {
-        const res = await fetch('/control/stop', { method: 'POST' });
-        const data = await res.json();
-        
-        if (data.ok) {
-          currentStatus = false;
-          updateUI();
-          alert('⏸️ Servicio pausado. No se procesarán mensajes nuevos.');
-        } else {
-          alert('Error: ' + (data.error || 'No se pudo pausar el servicio'));
-          loadStatus();
-        }
-      } catch (error) {
-        console.error('Error pausando servicio:', error);
-        alert('Error al pausar el servicio: ' + error.message);
-        loadStatus();
-      }
-    }
-
-    // Cargar estado al iniciar
-    loadStatus();
-    
-    // Actualizar estado cada 5 segundos
-    setInterval(loadStatus, 5000);
-  </script>
-</body>
-</html>
-  `);
 });
 
 /* ───────── Registro handler (Functions) + Express puro ───────── */
