@@ -387,6 +387,12 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           // Si el correo NO va TO secretmedia@feverup.com, saltarlo (es un correo enviado a otros)
           if (!toEmailLower.includes("secretmedia@feverup.com")) {
             console.log(`[mfs] ⏭️ Saltando correo FROM secretmedia@feverup.com que NO va TO secretmedia@feverup.com - ID: ${id}`);
+            // Aplicar etiqueta processed para evitar reprocesar
+            try {
+              await applyProcessedLabel(gmail, id);
+            } catch (labelError) {
+              console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
+            }
             releaseProcessingLock(id);
             continue;
           }
@@ -394,15 +400,33 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           console.log(`[mfs] ✓ Procesando correo FROM secretmedia@feverup.com TO secretmedia@feverup.com (reply/forward) - ID: ${id}`);
         }
         if (subject && subject.toLowerCase().trim() === "test") {
+          // Aplicar etiqueta processed para evitar reprocesar
+          try {
+            await applyProcessedLabel(gmail, id);
+          } catch (labelError) {
+            console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
+          }
           releaseProcessingLock(id);
           continue;
         }
         if (from && from.includes("jongarnicaizco@gmail.com")) {
+          // Aplicar etiqueta processed para evitar reprocesar
+          try {
+            await applyProcessedLabel(gmail, id);
+          } catch (labelError) {
+            console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
+          }
           releaseProcessingLock(id);
           continue;
         }
         if (!from || !to) {
           console.log(`[mfs] ⏭️ Saltando correo sin from o to válido - ID: ${id}, From: ${from || "empty"}, To: ${to || "empty"}`);
+          // Aplicar etiqueta processed para evitar reprocesar
+          try {
+            await applyProcessedLabel(gmail, id);
+          } catch (labelError) {
+            console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
+          }
           releaseProcessingLock(id);
           continue;
         }
