@@ -41,6 +41,7 @@ import {
   checkLockAge,
   readRateLimitState,
   writeRateLimitState,
+  resetRateLimitState,
 } from "./storage.js";
 import { classifyIntent, generateBodySummary } from "./vertex.js";
 import { airtableFindByEmailId, createAirtableRecord } from "./airtable.js";
@@ -377,48 +378,56 @@ export async function processMessageIds(gmail, ids) {
     console.error("[mfs] Límite máximo:", rateLimitCheck.limit);
     console.error("[mfs] Ventana de tiempo:", rateLimitCheck.windowMinutes, "minutos");
     console.error("[mfs] ========================================");
-    console.error("[mfs] DETENIENDO PROCESAMIENTO PARA EVITAR BUCLES");
-    console.error("[mfs] ========================================");
     
-    // Enviar email de notificación SOLO si aún no se ha enviado en esta ventana
-    if (rateLimitCheck.shouldSendNotification) {
-      try {
-        console.log("[mfs] [rateLimit] Enviando email de notificación (primera vez en esta ventana)...");
-        const notificationResult = await sendRateLimitNotificationEmail(
-          rateLimitCheck.currentCount,
-          rateLimitCheck.limit,
-          rateLimitCheck.windowMinutes
-        );
-        
-        if (notificationResult.success) {
-          console.log("[mfs] [rateLimit] ✓ Email de notificación enviado exitosamente");
-        } else {
-          console.error("[mfs] [rateLimit] ✗ Error enviando email de notificación:", notificationResult.error);
-        }
-      } catch (notificationError) {
-        console.error("[mfs] [rateLimit] ✗ Excepción enviando email de notificación:", notificationError?.message || notificationError);
-      }
+    // Si han pasado más de 30 minutos desde la última ventana, resetear automáticamente
+    const windowAgeMinutes = Math.floor((new Date().getTime() - new Date(rateLimitCheck.windowStart || new Date()).getTime()) / 60000);
+    if (windowAgeMinutes >= 30) {
+      console.log("[mfs] [rateLimit] Ventana de tiempo expirada, reseteando automáticamente...");
+      await resetRateLimitState();
+      console.log("[mfs] [rateLimit] ✓ Rate limit reseteado, continuando con procesamiento");
+      // Continuar con el procesamiento después del reset
     } else {
-      console.log("[mfs] [rateLimit] Notificación ya enviada en esta ventana, omitiendo para evitar bucles");
-    }
+      console.error("[mfs] DETENIENDO PROCESAMIENTO PARA EVITAR BUCLES");
+      console.error("[mfs] ========================================");
     
-    // Retornar resultados vacíos indicando que se detuvo por rate limit
-    return {
-      exitosos: 0,
-      fallidos: 0,
-      saltados: ids.length,
-      rateLimitExceeded: true,
-      rateLimitInfo: {
-        currentCount: rateLimitCheck.currentCount,
-        limit: rateLimitCheck.limit,
-        windowMinutes: rateLimitCheck.windowMinutes,
-      },
-      resultados: ids.map(id => ({
-        id,
-        skipped: true,
-        reason: "rate_limit_exceeded",
-      })),
-    };
+        try {
+          console.log("[mfs] [rateLimit] Enviando email de notificación (primera vez en esta ventana)...");
+          const notificationResult = await sendRateLimitNotificationEmail(
+            rateLimitCheck.currentCount,
+            rateLimitCheck.limit,
+            rateLimitCheck.windowMinutes
+          );
+          
+          if (notificationResult.success) {
+            console.log("[mfs] [rateLimit] ✓ Email de notificación enviado exitosamente");
+          } else {
+            console.error("[mfs] [rateLimit] ✗ Error enviando email de notificación:", notificationResult.error);
+          }
+        } catch (notificationError) {
+          console.error("[mfs] [rateLimit] ✗ Excepción enviando email de notificación:", notificationError?.message || notificationError);
+        }
+      } else {
+        console.log("[mfs] [rateLimit] Notificación ya enviada en esta ventana, omitiendo para evitar bucles");
+      }
+      
+      // Retornar resultados vacíos indicando que se detuvo por rate limit
+      return {
+        exitosos: 0,
+        fallidos: 0,
+        saltados: ids.length,
+        rateLimitExceeded: true,
+        rateLimitInfo: {
+          currentCount: rateLimitCheck.currentCount,
+          limit: rateLimitCheck.limit,
+          windowMinutes: rateLimitCheck.windowMinutes,
+        },
+        resultados: ids.map(id => ({
+          id,
+          skipped: true,
+          reason: "rate_limit_exceeded",
+        })),
+      };
+    }
   }
   
   console.log("[mfs] [rateLimit] ✓ Límite OK, continuando con procesamiento");

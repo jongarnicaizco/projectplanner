@@ -235,4 +235,26 @@ export async function writeRateLimitState(count, windowStart, notificationSent =
   );
 }
 
+/**
+ * Resetea el estado del rate limiting (fuerza reset)
+ */
+export async function resetRateLimitState() {
+  if (!CFG.GCS_BUCKET) return;
+
+  const now = new Date();
+  await saveToGCS(
+    "state/rate_limit.json",
+    JSON.stringify({
+      count: 0,
+      windowStart: now.toISOString(),
+      notificationSent: false,
+      updatedAt: now.toISOString(),
+      resetAt: now.toISOString(),
+      resetReason: "manual_reset",
+    }, null, 2),
+    "application/json"
+  );
+  console.log("[mfs] [rateLimit] ✓ Estado de rate limiting reseteado manualmente");
+}
+
 
