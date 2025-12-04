@@ -143,9 +143,20 @@ async function getOrCreateProcessedLabel(gmail) {
  * Aplica la etiqueta "processed" a un mensaje
  */
 async function applyProcessedLabel(gmail, messageId) {
+  console.log("[mfs] [applyProcessedLabel] Iniciando aplicación de etiqueta 'processed'");
+  console.log("[mfs] [applyProcessedLabel] Message ID:", messageId);
+  console.log("[mfs] [applyProcessedLabel] Cliente Gmail disponible:", gmail ? "sí" : "no");
+  
+  if (!gmail) {
+    throw new Error("Cliente Gmail no disponible para aplicar etiqueta");
+  }
+  
   try {
+    console.log("[mfs] [applyProcessedLabel] Obteniendo o creando etiqueta 'processed'...");
     const labelId = await getOrCreateProcessedLabel(gmail);
+    console.log("[mfs] [applyProcessedLabel] Label ID obtenido:", labelId);
     
+    console.log("[mfs] [applyProcessedLabel] Aplicando etiqueta usando Gmail API...");
     await backoff(
       () => gmail.users.messages.modify({
         userId: "me",
@@ -157,10 +168,19 @@ async function applyProcessedLabel(gmail, messageId) {
       "messages.modify.addLabel"
     );
     
-    console.log("[mfs] ✓ Etiqueta 'processed' aplicada al email:", messageId);
+    console.log("[mfs] ✓✓✓ Etiqueta 'processed' aplicada exitosamente al email:", messageId);
   } catch (error) {
+    console.error("[mfs] [applyProcessedLabel] Error aplicando etiqueta con ID:", error?.message || error);
+    console.error("[mfs] [applyProcessedLabel] Error code:", error?.code || error?.response?.status || "unknown");
+    console.error("[mfs] [applyProcessedLabel] Error details:", JSON.stringify({
+      error: error?.response?.data?.error || error?.error || "unknown",
+      errorDescription: error?.response?.data?.error_description || error?.error_description || "unknown",
+      status: error?.response?.status || error?.status || "unknown",
+    }, null, 2));
+    
     // Si falla con el ID, intentar con el nombre directamente
     if (error?.response?.status === 400 || error?.code === 400) {
+      console.log("[mfs] [applyProcessedLabel] Intentando aplicar etiqueta usando nombre 'processed' directamente...");
       try {
         await backoff(
           () => gmail.users.messages.modify({
@@ -172,8 +192,9 @@ async function applyProcessedLabel(gmail, messageId) {
           }),
           "messages.modify.addLabel.name"
         );
-        console.log("[mfs] ✓ Etiqueta 'processed' aplicada al email (usando nombre):", messageId);
+        console.log("[mfs] ✓✓✓ Etiqueta 'processed' aplicada al email (usando nombre):", messageId);
       } catch (error2) {
+        console.error("[mfs] [applyProcessedLabel] Error también al usar nombre:", error2?.message || error2);
         throw error2;
       }
     } else {
