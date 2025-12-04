@@ -264,8 +264,8 @@ export async function processMessageIds(gmail, ids) {
       const msgLabelIds = msg.data.labelIds || [];
       
       // NUNCA procesar mensajes con etiqueta "processed" - bajo ningún concepto
+      // Verificar ANTES de hacer cualquier procesamiento para evitar bucles
       if (msgLabelIds.includes("processed")) {
-        console.log(`[mfs] Mensaje ${id} tiene etiqueta "processed". SALTANDO (nunca se procesan).`);
         releaseProcessingLock(id);
         continue;
       }
@@ -291,11 +291,12 @@ export async function processMessageIds(gmail, ids) {
         const subject = findHeader("Subject") || "";
         const body = bodyFromMessage(msg.data);
 
-        // Extraer emails (simplificado)
+        // Extraer emails (sin logs para reducir carga operacional)
         const from = String(extractFromEmail(fromHeader, cc, bcc, replyTo) || "").trim().toLowerCase();
         let to = String(extractToEmail(toHeader || "", cc || "", bcc || "", replyTo || "", "") || "").trim().toLowerCase();
         
-        // FILTROS RÁPIDOS: saltar antes de procesar más
+        // FILTROS RÁPIDOS: saltar correos FROM secretmedia@feverup.com (correos antiguos/enviados)
+        // Estos NO deben procesarse nunca
         if (from && from.includes("secretmedia@feverup.com")) {
           releaseProcessingLock(id);
           continue;
