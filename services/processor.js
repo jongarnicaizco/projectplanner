@@ -34,7 +34,7 @@ function extractAllEmails(headerValue) {
 
 // Eliminadas todas las operaciones de storage para minimizar costes
 import { classifyIntent } from "./vertex.js";
-import { createAirtableRecord } from "./airtable.js";
+import { createAirtableRecord, airtableFindByEmailId } from "./airtable.js";
 import { sendBarterEmail, sendFreeCoverageEmail, sendRateLimitNotificationEmail } from "./email-sender.js";
 
 // Función para resetear el contador de rate limit (llamada desde index.js cuando se activa el servicio)
@@ -388,8 +388,36 @@ export async function processMessageIds(gmail, ids) {
 
         const brandName = senderName || from.split("@")[0] || subject.split(" ")[0] || "Client";
 
-        // Crear registro en Airtable directamente (sin verificación previa)
-        // Si ya existe, createAirtableRecord manejará el error y no se duplicará
+        // VERIFICACIÓN DE DUPLICADOS: Verificar ANTES de crear para evitar duplicados
+        // Procesamiento SECUENCIAL: un mensaje a la vez, completamente procesado antes del siguiente
+        let existingRecord = null;
+        try {
+          existingRecord = await airtableFindByEmailId(id);
+        } catch (checkError) {
+          // Si falla la verificación, continuar (mejor intentar crear que perder el mensaje)
+          console.warn(`[mfs] No se pudo verificar duplicado para ${id}, continuando:`, checkError?.message);
+        }
+
+        // Si ya existe, saltar y aplicar etiqueta processed
+        if (existingRecord?.id) {
+          console.log(`[mfs] Registro ya existe en Airtable para ${id}, saltando y aplicando etiqueta processed`);
+          try {
+            await applyProcessedLabel(gmail, id);
+          } catch (labelError) {
+            console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
+          }
+          results.push({
+            id,
+            airtableId: existingRecord.id,
+            intent: finalIntent,
+            confidence: finalConfidence,
+            skipped: true,
+            reason: "already_exists",
+          });
+          continue; // Continuar con el siguiente mensaje (SECUENCIAL)
+        }
+
+        // Crear registro en Airtable (solo si no existe)
         let airtableRecord;
         try {
           airtableRecord = await createAirtableRecord({
@@ -400,7 +428,30 @@ export async function processMessageIds(gmail, ids) {
             senderName, senderFirstName, language, location,
           });
         } catch (airtableError) {
-          // Si falla Airtable, loguear pero continuar - aplicar etiqueta processed para evitar bucles
+          // Si falla Airtable, verificar si es porque ya existe (duplicado)
+          const errorData = airtableError?.response?.data;
+          const errorStatus = airtableError?.response?.status;
+          
+          if (errorStatus === 422 || (errorData?.error?.message && errorData.error.message.includes("duplicate"))) {
+            // Es un duplicado - aplicar etiqueta processed y continuar
+            console.log(`[mfs] Registro duplicado detectado para ${id} (error 422), aplicando etiqueta processed`);
+            try {
+              await applyProcessedLabel(gmail, id);
+            } catch (labelError) {
+              console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
+            }
+            results.push({
+              id,
+              airtableId: null,
+              intent: finalIntent,
+              confidence: finalConfidence,
+              skipped: true,
+              reason: "duplicate_detected",
+            });
+            continue; // Continuar con el siguiente mensaje (SECUENCIAL)
+          }
+          
+          // Si falla Airtable por otro motivo, loguear pero continuar - aplicar etiqueta processed para evitar bucles
           console.error(`[mfs] ✗ Error creando registro en Airtable para ${id}:`, airtableError?.message || airtableError);
           // Aplicar etiqueta processed para evitar que se quede pillado en bucle
           try {
@@ -417,7 +468,7 @@ export async function processMessageIds(gmail, ids) {
             skipped: false,
             error: "airtable_error",
           });
-          continue; // Continuar con el siguiente mensaje
+          continue; // Continuar con el siguiente mensaje (SECUENCIAL)
         }
 
         // Si se creó exitosamente o ya existía (duplicado): enviar emails y aplicar etiqueta processed
@@ -434,13 +485,22 @@ export async function processMessageIds(gmail, ids) {
             break; // Salir del loop
           }
 
-          // Enviar emails en paralelo (no bloqueante) - solo si se creó nuevo registro
+          // Enviar emails SECUENCIALMENTE (bloqueante) - solo si se creó nuevo registro
+          // Procesamiento secuencial: esperar a que se envíe antes de continuar
           if (airtableRecord?.id && !airtableRecord?.duplicate) {
             if (isBarter) {
-              sendBarterEmail(id, senderFirstName || "Client", brandName, subject).catch(() => {});
+              try {
+                await sendBarterEmail(id, senderFirstName || "Client", brandName, subject);
+              } catch (emailError) {
+                console.warn(`[mfs] Error enviando email barter para ${id}:`, emailError?.message);
+              }
             }
             if (isFreeCoverage) {
-              sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject).catch(() => {});
+              try {
+                await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject);
+              } catch (emailError) {
+                console.warn(`[mfs] Error enviando email free coverage para ${id}:`, emailError?.message);
+              }
             }
           }
 
