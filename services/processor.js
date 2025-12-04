@@ -37,47 +37,66 @@ import { classifyIntent } from "./vertex.js";
 import { airtableFindByEmailId, airtableFindByEmailIdsBatch, createAirtableRecord } from "./airtable.js";
 import { sendBarterEmail, sendFreeCoverageEmail, sendRateLimitNotificationEmail } from "./email-sender.js";
 
-// Cache global del label ID - solo se obtiene una vez
-let processedLabelIdCache = null;
-let labelIdFetchAttempted = false;
+// Cache del label ID por cuenta (usando el objeto gmail como clave)
+// Esto permite que cada cuenta (principal y SENDER) tenga su propio cache
+const processedLabelIdCache = new WeakMap();
 
 async function getProcessedLabelId(gmail) {
-  if (processedLabelIdCache) return processedLabelIdCache;
-  if (labelIdFetchAttempted) return "processed"; // Fallback si ya intentamos
+  // Verificar si ya tenemos el label ID cacheado para esta cuenta
+  if (processedLabelIdCache.has(gmail)) {
+    return processedLabelIdCache.get(gmail);
+  }
   
-  labelIdFetchAttempted = true;
   try {
     const labelsResponse = await gmail.users.labels.list({ userId: "me" });
     const labels = labelsResponse.data.labels || [];
     const processedLabel = labels.find(label => label.name?.toLowerCase() === "processed");
     if (processedLabel) {
-      processedLabelIdCache = processedLabel.id;
-      return processedLabelIdCache;
+      const labelId = processedLabel.id;
+      processedLabelIdCache.set(gmail, labelId);
+      console.log(`[mfs] Label "processed" encontrado con ID: ${labelId}`);
+      return labelId;
     }
-    return "processed"; // Fallback
+    // Si no se encuentra, usar el nombre como fallback
+    console.warn(`[mfs] Label "processed" no encontrado, usando nombre como fallback`);
+    processedLabelIdCache.set(gmail, "processed");
+    return "processed";
   } catch (error) {
-    return "processed"; // Fallback
+    console.error(`[mfs] Error obteniendo label ID:`, error?.message || error);
+    // Fallback al nombre del label
+    processedLabelIdCache.set(gmail, "processed");
+    return "processed";
   }
 }
 
 async function checkProcessedLabel(gmail, labelIds) {
   if (!labelIds || labelIds.length === 0) return false;
-  // Verificar directamente en labelIds sin llamar a API
+  // Verificar directamente en labelIds
   if (labelIds.includes("processed")) return true;
-  if (processedLabelIdCache && labelIds.includes(processedLabelIdCache)) return true;
+  // También verificar si el label ID cacheado está en la lista
+  const cachedLabelId = processedLabelIdCache.get(gmail);
+  if (cachedLabelId && labelIds.includes(cachedLabelId)) return true;
   return false;
 }
 
 async function applyProcessedLabel(gmail, messageId) {
   try {
     const labelId = await getProcessedLabelId(gmail);
+    console.log(`[mfs] Aplicando etiqueta "processed" (ID: ${labelId}) al mensaje ${messageId}`);
     await gmail.users.messages.modify({
       userId: "me",
       id: messageId,
       requestBody: { addLabelIds: [labelId] },
     });
+    console.log(`[mfs] ✓ Etiqueta "processed" aplicada exitosamente al mensaje ${messageId}`);
   } catch (error) {
-    // Silently fail - no retries
+    // Loggear el error para diagnóstico
+    console.error(`[mfs] ✗ Error aplicando etiqueta processed a ${messageId}:`, {
+      message: error?.message || error,
+      code: error?.code || error?.response?.status,
+      error: error?.response?.data?.error || error?.error,
+    });
+    // No relanzar el error - continuar procesamiento
   }
 }
 
