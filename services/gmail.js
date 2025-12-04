@@ -236,15 +236,58 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
       const status = String(e?.response?.data?.error?.status || "");
 
       if (code === "404" || status === "FAILED_PRECONDITION") {
-        console.error(
-          "[mfs] [history] startHistoryId demasiado antiguo. NO procesar mensajes antiguos - retornar vacío."
+        console.warn(
+          "[mfs] [history] startHistoryId demasiado antiguo. Intentando fallback para mensajes nuevos..."
         );
 
-        // CRÍTICO: Si el historyId es demasiado antiguo, NO procesar nada
-        // Esto evita procesar mensajes antiguos cuando se reactiva el servicio
-        // Solo se procesarán mensajes nuevos que lleguen después de actualizar el historyId
-        console.log("[mfs] [history] HistoryId demasiado antiguo. Retornando vacío para evitar procesar mensajes antiguos.");
-        return { ids: [], newHistoryId: notifHistoryId || null, usedFallback: false };
+        // Si tenemos una notificación válida con historyId más reciente, intentar obtener mensajes nuevos
+        // usando messages.list con filtro de tiempo reciente (últimas 24 horas)
+        if (notifHistoryId) {
+          try {
+            console.log("[mfs] [history] Usando fallback: buscando mensajes nuevos en INBOX (últimas 24 horas, sin processed)");
+            
+            // Obtener mensajes de las últimas 24 horas que no tengan etiqueta "processed"
+            const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
+            const query = `in:inbox -label:processed after:${oneDayAgo}`;
+            
+            const listResp = await backoff(
+              () =>
+                gmail.users.messages.list({
+                  userId: "me",
+                  q: query,
+                  maxResults: MAX_MESSAGES_PER_EXECUTION,
+                }),
+              "messages.list.fallback"
+            );
+            
+            const messageIds = (listResp.data.messages || []).map(m => m.id);
+            console.log(`[mfs] [history] Fallback: encontrados ${messageIds.length} mensajes nuevos en INBOX (últimas 24h, sin processed)`);
+            
+            // Actualizar historyId al de la notificación para sincronizar
+            if (useSenderState) {
+              await writeHistoryStateSender(String(notifHistoryId));
+            } else {
+              await writeHistoryState(String(notifHistoryId));
+            }
+            
+            return { ids: messageIds, newHistoryId: notifHistoryId, usedFallback: true };
+          } catch (fallbackError) {
+            console.error("[mfs] [history] Error en fallback para mensajes nuevos:", fallbackError?.message);
+            // Si falla el fallback, actualizar historyId y retornar vacío
+            if (notifHistoryId) {
+              if (useSenderState) {
+                await writeHistoryStateSender(String(notifHistoryId));
+              } else {
+                await writeHistoryState(String(notifHistoryId));
+              }
+            }
+            return { ids: [], newHistoryId: notifHistoryId || null, usedFallback: false };
+          }
+        } else {
+          // Si no hay notifHistoryId, no podemos hacer nada - retornar vacío
+          console.log("[mfs] [history] HistoryId demasiado antiguo y no hay notifHistoryId. Retornando vacío para evitar procesar mensajes antiguos.");
+          return { ids: [], newHistoryId: null, usedFallback: false };
+        }
       }
       throw e;
     }
