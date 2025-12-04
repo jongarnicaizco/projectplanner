@@ -523,6 +523,13 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
             if (meddicChampion) meddicParts.push(`C: ${meddicChampion}`);
             const meddicAnalysis = meddicParts.join("\n\n").slice(0, 1000);
 
+            // Mapeo de campos según especificación:
+            // LastName/Company --> Client Name (senderName)
+            // Email --> From
+            // Country__c --> Country Code (location?.countryCode)
+            // City__c --> City (location?.city)
+            // Lead_AI_Scoring__c --> Business Oppt (finalIntent)
+            // MEDDIC_Analysis__c --> MEDDIC Analysis (meddicAnalysis)
             const salesforceResult = await createSalesforceLead({
               lastName: senderName || from.split("@")[0] || "Unknown",
               company: senderName || from.split("@")[0] || "Unknown",
