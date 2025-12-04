@@ -120,7 +120,7 @@ app.post("/control/stop", async (_req, res) => {
 
 /**
  * Procesa mensajes no procesados en un intervalo de tiempo específico (en minutos)
- * IMPORTANTE: Solo procesa mensajes SIN etiqueta "processed" y dentro del intervalo
+ * Activa el watch y procesa todos los mensajes SIN etiqueta "processed" en el intervalo
  */
 app.post("/control/process-interval", async (req, res) => {
   try {
@@ -140,11 +140,29 @@ app.post("/control/process-interval", async (req, res) => {
     console.log(`[mfs] /control/process-interval → Procesando mensajes de los últimos ${minutesNum} minutos`);
     console.log(`[mfs] /control/process-interval → Timestamp desde: ${timestampAgo} (hace ${minutesNum} minutos)`);
     
-    const allResults = [];
+    let totalProcesados = 0;
+    let totalFallidos = 0;
+    let totalSaltados = 0;
+    let totalEncontrados = 0;
     
     // Procesar cuenta principal (media.manager@feverup.com)
     try {
       const gmail = await getGmailClient();
+      
+      // Activar watch y actualizar historyId
+      try {
+        const { setupWatch } = await import("./services/gmail.js");
+        const { writeHistoryState } = await import("./services/storage.js");
+        const watchResp = await setupWatch(gmail);
+        const hist = String(watchResp.historyId || "");
+        if (hist) {
+          await writeHistoryState(hist);
+          console.log(`[mfs] /control/process-interval → Watch activado y historyId actualizado: ${hist}`);
+        }
+      } catch (watchError) {
+        console.warn(`[mfs] /control/process-interval → No se pudo activar watch (puede ser normal):`, watchError?.message);
+        // Continuar aunque falle el watch
+      }
       
       // Query: INBOX, sin etiqueta processed, dentro del intervalo de tiempo
       const MAX_MESSAGES_PER_EXECUTION = 100;
@@ -159,20 +177,40 @@ app.post("/control/process-interval", async (req, res) => {
       });
       
       const messageIds = (list.data.messages || []).map(m => m.id);
+      totalEncontrados += messageIds.length;
       console.log(`[mfs] /control/process-interval → Encontrados ${messageIds.length} mensajes en INBOX (cuenta principal, últimos ${minutesNum} min)`);
       
       if (messageIds.length > 0) {
         const { processMessageIds } = await import("./services/processor.js");
         const results = await processMessageIds(gmail, messageIds);
-        allResults.push(...(results.resultados || []));
+        totalProcesados += results.exitosos || 0;
+        totalFallidos += results.fallidos || 0;
+        totalSaltados += results.saltados || 0;
+        console.log(`[mfs] /control/process-interval → Cuenta principal: ${results.exitosos} procesados, ${results.fallidos} fallidos, ${results.saltados} saltados`);
       }
     } catch (e) {
+      console.error(`[mfs] /control/process-interval → Error procesando cuenta principal:`, e?.message || e);
       logErr("control/process-interval error (cuenta principal):", e);
     }
     
     // Procesar cuenta SENDER (secretmedia@feverup.com)
     try {
       const gmailSender = await getGmailSenderClient();
+      
+      // Activar watch y actualizar historyId
+      try {
+        const { setupWatchSender } = await import("./services/gmail.js");
+        const { writeHistoryStateSender } = await import("./services/storage.js");
+        const watchRespSender = await setupWatchSender(gmailSender);
+        const histSender = String(watchRespSender.historyId || "");
+        if (histSender) {
+          await writeHistoryStateSender(histSender);
+          console.log(`[mfs] /control/process-interval → Watch SENDER activado y historyId actualizado: ${histSender}`);
+        }
+      } catch (watchError) {
+        console.warn(`[mfs] /control/process-interval → No se pudo activar watch SENDER (puede ser normal):`, watchError?.message);
+        // Continuar aunque falle el watch
+      }
       
       // Query: INBOX, sin etiqueta processed, dentro del intervalo de tiempo
       const MAX_MESSAGES_PER_EXECUTION = 100;
@@ -187,29 +225,30 @@ app.post("/control/process-interval", async (req, res) => {
       });
       
       const senderMessageIds = (list.data.messages || []).map(m => m.id);
+      totalEncontrados += senderMessageIds.length;
       console.log(`[mfs] /control/process-interval → Encontrados ${senderMessageIds.length} mensajes en INBOX (cuenta SENDER, últimos ${minutesNum} min)`);
       
       if (senderMessageIds.length > 0) {
         const { processMessageIds } = await import("./services/processor.js");
         const senderResults = await processMessageIds(gmailSender, senderMessageIds);
-        allResults.push(...(senderResults.resultados || []));
+        totalProcesados += senderResults.exitosos || 0;
+        totalFallidos += senderResults.fallidos || 0;
+        totalSaltados += senderResults.saltados || 0;
+        console.log(`[mfs] /control/process-interval → Cuenta SENDER: ${senderResults.exitosos} procesados, ${senderResults.fallidos} fallidos, ${senderResults.saltados} saltados`);
       }
     } catch (e) {
+      console.error(`[mfs] /control/process-interval → Error procesando cuenta SENDER:`, e?.message || e);
       logErr("control/process-interval error (cuenta SENDER):", e);
     }
     
-    const procesados = allResults.filter(r => r.airtableId && !r.skipped).length;
-    const fallidos = allResults.filter(r => !r.airtableId && !r.skipped).length;
-    const saltados = allResults.filter(r => r.skipped).length;
-    
     res.json({
       ok: true,
-      message: `Procesamiento completado: ${procesados} procesados, ${fallidos} fallidos, ${saltados} saltados`,
+      message: `Procesamiento completado: ${totalProcesados} procesados, ${totalFallidos} fallidos, ${totalSaltados} saltados`,
       minutos: minutesNum,
-      totalEncontrados: allResults.length,
-      procesados,
-      fallidos,
-      saltados,
+      totalEncontrados,
+      procesados: totalProcesados,
+      fallidos: totalFallidos,
+      saltados: totalSaltados,
     });
   } catch (e) {
     logErr("control/process-interval error:", e);
