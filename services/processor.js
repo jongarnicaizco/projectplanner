@@ -372,6 +372,12 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         const from = String(extractFromEmail(fromHeader, cc, bcc, replyTo) || "").trim().toLowerCase();
         let to = String(extractToEmail(toHeader || "", cc || "", bcc || "", replyTo || "", "") || "").trim().toLowerCase();
         
+        // Log específico para correos a secretmedia@feverup.com para debugging
+        const isToSecretMedia = (to || "").toLowerCase().includes("secretmedia@feverup.com");
+        if (isToSecretMedia) {
+          console.log(`[mfs] 📧 Correo detectado TO secretmedia@feverup.com - ID: ${id}, From: ${from}, To: ${to}`);
+        }
+        
         // FILTROS RÁPIDOS: saltar correos FROM secretmedia@feverup.com SOLO si NO van TO secretmedia@feverup.com
         // Esto permite procesar correos que LLEGAN a secretmedia@feverup.com (TO secretmedia@feverup.com)
         // pero salta correos ENVIADOS desde secretmedia@feverup.com a otros (FROM secretmedia@feverup.com, TO != secretmedia@feverup.com)
@@ -379,10 +385,12 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           const toEmailLower = (to || "").toLowerCase().trim();
           // Si el correo NO va TO secretmedia@feverup.com, saltarlo (es un correo enviado a otros)
           if (!toEmailLower.includes("secretmedia@feverup.com")) {
+            console.log(`[mfs] ⏭️ Saltando correo FROM secretmedia@feverup.com que NO va TO secretmedia@feverup.com - ID: ${id}`);
             releaseProcessingLock(id);
             continue;
           }
           // Si el correo SÍ va TO secretmedia@feverup.com, procesarlo (es un correo que llega a esa cuenta)
+          console.log(`[mfs] ✓ Procesando correo FROM secretmedia@feverup.com TO secretmedia@feverup.com (reply/forward) - ID: ${id}`);
         }
         if (subject && subject.toLowerCase().trim() === "test") {
           releaseProcessingLock(id);
@@ -393,8 +401,14 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           continue;
         }
         if (!from || !to) {
+          console.log(`[mfs] ⏭️ Saltando correo sin from o to válido - ID: ${id}, From: ${from || "empty"}, To: ${to || "empty"}`);
           releaseProcessingLock(id);
           continue;
+        }
+        
+        // Log específico para correos a secretmedia@feverup.com antes de procesar
+        if (isToSecretMedia) {
+          console.log(`[mfs] 🚀 Iniciando procesamiento de correo TO secretmedia@feverup.com - ID: ${id}, Subject: ${subject?.slice(0, 50)}`);
         }
 
         // Simplificar senderName
@@ -584,9 +598,15 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           // APLICAR ETIQUETA PROCESSED SIEMPRE AL FINAL (bloqueante para asegurar que se aplica)
           try {
             await applyProcessedLabel(gmail, id);
+            if (isToSecretMedia) {
+              console.log(`[mfs] ✓ Etiqueta processed aplicada exitosamente a correo TO secretmedia@feverup.com - ID: ${id}`);
+            }
           } catch (labelError) {
             // Si falla, loguear pero continuar
             console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
+            if (isToSecretMedia) {
+              console.error(`[mfs] ✗ ERROR aplicando etiqueta processed a correo TO secretmedia@feverup.com - ID: ${id}, Error: ${labelError?.message}`);
+            }
           }
           
           // Incrementar contador de ejecuciones (cada mensaje procesado = 1 ejecución)
