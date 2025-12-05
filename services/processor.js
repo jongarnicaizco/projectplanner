@@ -493,11 +493,18 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
       let finalConfidence = confidence;
       let finalReasoning = reasoning;
       
+      // Normalizar el intent (trim y asegurar formato correcto)
+      if (finalIntent) {
+        finalIntent = String(finalIntent).trim();
+      }
+      
       // Si el correo viene de secretmedia@feverup.com, el intent debe ser como mínimo "Medium"
       if (isToSecretMedia) {
         const intentHierarchy = ["Discard", "Low", "Medium", "High", "Very High"];
         const currentIntentIndex = intentHierarchy.indexOf(finalIntent || "Discard");
         const mediumIndex = intentHierarchy.indexOf("Medium");
+        
+        console.log(`[mfs] DEBUG secretmedia@feverup.com - Intent original: "${intent}", finalIntent: "${finalIntent}", currentIndex: ${currentIntentIndex}, mediumIndex: ${mediumIndex}`);
         
         if (currentIntentIndex < mediumIndex) {
           finalIntent = "Medium";
@@ -510,6 +517,9 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           console.log(`[mfs] Intent actualizado a Medium (mínimo) para correo de secretmedia@feverup.com - Intent original: ${intent}`);
         }
       }
+      
+      // Log final del intent antes de crear lead en Salesforce
+      console.log(`[mfs] DEBUG - finalIntent antes de crear lead: "${finalIntent}" (tipo: ${typeof finalIntent})`);
 
       // NO generar bodySummary para ahorrar llamadas a Gemini
       const bodySummary = "";
@@ -547,7 +557,12 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
 
         // CREAR LEAD EN SALESFORCE ANTES DE AIRTABLE (solo para Medium, High, Very High)
         let salesforceLeadId = null;
-        if (finalIntent === "Medium" || finalIntent === "High" || finalIntent === "Very High") {
+        // Normalizar finalIntent para comparación (trim y asegurar formato correcto)
+        const normalizedFinalIntent = String(finalIntent || "").trim();
+        console.log(`[mfs] DEBUG - Verificando si crear lead en Salesforce - normalizedFinalIntent: "${normalizedFinalIntent}"`);
+        
+        if (normalizedFinalIntent === "Medium" || normalizedFinalIntent === "High" || normalizedFinalIntent === "Very High") {
+          console.log(`[mfs] DEBUG - Condición cumplida, creando lead en Salesforce para intent: "${normalizedFinalIntent}"`);
           try {
             // Construir MEDDIC Analysis string igual que en Airtable
             const meddicParts = [];

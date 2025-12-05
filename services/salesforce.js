@@ -91,6 +91,10 @@ export async function createSalesforceLead({
 
     const { accessToken, instanceUrl } = await getSalesforceAccessToken();
 
+    // Normalizar businessOppt (trim y asegurar formato correcto)
+    const normalizedBusinessOppt = businessOppt ? String(businessOppt).trim() : null;
+    console.log("[mfs] Salesforce: DEBUG - businessOppt recibido:", businessOppt, "normalized:", normalizedBusinessOppt);
+
     // Mapeo de campos según especificación
     const leadFields = {
       LastName: lastName || "Unknown",
@@ -104,9 +108,11 @@ export async function createSalesforceLead({
       Description: subject ? `${subject}\n\n${body || ""}` : body || null,
       City__c: city || null,
       City_ID__c: cityId || null,
-      Lead_AI_Scoring__c: businessOppt || null,
+      Lead_AI_Scoring__c: normalizedBusinessOppt || null,
       MEDDIC_Analysis__c: meddicAnalysis || null,
     };
+    
+    console.log("[mfs] Salesforce: DEBUG - leadFields antes de eliminar nulls:", JSON.stringify(leadFields, null, 2));
 
     // Eliminar campos null o undefined
     Object.keys(leadFields).forEach(key => {
