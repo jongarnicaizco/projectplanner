@@ -237,30 +237,84 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
 
       if (code === "404" || status === "FAILED_PRECONDITION") {
         console.warn(
-          "[mfs] [history] startHistoryId demasiado antiguo. Sincronizando historyId con la notificación..."
+          "[mfs] [history] startHistoryId demasiado antiguo. Intentando obtener mensajes desde historyId más reciente..."
         );
 
-        // Cuando el historyId es demasiado antiguo, NO intentar fallback con queries
-        // Simplemente actualizar el historyId al de la notificación y retornar vacío
-        // Esto evita procesar mensajes antiguos y permite que los próximos mensajes se procesen correctamente
-        // Los mensajes que llegaron mientras el historyId estaba desincronizado se procesarán
-        // cuando lleguen nuevas notificaciones con historyId más reciente
+        // Cuando el historyId es demasiado antiguo, intentar obtener mensajes desde un historyId más reciente
+        // Si tenemos notifHistoryId, intentar obtener mensajes desde un historyId cercano a la notificación
+        // Esto permite procesar mensajes que llegaron durante la desincronización
         if (notifHistoryId) {
-          console.log("[mfs] [history] Actualizando historyId a la notificación para sincronizar");
-          console.log(`[mfs] [history] historyId anterior: ${startHistoryId}, historyId notificación: ${notifHistoryId}`);
-          
-          // CRÍTICO: Actualizar historyId al de la notificación para sincronizar
-          if (useSenderState) {
-            await writeHistoryStateSender(String(notifHistoryId));
-            console.log(`[mfs] [history] ✓ historyId SENDER actualizado a ${notifHistoryId} (sincronizado con notificación)`);
-          } else {
-            await writeHistoryState(String(notifHistoryId));
-            console.log(`[mfs] [history] ✓ historyId actualizado a ${notifHistoryId} (sincronizado con notificación)`);
+          try {
+            // Intentar obtener mensajes desde un historyId más reciente (notifHistoryId - 50 para tener un pequeño buffer)
+            // Esto debería capturar los mensajes recientes sin ser demasiado antiguo
+            const notifHistoryIdNum = BigInt(String(notifHistoryId));
+            const recentHistoryId = String(notifHistoryIdNum - 50n); // 50 mensajes atrás como buffer
+            
+            console.log(`[mfs] [history] Intentando obtener mensajes desde historyId más reciente: ${recentHistoryId} (notifHistoryId: ${notifHistoryId})`);
+            
+            const recentResp = await backoff(
+              () =>
+                gmail.users.history.list({
+                  userId: "me",
+                  startHistoryId: recentHistoryId,
+                  historyTypes: ["messageAdded"],
+                  maxResults: 500,
+                }),
+              "history.list.recent"
+            );
+            
+            const recentData = recentResp.data || {};
+            const recentHistory = recentData.history || [];
+            
+            console.log(`[mfs] [history] history.list desde historyId reciente retornó ${recentHistory.length} entradas`, {
+              useSenderState,
+              recentHistoryId,
+              notifHistoryId,
+            });
+            
+            // Procesar los mensajes encontrados
+            for (const h of recentHistory) {
+              if (idsSet.size >= MAX_MESSAGES_PER_EXECUTION) break;
+              
+              (h.messagesAdded || []).forEach((ma) => {
+                if (idsSet.size >= MAX_MESSAGES_PER_EXECUTION) return;
+                const m = ma.message;
+                if (!m) return;
+                const labels = m.labelIds || [];
+                // Solo agregar mensajes que están en INBOX y NO tienen etiqueta "processed"
+                if (labels.includes("INBOX") && !labels.includes("processed") && m.id) {
+                  idsSet.add(m.id);
+                }
+              });
+            }
+            
+            console.log(`[mfs] [history] Mensajes encontrados desde historyId reciente: ${idsSet.size}`, {
+              useSenderState,
+              recentHistoryId,
+            });
+            
+            // Actualizar historyId al de la notificación para sincronizar
+            if (useSenderState) {
+              await writeHistoryStateSender(String(notifHistoryId));
+              console.log(`[mfs] [history] ✓ historyId SENDER actualizado a ${notifHistoryId} (sincronizado con notificación)`);
+            } else {
+              await writeHistoryState(String(notifHistoryId));
+              console.log(`[mfs] [history] ✓ historyId actualizado a ${notifHistoryId} (sincronizado con notificación)`);
+            }
+            
+            return { ids: [...idsSet], newHistoryId: notifHistoryId, usedFallback: false };
+          } catch (recentError) {
+            console.error(`[mfs] [history] Error obteniendo mensajes desde historyId reciente:`, recentError?.message || recentError);
+            // Si falla, actualizar historyId y retornar vacío
+            if (useSenderState) {
+              await writeHistoryStateSender(String(notifHistoryId));
+              console.log(`[mfs] [history] ✓ historyId SENDER actualizado a ${notifHistoryId} (sincronizado con notificación)`);
+            } else {
+              await writeHistoryState(String(notifHistoryId));
+              console.log(`[mfs] [history] ✓ historyId actualizado a ${notifHistoryId} (sincronizado con notificación)`);
+            }
+            return { ids: [], newHistoryId: notifHistoryId, usedFallback: false };
           }
-          
-          // Retornar vacío - los próximos mensajes se procesarán cuando lleguen nuevas notificaciones
-          console.log("[mfs] [history] Retornando vacío. Los próximos mensajes nuevos se procesarán correctamente cuando lleguen nuevas notificaciones.");
-          return { ids: [], newHistoryId: notifHistoryId, usedFallback: false };
         } else {
           // Si no hay notifHistoryId, no podemos hacer nada - retornar vacío
           console.log("[mfs] [history] HistoryId demasiado antiguo y no hay notifHistoryId. Retornando vacío para evitar procesar mensajes antiguos.");
