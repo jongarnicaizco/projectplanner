@@ -309,117 +309,22 @@ app.post("/control/process-unprocessed", async (_req, res) => {
 });
 
 /**
- * Procesa mensajes no procesados en un intervalo de tiempo específico (en minutos)
- * Activa el watch y procesa todos los mensajes SIN etiqueta "processed" en el intervalo
+ * Webhook de Airtable para detener el servicio automáticamente
+ * Este endpoint recibe llamadas del webhook de Airtable y ejecuta lo mismo que el botón de "Detener" del webapp
  */
-app.post("/control/process-interval", async (req, res) => {
+app.post("/webhook/airtable-stop", async (_req, res) => {
   try {
-    const { minutes } = req.body;
-    
-    if (!minutes || isNaN(minutes) || minutes <= 0) {
-      return res.status(400).json({
-        ok: false,
-        error: "Debes proporcionar un número de minutos válido (mayor que 0)",
-      });
-    }
-    
-    const minutesNum = parseInt(minutes, 10);
-    const secondsAgo = minutesNum * 60;
-    const timestampAgo = Math.floor(Date.now() / 1000) - secondsAgo;
-    
-    console.log(`[mfs] /control/process-interval → Procesando mensajes de los últimos ${minutesNum} minutos`);
-    console.log(`[mfs] /control/process-interval → Timestamp desde: ${timestampAgo} (hace ${minutesNum} minutos)`);
-    
-    let totalProcesados = 0;
-    let totalFallidos = 0;
-    let totalSaltados = 0;
-    let totalEncontrados = 0;
-    
-    // Procesar cuenta principal (media.manager@feverup.com)
-    try {
-      const gmail = await getGmailClient();
-      
-      // Actualizar historyId PRIMERO para solo procesar mensajes nuevos a partir de ahora
-      try {
-        const { writeHistoryState } = await import("./services/storage.js");
-        const prof = await gmail.users.getProfile({ userId: "me" });
-        const currentHistoryId = String(prof.data.historyId || "");
-        if (currentHistoryId) {
-          await writeHistoryState(currentHistoryId);
-          console.log(`[mfs] /control/process-interval → historyId principal actualizado: ${currentHistoryId} (solo procesará mensajes nuevos)`);
-        }
-      } catch (historyError) {
-        console.warn(`[mfs] /control/process-interval → No se pudo actualizar historyId principal:`, historyError?.message);
-      }
-      
-      // Activar watch después de actualizar historyId
-      try {
-        const { setupWatch } = await import("./services/gmail.js");
-        await setupWatch(gmail);
-      } catch (watchError) {
-        console.warn(`[mfs] /control/process-interval → No se pudo activar watch (puede ser normal):`, watchError?.message);
-      }
-      
-      // NO procesar mensajes antiguos - solo los que lleguen después de actualizar historyId
-      // Por lo tanto, no hacemos query de mensajes antiguos
-      const messageIds = [];
-      
-      console.log(`[mfs] /control/process-interval → Query cuenta principal: ${query}`);
-      
-      const list = await gmail.users.messages.list({
-        userId: "me",
-        q: query,
-        maxResults: MAX_MESSAGES_PER_EXECUTION,
-      });
-      
-      console.log(`[mfs] /control/process-interval → Cuenta principal: historyId actualizado, solo se procesarán mensajes nuevos (no antiguos)`);
-    } catch (e) {
-      console.error(`[mfs] /control/process-interval → Error procesando cuenta principal:`, e?.message || e);
-      logErr("control/process-interval error (cuenta principal):", e);
-    }
-    
-    // Procesar cuenta SENDER (secretmedia@feverup.com)
-    try {
-      const gmailSender = await getGmailSenderClient();
-      
-      // Actualizar historyId PRIMERO para solo procesar mensajes nuevos a partir de ahora
-      try {
-        const { writeHistoryStateSender } = await import("./services/storage.js");
-        const profSender = await gmailSender.users.getProfile({ userId: "me" });
-        const currentHistoryIdSender = String(profSender.data.historyId || "");
-        if (currentHistoryIdSender) {
-          await writeHistoryStateSender(currentHistoryIdSender);
-          console.log(`[mfs] /control/process-interval → historyId SENDER actualizado: ${currentHistoryIdSender} (solo procesará mensajes nuevos)`);
-        }
-      } catch (historyError) {
-        console.warn(`[mfs] /control/process-interval → No se pudo actualizar historyId SENDER:`, historyError?.message);
-      }
-      
-      // Activar watch después de actualizar historyId
-      try {
-        const { setupWatchSender } = await import("./services/gmail.js");
-        await setupWatchSender(gmailSender);
-      } catch (watchError) {
-        console.warn(`[mfs] /control/process-interval → No se pudo activar watch SENDER (puede ser normal):`, watchError?.message);
-      }
-      
-      console.log(`[mfs] /control/process-interval → Cuenta SENDER: historyId actualizado, solo se procesarán mensajes nuevos (no antiguos)`);
-    } catch (e) {
-      console.error(`[mfs] /control/process-interval → Error procesando cuenta SENDER:`, e?.message || e);
-      logErr("control/process-interval error (cuenta SENDER):", e);
-    }
+    console.log("[mfs] /webhook/airtable-stop → Webhook recibido de Airtable, deteniendo servicio");
+    await writeServiceStatus("stopped");
     
     res.json({
       ok: true,
-      message: `Watch activado y historyId actualizado. Solo se procesarán mensajes nuevos a partir de ahora (no mensajes antiguos).`,
-      minutos: minutesNum,
-      totalEncontrados: 0,
-      procesados: 0,
-      fallidos: 0,
-      saltados: 0,
+      message: "Servicio detenido desde webhook de Airtable. No se procesarán mensajes hasta que se reactive desde el webapp.",
+      status: "stopped",
+      source: "airtable-webhook",
     });
   } catch (e) {
-    logErr("control/process-interval error:", e);
+    logErr("webhook/airtable-stop error:", e);
     res.status(500).json({ error: e?.message });
   }
 });
@@ -576,65 +481,76 @@ app.get("/control", async (_req, res) => {
       font-size: 12px;
       margin-top: 20px;
     }
-    .process-interval {
-      background: #f3f4f6;
-      border-radius: 10px;
+    .control-section {
+      background: #f9fafb;
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
       padding: 20px;
       margin-top: 20px;
       text-align: left;
     }
-    .process-interval h3 {
-      color: #333;
-      margin-bottom: 15px;
-      font-size: 16px;
-    }
-    .process-interval-input-group {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 10px;
-    }
-    .process-interval input {
-      flex: 1;
-      padding: 12px;
-      border: 2px solid #e5e7eb;
-      border-radius: 8px;
-      font-size: 16px;
-      transition: border-color 0.3s;
-    }
-    .process-interval input:focus {
-      outline: none;
-      border-color: #667eea;
-    }
-    .btn-process {
-      background: #667eea;
-      color: white;
-      padding: 12px 24px;
-      border: none;
-      border-radius: 8px;
+    .control-section h3 {
+      color: #1f2937;
+      margin-bottom: 12px;
       font-size: 16px;
       font-weight: 600;
-      cursor: pointer;
-      transition: all 0.3s;
-      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-    .btn-process:hover {
-      background: #5568d3;
-      transform: translateY(-2px);
-      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
-    }
-    .btn-process:active {
-      transform: translateY(0);
-    }
-    .btn-process:disabled {
-      background: #d1d5db;
-      cursor: not-allowed;
-      transform: none;
-    }
-    .process-interval p {
-      color: #666;
+    .control-section .description {
+      color: #6b7280;
       font-size: 13px;
-      line-height: 1.6;
-      margin-top: 10px;
+      line-height: 1.5;
+      margin-bottom: 15px;
+    }
+    .control-section .status-badge {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 15px;
+    }
+    .control-section .status-badge.active {
+      background: #d1fae5;
+      color: #065f46;
+    }
+    .control-section .status-badge.stopped {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    @media (max-width: 640px) {
+      .container {
+        padding: 20px;
+        border-radius: 16px;
+      }
+      h1 {
+        font-size: 24px;
+      }
+      .subtitle {
+        font-size: 13px;
+      }
+      .status {
+        font-size: 14px;
+        padding: 10px 20px;
+      }
+      button {
+        padding: 12px 20px;
+        font-size: 14px;
+      }
+      .control-section {
+        padding: 16px;
+      }
+      .control-section h3 {
+        font-size: 15px;
+      }
+      .info {
+        padding: 16px;
+      }
+      .info p {
+        font-size: 12px;
+      }
     }
   </style>
 </head>
@@ -656,39 +572,36 @@ app.get("/control", async (_req, res) => {
       </button>
     </div>
     
-    <div class="status ${salesforceStatus.status}" id="salesforceStatus" style="margin-top: 20px;">
-      Salesforce: ${salesforceStatus.status === "active" ? "🟢 ACTIVO" : "🔴 DETENIDO"}
-    </div>
-    
-    <div class="buttons">
-      <button class="btn-start" id="btnSalesforceStart" ${salesforceStatus.status === "active" ? "disabled" : ""}>
-        ▶ Activar Salesforce
-      </button>
-      <button class="btn-stop" id="btnSalesforceStop" ${salesforceStatus.status === "stopped" ? "disabled" : ""}>
-        ⏸ Detener Salesforce
-      </button>
-    </div>
-    
-    <div class="status ${emailStatus.status}" id="emailStatus" style="margin-top: 20px;">
-      Envío de Emails: ${emailStatus.status === "active" ? "🟢 ACTIVO" : "🔴 DETENIDO"}
-    </div>
-    
-    <div class="buttons">
-      <button class="btn-start" id="btnEmailStart" ${emailStatus.status === "active" ? "disabled" : ""}>
-        ▶ Activar Emails
-      </button>
-      <button class="btn-stop" id="btnEmailStop" ${emailStatus.status === "stopped" ? "disabled" : ""}>
-        ⏸ Detener Emails
-      </button>
-    </div>
-    
-    <div class="process-interval">
-      <h3>📧 Procesar Mensajes por Intervalo</h3>
-      <div class="process-interval-input-group">
-        <input type="number" id="minutesInput" placeholder="Minutos (ej: 60)" min="1" value="60">
-        <button class="btn-process" id="btnProcessInterval">Procesar</button>
+    <div class="control-section">
+      <h3>☁️ Integración con Salesforce</h3>
+      <div class="status-badge ${salesforceStatus.status}" id="salesforceStatus">
+        ${salesforceStatus.status === "active" ? "🟢 ACTIVO" : "🔴 DETENIDO"}
       </div>
-      <p>Procesa todos los mensajes NO procesados recibidos en los últimos X minutos. Solo se procesarán mensajes sin etiqueta "processed".</p>
+      <p class="description">Controla la creación de leads en Salesforce. Si está detenido, los emails se seguirán procesando en Airtable pero no se crearán leads.</p>
+      <div class="buttons">
+        <button class="btn-start" id="btnSalesforceStart" ${salesforceStatus.status === "active" ? "disabled" : ""}>
+          ▶ Activar
+        </button>
+        <button class="btn-stop" id="btnSalesforceStop" ${salesforceStatus.status === "stopped" ? "disabled" : ""}>
+          ⏸ Detener
+        </button>
+      </div>
+    </div>
+    
+    <div class="control-section">
+      <h3>📧 Envío de Emails Automáticos</h3>
+      <div class="status-badge ${emailStatus.status}" id="emailStatus">
+        ${emailStatus.status === "active" ? "🟢 ACTIVO" : "🔴 DETENIDO"}
+      </div>
+      <p class="description">Controla el envío de emails automáticos de respuesta. Si está detenido, los emails se seguirán procesando en Airtable y se crearán leads, pero no se enviarán respuestas automáticas.</p>
+      <div class="buttons">
+        <button class="btn-start" id="btnEmailStart" ${emailStatus.status === "active" ? "disabled" : ""}>
+          ▶ Activar
+        </button>
+        <button class="btn-stop" id="btnEmailStop" ${emailStatus.status === "stopped" ? "disabled" : ""}>
+          ⏸ Detener
+        </button>
+      </div>
     </div>
     
     <div class="loading" id="loading">Procesando...</div>
@@ -729,14 +642,14 @@ app.get("/control", async (_req, res) => {
           btnStop.disabled = data.status === 'stopped';
           
           // Actualizar estado de Salesforce
-          salesforceStatusEl.className = 'status ' + data.salesforce;
-          salesforceStatusEl.textContent = 'Salesforce: ' + (data.salesforce === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO');
+          salesforceStatusEl.className = 'status-badge ' + data.salesforce;
+          salesforceStatusEl.textContent = data.salesforce === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
           btnSalesforceStart.disabled = data.salesforce === 'active';
           btnSalesforceStop.disabled = data.salesforce === 'stopped';
           
           // Actualizar estado de envío de emails
-          emailStatusEl.className = 'status ' + data.emailSending;
-          emailStatusEl.textContent = 'Envío de Emails: ' + (data.emailSending === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO');
+          emailStatusEl.className = 'status-badge ' + data.emailSending;
+          emailStatusEl.textContent = data.emailSending === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
           btnEmailStart.disabled = data.emailSending === 'active';
           btnEmailStop.disabled = data.emailSending === 'stopped';
         }
@@ -897,50 +810,6 @@ app.get("/control", async (_req, res) => {
     
     btnEmailStart.addEventListener('click', startEmailSending);
     btnEmailStop.addEventListener('click', stopEmailSending);
-    
-    // Procesar intervalo de tiempo
-    const btnProcessInterval = document.getElementById('btnProcessInterval');
-    const minutesInput = document.getElementById('minutesInput');
-    
-    async function processInterval() {
-      const minutes = parseInt(minutesInput.value, 10);
-      
-      if (!minutes || minutes <= 0) {
-        alert('❌ Por favor, introduce un número de minutos válido (mayor que 0)');
-        return;
-      }
-      
-      loading.classList.add('show');
-      btnProcessInterval.disabled = true;
-      
-      try {
-        const res = await fetch('/control/process-interval', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ minutes }),
-        });
-        const data = await res.json();
-        if (data.ok) {
-          alert(\`✅ \${data.message}\`);
-        } else {
-          alert('❌ Error: ' + (data.error || 'No se pudo procesar el intervalo'));
-        }
-      } catch (e) {
-        alert('❌ Error: ' + e.message);
-      } finally {
-        loading.classList.remove('show');
-        btnProcessInterval.disabled = false;
-      }
-    }
-    
-    btnProcessInterval.addEventListener('click', processInterval);
-    
-    // Permitir Enter en el input
-    minutesInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        processInterval();
-      }
-    });
     
     // Actualizar estado cada 5 segundos
     setInterval(updateStatus, 5000);
