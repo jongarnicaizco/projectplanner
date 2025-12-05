@@ -240,57 +240,51 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
           "[mfs] [history] startHistoryId demasiado antiguo. Intentando obtener mensajes desde historyId más reciente..."
         );
 
-        // Cuando el historyId es demasiado antiguo, intentar obtener mensajes desde un historyId más reciente
-        // Si tenemos notifHistoryId, intentar obtener mensajes desde un historyId cercano a la notificación
-        // Esto permite procesar mensajes que llegaron durante la desincronización
+        // Cuando el historyId es demasiado antiguo, usar messages.list con filtro de fecha reciente
+        // Esto es más confiable que intentar adivinar un historyId válido
         if (notifHistoryId) {
           try {
-            // Intentar obtener mensajes desde un historyId más reciente (notifHistoryId - 50 para tener un pequeño buffer)
-            // Esto debería capturar los mensajes recientes sin ser demasiado antiguo
-            const notifHistoryIdNum = BigInt(String(notifHistoryId));
-            const recentHistoryId = String(notifHistoryIdNum - 50n); // 50 mensajes atrás como buffer
+            // Obtener mensajes de los últimos 15 minutos usando messages.list con query
+            // Esto captura mensajes nuevos sin depender del historyId
+            const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+            const afterDate = Math.floor(fifteenMinutesAgo.getTime() / 1000);
+            const query = `in:inbox -label:processed after:${afterDate}`;
             
-            console.log(`[mfs] [history] Intentando obtener mensajes desde historyId más reciente: ${recentHistoryId} (notifHistoryId: ${notifHistoryId})`);
-            
-            const recentResp = await backoff(
-              () =>
-                gmail.users.history.list({
-                  userId: "me",
-                  startHistoryId: recentHistoryId,
-                  historyTypes: ["messageAdded"],
-                  maxResults: 500,
-                }),
-              "history.list.recent"
-            );
-            
-            const recentData = recentResp.data || {};
-            const recentHistory = recentData.history || [];
-            
-            console.log(`[mfs] [history] history.list desde historyId reciente retornó ${recentHistory.length} entradas`, {
+            console.log(`[mfs] [history] HistoryId demasiado antiguo. Usando messages.list con query para obtener mensajes recientes (últimos 15 minutos)`, {
               useSenderState,
-              recentHistoryId,
+              query,
               notifHistoryId,
             });
             
-            // Procesar los mensajes encontrados
-            for (const h of recentHistory) {
+            const messagesResp = await backoff(
+              () =>
+                gmail.users.messages.list({
+                  userId: "me",
+                  q: query,
+                  maxResults: MAX_MESSAGES_PER_EXECUTION,
+                }),
+              "messages.list.recent"
+            );
+            
+            const messages = messagesResp.data.messages || [];
+            
+            console.log(`[mfs] [history] messages.list retornó ${messages.length} mensajes recientes`, {
+              useSenderState,
+              query,
+              messagesCount: messages.length,
+            });
+            
+            // Agregar los IDs de los mensajes encontrados
+            for (const msg of messages) {
               if (idsSet.size >= MAX_MESSAGES_PER_EXECUTION) break;
-              
-              (h.messagesAdded || []).forEach((ma) => {
-                if (idsSet.size >= MAX_MESSAGES_PER_EXECUTION) return;
-                const m = ma.message;
-                if (!m) return;
-                const labels = m.labelIds || [];
-                // Solo agregar mensajes que están en INBOX y NO tienen etiqueta "processed"
-                if (labels.includes("INBOX") && !labels.includes("processed") && m.id) {
-                  idsSet.add(m.id);
-                }
-              });
+              if (msg.id) {
+                idsSet.add(msg.id);
+              }
             }
             
-            console.log(`[mfs] [history] Mensajes encontrados desde historyId reciente: ${idsSet.size}`, {
+            console.log(`[mfs] [history] Mensajes encontrados usando messages.list: ${idsSet.size}`, {
               useSenderState,
-              recentHistoryId,
+              notifHistoryId,
             });
             
             // Actualizar historyId al de la notificación para sincronizar
@@ -302,10 +296,17 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
               console.log(`[mfs] [history] ✓ historyId actualizado a ${notifHistoryId} (sincronizado con notificación)`);
             }
             
-            return { ids: [...idsSet], newHistoryId: notifHistoryId, usedFallback: false };
-          } catch (recentError) {
-            console.error(`[mfs] [history] Error obteniendo mensajes desde historyId reciente:`, recentError?.message || recentError);
-            // Si falla, actualizar historyId y retornar vacío
+            return { ids: [...idsSet], newHistoryId: notifHistoryId, usedFallback: true };
+          } catch (messagesListError) {
+            const errorMsg = messagesListError?.message || String(messagesListError);
+            console.error(`[mfs] [history] Error obteniendo mensajes con messages.list:`, errorMsg);
+            
+            // Si el error es por scope limitado, solo actualizar historyId y retornar vacío
+            if (errorMsg.includes("Metadata scope") || errorMsg.includes("does not support 'q' parameter")) {
+              console.warn(`[mfs] [history] El token no puede usar queries. Actualizando historyId y retornando vacío.`);
+            }
+            
+            // Actualizar historyId al de la notificación para sincronizar
             if (useSenderState) {
               await writeHistoryStateSender(String(notifHistoryId));
               console.log(`[mfs] [history] ✓ historyId SENDER actualizado a ${notifHistoryId} (sincronizado con notificación)`);
