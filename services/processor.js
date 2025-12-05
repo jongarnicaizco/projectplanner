@@ -194,6 +194,20 @@ async function incrementRateLimit() {
 }
 
 export async function processMessageIds(gmail, ids, serviceSource = null) {
+  // Verificar estado del servicio ANTES de procesar (máxima prioridad)
+  const { readServiceStatus } = await import("./storage.js");
+  const serviceStatus = await readServiceStatus();
+  if (serviceStatus.status === "stopped") {
+    console.log(`[mfs] ⚠️ PROCESAMIENTO DETENIDO: Servicio está detenido. No se procesarán mensajes hasta que se reactive manualmente desde el webapp.`);
+    return {
+      exitosos: 0,
+      fallidos: 0,
+      saltados: ids.length,
+      serviceStopped: true,
+      resultados: ids.map(id => ({ id, skipped: true, reason: `service_stopped` })),
+    };
+  }
+  
   // Verificar límite de ejecuciones por minuto ANTES de procesar
   if (!(await checkRateLimit())) {
     console.error(`[mfs] ⚠️ PROCESAMIENTO DETENIDO: Límite de ${RATE_LIMIT_MAX} ejecuciones por minuto alcanzado. Servicio detenido automáticamente.`);
@@ -214,6 +228,17 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
     const id = ids[i];
 
     try {
+      // Verificar estado del servicio ANTES de procesar cada mensaje (para evitar procesamiento si se detiene durante el loop)
+      // Esta verificación es CRÍTICA para evitar que se procesen mensajes si el servicio se detiene mientras se están procesando
+      const { readServiceStatus } = await import("./storage.js");
+      const currentServiceStatus = await readServiceStatus();
+      if (currentServiceStatus.status === "stopped") {
+        console.log(`[mfs] ⚠️ PROCESAMIENTO DETENIDO: Servicio detenido durante procesamiento. Saltando mensaje ${id} y todos los siguientes. No se procesarán mensajes hasta que se reactive manualmente desde el webapp.`);
+        // NO aplicar etiqueta processed a los mensajes restantes - se procesarán cuando se reactive el servicio
+        // Esto permite que cuando se reactive, se procesen los mensajes que quedaron pendientes
+        break; // Salir del loop completamente
+      }
+      
       // Lock en memoria ANTES de obtener mensaje (sistema de cola)
       if (!acquireProcessingLock(id)) {
         results.push({ id, airtableId: null, intent: null, confidence: null, skipped: true, reason: "concurrent_processing" });
