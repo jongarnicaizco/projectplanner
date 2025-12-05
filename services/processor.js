@@ -91,6 +91,24 @@ async function applyProcessedLabel(gmail, messageId) {
   try {
     const labelId = await getProcessedLabelId(gmail);
     console.log(`[mfs] Aplicando etiqueta "processed" (ID: ${labelId}) al mensaje ${messageId}`);
+    
+    // Verificar que el mensaje existe antes de aplicar la etiqueta
+    try {
+      const msgCheck = await gmail.users.messages.get({ userId: "me", id: messageId, format: "metadata" });
+      const currentLabels = msgCheck.data.labelIds || [];
+      if (currentLabels.includes(labelId) || currentLabels.includes("processed")) {
+        console.log(`[mfs] Mensaje ${messageId} ya tiene etiqueta processed, saltando aplicación`);
+        return; // Ya tiene la etiqueta, no hacer nada
+      }
+    } catch (checkError) {
+      if (String(checkError?.response?.status || checkError?.code || checkError?.status) === "404") {
+        console.warn(`[mfs] Mensaje ${messageId} no existe (404), no se puede aplicar etiqueta processed`);
+        return; // Mensaje no existe, no hacer nada
+      }
+      // Para otros errores, continuar e intentar aplicar la etiqueta
+      console.warn(`[mfs] Error verificando mensaje ${messageId} antes de aplicar etiqueta:`, checkError?.message);
+    }
+    
     await gmail.users.messages.modify({
       userId: "me",
       id: messageId,
@@ -98,12 +116,24 @@ async function applyProcessedLabel(gmail, messageId) {
     });
     console.log(`[mfs] ✓ Etiqueta "processed" aplicada exitosamente al mensaje ${messageId}`);
   } catch (error) {
-    // Loggear el error para diagnóstico
-    console.error(`[mfs] ✗ Error aplicando etiqueta processed a ${messageId}:`, {
+    // Loggear el error para diagnóstico con más detalles
+    const errorDetails = {
       message: error?.message || error,
       code: error?.code || error?.response?.status,
+      status: error?.response?.status || error?.status,
       error: error?.response?.data?.error || error?.error,
-    });
+      errorDescription: error?.response?.data?.error_description || error?.error_description,
+      fullError: error?.response?.data || error?.data,
+    };
+    console.error(`[mfs] ✗ Error aplicando etiqueta processed a ${messageId}:`, JSON.stringify(errorDetails, null, 2));
+    
+    // Si es un error de permisos (403), loggear específicamente
+    if (String(errorDetails.code) === "403" || String(errorDetails.status) === "403") {
+      console.error(`[mfs] ⚠️ ERROR DE PERMISOS (403) al aplicar etiqueta processed a ${messageId}`);
+      console.error(`[mfs] ⚠️ Verifica que el refresh token tenga permisos de Gmail API (gmail.modify)`);
+      console.error(`[mfs] ⚠️ Verifica que el OAuth Client tenga los scopes correctos`);
+    }
+    
     // No relanzar el error - continuar procesamiento
   }
 }
