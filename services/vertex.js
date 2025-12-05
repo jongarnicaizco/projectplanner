@@ -494,6 +494,11 @@ async function classifyIntentHeuristic({
 
   const isTestEmail = hasTestKeyword || appearsAsTestText;
 
+  // Detección de apuestas, casinos y temas relacionados de gambling
+  const gamblingKeywordsRegex = /(apuestas|betting|casino|casinos|sports betting|sportsbook|bookmaker|bookmakers|poker|póker|gambling|juegos de azar|juego de azar|ruleta|blackjack|baccarat|slots|tragamonedas|máquinas tragaperras|bet|bets|apostar|apuesta|apostamos|apostar en|betting platform|betting site|casino online|online casino|casino en línea|casino virtual|promoción de casino|promoción de apuestas|promo de casino|promo de apuestas|publicidad de casino|publicidad de apuestas|anunciar casino|anunciar apuestas|promover casino|promover apuestas|colaboración casino|colaboración apuestas|partnership casino|partnership apuestas|sponsorship casino|sponsorship apuestas|patrocinio casino|patrocinio apuestas)/i;
+  
+  const isGamblingRelated = gamblingKeywordsRegex.test(mailText);
+
   const isIgSender = /instagram\.com|facebookmail\.com/.test(fromLc);
   const notificationTextRegex =
     /(new login|we'?ve noticed a new login|security alert|unusual activity|password reset|verification code|your instagram post|is getting more comments than usual|more comments than usual|more likes than usual|view (updates|photos) on instagram|see what you'?ve missed on instagram|tienes \d+ notificaci[oó]n|tienes 1 notificaci[oó]n|ver las novedades de instagram)/;
@@ -533,8 +538,12 @@ async function classifyIntentHeuristic({
     !isBarterRequest &&
     !isFreeCoverageRequest;
   
-  // REGLA DURA: Barter Request SIEMPRE Low (verificación temprana antes de cualquier Discard)
-  if (isBarterRequest) {
+  // REGLA DURA: Gambling/Betting/Casino related requests SIEMPRE Discard (verificación temprana, máxima prioridad)
+  if (isGamblingRelated) {
+    intent = "Discard";
+    confidence = 0.99;
+    reasoning = "Email is requesting promotions, partnerships, or advertising related to gambling, betting, or casinos. These requests are always categorized as Discard, regardless of pricing or partnership mentions.";
+  } else if (isBarterRequest) {
     intent = "Low";
     confidence = 0.8;
     reasoning = "Email is a barter request (invitation or service in exchange for coverage), categorized as Low intent (not Discard, Medium, High, or Very High).";
