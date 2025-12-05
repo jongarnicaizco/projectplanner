@@ -911,12 +911,29 @@ export function getLocationFromEmail(toEmail) {
 /**
  * Busca emails de ciudades en el cuerpo del mensaje y retorna la ubicación correspondiente
  * Útil cuando el correo viene de secretmedia@feverup.com y el To no tiene información de ciudad
+ * Prioriza emails encontrados en headers de mensajes reenviados (To:, From:, etc.)
  * Retorna { country, countryCode, city } o null si no se encuentra
  */
 export function getLocationFromEmailInBody(body) {
   if (!body || typeof body !== "string") return null;
   
-  // Buscar todos los emails en el cuerpo del mensaje
+  // Primero buscar en headers de mensajes reenviados (prioridad alta)
+  // Buscar patrones como "To: <email@domain.com>" o "To: email@domain.com"
+  const headerPattern = /(?:^|\n)(?:To|From|CC|BCC|Reply-To):\s*(?:<)?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(?:>)?/gim;
+  const headerMatches = Array.from(body.matchAll(headerPattern));
+  
+  // Buscar primero en los headers (prioridad alta)
+  for (const match of headerMatches) {
+    const email = match[1].trim().toLowerCase();
+    const location = EMAIL_LOCATION_MAP[email];
+    
+    if (location) {
+      console.log(`[mfs] Ubicación encontrada en header del mensaje reenviado: ${email} → ${location.city}, ${location.country}`);
+      return location;
+    }
+  }
+  
+  // Si no se encontró en headers, buscar en todo el cuerpo del mensaje
   const emailPattern = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
   const emailMatches = Array.from(body.matchAll(emailPattern));
   
