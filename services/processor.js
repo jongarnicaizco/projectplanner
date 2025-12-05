@@ -37,6 +37,7 @@ import { classifyIntent } from "./vertex.js";
 import { createAirtableRecord, airtableFindByEmailId } from "./airtable.js";
 import { sendBarterEmail, sendFreeCoverageEmail } from "./email-sender.js";
 import { createSalesforceLead } from "./salesforce.js";
+import { getCityId } from "../config.js";
 
 // Función para resetear el contador de rate limit (llamada desde index.js cuando se activa el servicio)
 export function resetRateLimitCounter() {
@@ -558,11 +559,15 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
             if (meddicChampion) meddicParts.push(`C: ${meddicChampion}`);
             const meddicAnalysis = meddicParts.join("\n\n").slice(0, 1000);
 
+            // Obtener City ID basándose en el nombre de la ciudad
+            const cityId = location?.city ? getCityId(location.city) : null;
+            
             // Mapeo de campos según especificación:
             // LastName/Company --> Client Name (senderName)
             // Email --> From
             // Country__c --> Country Code (location?.countryCode)
             // City__c --> City (location?.city)
+            // City_ID__c --> City ID (cityId)
             // Lead_AI_Scoring__c --> Business Oppt (finalIntent)
             // MEDDIC_Analysis__c --> MEDDIC Analysis (meddicAnalysis)
             const salesforceResult = await createSalesforceLead({
@@ -571,6 +576,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
               email: from,
               countryCode: location?.countryCode || null,
               city: location?.city || null,
+              cityId: cityId,
               subject: subject || "",
               body: body || "",
               businessOppt: finalIntent,

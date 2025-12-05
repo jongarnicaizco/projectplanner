@@ -74,6 +74,7 @@ export async function createSalesforceLead({
   email,
   countryCode,
   city,
+  cityId,
   subject,
   body,
   businessOppt,
@@ -102,6 +103,7 @@ export async function createSalesforceLead({
       Country__c: countryCode || null,
       Description: subject ? `${subject}\n\n${body || ""}` : body || null,
       City__c: city || null,
+      City_ID__c: cityId || null,
       Lead_AI_Scoring__c: businessOppt || null,
       MEDDIC_Analysis__c: meddicAnalysis || null,
     };
