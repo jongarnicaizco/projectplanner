@@ -499,6 +499,19 @@ async function classifyIntentHeuristic({
   
   const isGamblingRelated = gamblingKeywordsRegex.test(mailText);
 
+  // Detección de firmas automáticas de email clients (Outlook, Gmail, etc.)
+  // Estas firmas indican que el email es principalmente una firma automática sin contenido real
+  const automaticEmailSignatureRegex = /(envoy[ée] (à partir de|depuis|from)|sent (from|via)|enviado (desde|desde)|enviado (a partir de|desde)|get outlook (for|para)|outlook (pour|for|para) (android|ios|iphone|ipad)|outlook (pour|for|para) (android|ios|iphone|ipad)|aka\.ms\/[a-zA-Z0-9]+|get (outlook|gmail) (for|para)|download (outlook|gmail)|obtener (outlook|gmail))/i;
+  
+  // Verificar si el email es principalmente una firma automática
+  // Si el body contiene principalmente la firma automática (más del 50% del contenido es la firma)
+  const hasAutomaticSignature = automaticEmailSignatureRegex.test(mailText);
+  const bodyLength = normalizedBody.length;
+  const signatureMatch = mailText.match(automaticEmailSignatureRegex);
+  const signatureLength = signatureMatch ? signatureMatch[0].length : 0;
+  // Si el email es muy corto (< 100 caracteres) y contiene una firma automática, es probable que sea solo la firma
+  const isOnlyAutomaticSignature = hasAutomaticSignature && (bodyLength < 100 || (signatureLength / bodyLength) > 0.3);
+
   const isIgSender = /instagram\.com|facebookmail\.com/.test(fromLc);
   const notificationTextRegex =
     /(new login|we'?ve noticed a new login|security alert|unusual activity|password reset|verification code|your instagram post|is getting more comments than usual|more comments than usual|more likes than usual|view (updates|photos) on instagram|see what you'?ve missed on instagram|tienes \d+ notificaci[oó]n|tienes 1 notificaci[oó]n|ver las novedades de instagram)/;
@@ -538,8 +551,14 @@ async function classifyIntentHeuristic({
     !isBarterRequest &&
     !isFreeCoverageRequest;
   
+  // REGLA DURA: Firmas automáticas de email clients SIEMPRE Discard (verificación temprana, máxima prioridad)
+  if (isOnlyAutomaticSignature || (hasAutomaticSignature && bodyLength < 150)) {
+    intent = "Discard";
+    confidence = 0.99;
+    reasoning = "Email contains primarily an automatic email client signature (Outlook, Gmail, etc.) with no meaningful business content, so it is discarded.";
+  } 
   // REGLA DURA: Gambling/Betting/Casino related requests SIEMPRE Discard (verificación temprana, máxima prioridad)
-  if (isGamblingRelated) {
+  else if (isGamblingRelated) {
     intent = "Discard";
     confidence = 0.99;
     reasoning = "Email is requesting promotions, partnerships, or advertising related to gambling, betting, or casinos. These requests are always categorized as Discard, regardless of pricing or partnership mentions.";
