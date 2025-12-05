@@ -2,7 +2,7 @@
  * Servicio de Airtable
  */
 import axios from "axios";
-import { CFG, FLAGS, FIDS } from "../config.js";
+import { CFG, FLAGS, FIDS, getCityId } from "../config.js";
 import { accessSecret } from "./secrets.js";
 
 let airtableMetaCache = null;
@@ -485,6 +485,17 @@ export async function createAirtableRecord({
       await putName("City", location.city);
       await putName("Country", location.country);
       await putName("Country Code", location.countryCode);
+      
+      // Obtener City ID basándose en el nombre de la ciudad
+      if (location.city) {
+        const cityId = getCityId(location.city);
+        if (cityId !== null) {
+          await putName("City ID", cityId);
+          console.log(`[mfs] Airtable: City ID ${cityId} asignado para ciudad "${location.city}"`);
+        } else {
+          console.log(`[mfs] Airtable: No se encontró City ID para ciudad "${location.city}"`);
+        }
+      }
     }
 
     const bodyReq = { records: [{ fields }], typecast: true };
