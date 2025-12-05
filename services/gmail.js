@@ -272,6 +272,17 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
 
     const data = resp.data || {};
     const history = data.history || [];
+    
+    console.log(`[mfs] [history] history.list retornó ${history.length} entradas de history`, {
+      useSenderState,
+      totalHistoryEntries: history.length,
+      firstEntryMessagesAdded: history[0]?.messagesAdded?.length || 0,
+    });
+
+    let totalMessagesInHistory = 0;
+    let messagesInInbox = 0;
+    let messagesWithProcessed = 0;
+    let messagesAdded = 0;
 
     for (const h of history) {
       // LÍMITE DE SEGURIDAD: Detener si alcanzamos el límite
@@ -279,16 +290,49 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
         break;
       }
       
-      (h.messagesAdded || []).forEach((ma) => {
+      const messagesAddedInEntry = h.messagesAdded || [];
+      totalMessagesInHistory += messagesAddedInEntry.length;
+      
+      messagesAddedInEntry.forEach((ma) => {
         if (idsSet.size >= MAX_MESSAGES_PER_EXECUTION) return;
         const m = ma.message;
         if (!m) return;
         const labels = m.labelIds || [];
+        
+        // Logging detallado para diagnóstico
+        if (labels.includes("INBOX")) {
+          messagesInInbox++;
+        }
+        if (labels.includes("processed")) {
+          messagesWithProcessed++;
+        }
+        
         // CRÍTICO: Solo agregar mensajes que están en INBOX y NO tienen etiqueta "processed"
         // Esto evita procesar mensajes antiguos que ya fueron procesados
         if (labels.includes("INBOX") && !labels.includes("processed") && m.id) {
           idsSet.add(m.id);
+          messagesAdded++;
+          if (useSenderState && messagesAdded <= 5) {
+            console.log(`[mfs] [history] ✓ Mensaje agregado (cuenta SENDER): ${m.id}, labels: ${labels.join(", ")}`);
+          }
+        } else if (useSenderState && messagesAdded <= 5) {
+          // Logging para los primeros mensajes que NO se agregaron (solo para cuenta SENDER)
+          const reasons = [];
+          if (!labels.includes("INBOX")) reasons.push("no está en INBOX");
+          if (labels.includes("processed")) reasons.push("ya tiene etiqueta processed");
+          if (!m.id) reasons.push("no tiene ID");
+          console.log(`[mfs] [history] ⏭️ Mensaje NO agregado (cuenta SENDER): ${m.id || "sin ID"}, razones: ${reasons.join(", ")}, labels: ${labels.join(", ")}`);
         }
+      });
+    }
+    
+    if (useSenderState) {
+      console.log(`[mfs] [history] Resumen (cuenta SENDER):`, {
+        totalMessagesInHistory,
+        messagesInInbox,
+        messagesWithProcessed,
+        messagesAdded,
+        idsSetSize: idsSet.size,
       });
     }
 
