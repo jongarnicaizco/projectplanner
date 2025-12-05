@@ -241,7 +241,9 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
         );
 
         // Si tenemos una notificación válida con historyId más reciente, intentar obtener mensajes nuevos
-        // usando messages.list con filtro de tiempo reciente (últimos 15 minutos)
+        // NOTA: El fallback con queries puede fallar si el token no tiene el scope necesario
+        // En ese caso, simplemente actualizamos el historyId y retornamos vacío
+        // Los próximos mensajes se procesarán correctamente cuando lleguen nuevas notificaciones
         if (notifHistoryId) {
           try {
             console.log("[mfs] [history] Usando fallback: buscando mensajes nuevos en INBOX (últimos 15 minutos, sin processed)");
@@ -272,15 +274,29 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
             
             return { ids: messageIds, newHistoryId: notifHistoryId, usedFallback: true };
           } catch (fallbackError) {
-            console.error("[mfs] [history] Error en fallback para mensajes nuevos:", fallbackError?.message);
-            // Si falla el fallback, actualizar historyId y retornar vacío
+            const errorMessage = fallbackError?.message || String(fallbackError);
+            const isScopeError = errorMessage.includes("Metadata scope") || errorMessage.includes("does not support 'q' parameter");
+            
+            if (isScopeError) {
+              console.warn("[mfs] [history] Fallback falló: el token OAuth no tiene permisos para usar queries en messages.list");
+              console.warn("[mfs] [history] Actualizando historyId y retornando vacío. Los próximos mensajes se procesarán correctamente.");
+            } else {
+              console.error("[mfs] [history] Error en fallback para mensajes nuevos:", fallbackError?.message);
+            }
+            
+            // CRÍTICO: Actualizar historyId al de la notificación para sincronizar
+            // Esto permite que los próximos mensajes se procesen correctamente
             if (notifHistoryId) {
               if (useSenderState) {
                 await writeHistoryStateSender(String(notifHistoryId));
+                console.log(`[mfs] [history] historyId SENDER actualizado a ${notifHistoryId} (sincronizado con notificación)`);
               } else {
                 await writeHistoryState(String(notifHistoryId));
+                console.log(`[mfs] [history] historyId actualizado a ${notifHistoryId} (sincronizado con notificación)`);
               }
             }
+            
+            // Retornar vacío - los próximos mensajes se procesarán cuando lleguen nuevas notificaciones
             return { ids: [], newHistoryId: notifHistoryId || null, usedFallback: false };
           }
         } else {
