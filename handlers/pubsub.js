@@ -13,9 +13,10 @@ export async function handlePubSub(req, res) {
   try {
     // Verificar estado del servicio ANTES de procesar (máxima prioridad)
     // Esta verificación se hace PRIMERO para evitar cualquier procesamiento si está detenido
+    // CRÍTICO: Esta es la primera línea de defensa - si el servicio está detenido, NO procesar NADA
     const serviceStatus = await readServiceStatus();
     if (serviceStatus.status === "stopped") {
-      console.log("[mfs] _pubsub: ⚠️ Servicio detenido. Ignorando notificación de Pub/Sub. No se procesarán mensajes hasta que se reactive manualmente desde el webapp.");
+      console.log("[mfs] _pubsub: 🚨 SERVICIO DETENIDO. Ignorando notificación de Pub/Sub. NO se procesarán mensajes hasta que se reactive manualmente desde el webapp. Estado verificado:", serviceStatus.status);
       return res.status(204).send();
     }
     

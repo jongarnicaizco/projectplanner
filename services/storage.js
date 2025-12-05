@@ -284,21 +284,44 @@ export async function readServiceStatus() {
  * Escribe el estado del servicio (START/STOP)
  */
 export async function writeServiceStatus(status) {
-  if (!CFG.GCS_BUCKET) return;
+  if (!CFG.GCS_BUCKET) {
+    console.error("[mfs] [service] ✗ ERROR: GCS_BUCKET no está configurado. No se puede guardar el estado del servicio.");
+    throw new Error("GCS_BUCKET no está configurado. No se puede guardar el estado del servicio.");
+  }
 
   if (status !== "active" && status !== "stopped") {
     throw new Error("Status debe ser 'active' o 'stopped'");
   }
 
+  const statusData = {
+    status,
+    updatedAt: new Date().toISOString(),
+  };
+
   await saveToGCS(
     "state/service_status.json",
-    JSON.stringify({
-      status,
-      updatedAt: new Date().toISOString(),
-    }, null, 2),
+    JSON.stringify(statusData, null, 2),
     "application/json"
   );
-  console.log(`[mfs] [service] ✓ Estado del servicio actualizado a: ${status}`);
+  
+  console.log(`[mfs] [service] ✓ Estado del servicio actualizado a: ${status} (timestamp: ${statusData.updatedAt})`);
+  
+  // Verificar que se guardó correctamente (lectura inmediata)
+  try {
+    const [buf] = await storage
+      .bucket(CFG.GCS_BUCKET)
+      .file("state/service_status.json")
+      .download();
+    const savedData = JSON.parse(buf.toString("utf8"));
+    if (savedData.status !== status) {
+      console.error(`[mfs] [service] ✗ ERROR: El estado guardado no coincide. Esperado: '${status}', Guardado: '${savedData.status}'`);
+      throw new Error(`El estado guardado no coincide. Esperado: '${status}', Guardado: '${savedData.status}'`);
+    }
+    console.log(`[mfs] [service] ✓ Verificación exitosa: Estado guardado correctamente como '${status}'`);
+  } catch (verifyError) {
+    console.error(`[mfs] [service] ✗ ERROR verificando estado guardado:`, verifyError?.message || verifyError);
+    throw new Error(`No se pudo verificar que el estado se guardó correctamente: ${verifyError?.message || verifyError}`);
+  }
 }
 
 /**

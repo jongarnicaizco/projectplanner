@@ -311,21 +311,48 @@ app.post("/control/process-unprocessed", async (_req, res) => {
 /**
  * Webhook de Airtable para detener el servicio automáticamente
  * Este endpoint recibe llamadas del webhook de Airtable y ejecuta lo mismo que el botón de "Detener" del webapp
+ * CRÍTICO: Este webhook debe detener el servicio COMPLETAMENTE y verificar que el estado se guardó correctamente
  */
 app.post("/webhook/airtable-stop", async (_req, res) => {
   try {
-    console.log("[mfs] /webhook/airtable-stop → Webhook recibido de Airtable, deteniendo servicio");
+    console.log("[mfs] 🚨 /webhook/airtable-stop → Webhook recibido de sistema de alerting, DETENIENDO SERVICIO COMPLETAMENTE");
+    
+    // Escribir estado "stopped" en GCS
     await writeServiceStatus("stopped");
+    console.log("[mfs] 🚨 /webhook/airtable-stop → Estado 'stopped' escrito en GCS");
+    
+    // VERIFICAR que el estado se guardó correctamente (lectura inmediata)
+    const { readServiceStatus } = await import("./services/storage.js");
+    const verificationStatus = await readServiceStatus();
+    
+    if (verificationStatus.status !== "stopped") {
+      console.error(`[mfs] 🚨 ERROR CRÍTICO: El estado no se guardó correctamente. Estado esperado: 'stopped', Estado actual: '${verificationStatus.status}'`);
+      // Intentar escribir de nuevo
+      await writeServiceStatus("stopped");
+      const secondVerification = await readServiceStatus();
+      if (secondVerification.status !== "stopped") {
+        throw new Error(`No se pudo guardar el estado 'stopped'. Estado actual: '${secondVerification.status}'`);
+      }
+    }
+    
+    console.log(`[mfs] 🚨 /webhook/airtable-stop → ✓ VERIFICACIÓN EXITOSA: Servicio detenido completamente. Estado verificado: '${verificationStatus.status}'. NO se procesarán mensajes hasta que se reactive manualmente desde el webapp.`);
     
     res.json({
       ok: true,
-      message: "Servicio detenido desde webhook de Airtable. No se procesarán mensajes hasta que se reactive desde el webapp.",
+      message: "Servicio detenido completamente desde webhook de alerting. No se procesarán mensajes hasta que se reactive desde el webapp.",
       status: "stopped",
+      verified: true,
       source: "airtable-webhook",
+      timestamp: new Date().toISOString(),
     });
   } catch (e) {
+    console.error("[mfs] 🚨 ERROR CRÍTICO en /webhook/airtable-stop:", e?.message || e);
     logErr("webhook/airtable-stop error:", e);
-    res.status(500).json({ error: e?.message });
+    res.status(500).json({ 
+      ok: false,
+      error: e?.message || "Error desconocido al detener el servicio",
+      status: "unknown",
+    });
   }
 });
 

@@ -195,10 +195,11 @@ async function incrementRateLimit() {
 
 export async function processMessageIds(gmail, ids, serviceSource = null) {
   // Verificar estado del servicio ANTES de procesar (máxima prioridad)
+  // CRÍTICO: Esta es la segunda línea de defensa - si el servicio está detenido, NO procesar NADA
   const { readServiceStatus } = await import("./storage.js");
   const serviceStatus = await readServiceStatus();
   if (serviceStatus.status === "stopped") {
-    console.log(`[mfs] ⚠️ PROCESAMIENTO DETENIDO: Servicio está detenido. No se procesarán mensajes hasta que se reactive manualmente desde el webapp.`);
+    console.log(`[mfs] 🚨 PROCESAMIENTO DETENIDO: Servicio está detenido (estado verificado: '${serviceStatus.status}'). NO se procesarán mensajes hasta que se reactive manualmente desde el webapp.`);
     return {
       exitosos: 0,
       fallidos: 0,
@@ -230,10 +231,11 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
     try {
       // Verificar estado del servicio ANTES de procesar cada mensaje (para evitar procesamiento si se detiene durante el loop)
       // Esta verificación es CRÍTICA para evitar que se procesen mensajes si el servicio se detiene mientras se están procesando
+      // CRÍTICO: Esta es la tercera línea de defensa - verificación en cada mensaje
       const { readServiceStatus } = await import("./storage.js");
       const currentServiceStatus = await readServiceStatus();
       if (currentServiceStatus.status === "stopped") {
-        console.log(`[mfs] ⚠️ PROCESAMIENTO DETENIDO: Servicio detenido durante procesamiento. Saltando mensaje ${id} y todos los siguientes. No se procesarán mensajes hasta que se reactive manualmente desde el webapp.`);
+        console.log(`[mfs] 🚨 PROCESAMIENTO DETENIDO: Servicio detenido durante procesamiento (estado verificado: '${currentServiceStatus.status}'). Saltando mensaje ${id} y todos los siguientes. NO se procesarán mensajes hasta que se reactive manualmente desde el webapp.`);
         // NO aplicar etiqueta processed a los mensajes restantes - se procesarán cuando se reactive el servicio
         // Esto permite que cuando se reactive, se procesen los mensajes que quedaron pendientes
         break; // Salir del loop completamente
