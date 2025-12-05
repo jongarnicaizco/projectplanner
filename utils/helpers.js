@@ -932,11 +932,14 @@ export function getLocationFromEmailInBody(body) {
   // Buscar primero en headers con brackets (prioridad más alta)
   for (const match of headerMatchesWithBrackets) {
     const email = match[1].trim().toLowerCase();
+    console.log(`[mfs] Email encontrado en header (con brackets): ${email}`);
     const location = EMAIL_LOCATION_MAP[email];
     
     if (location) {
-      console.log(`[mfs] Ubicación encontrada en header del mensaje reenviado (con brackets): ${email} → ${location.city}, ${location.country}`);
+      console.log(`[mfs] ✓ Ubicación encontrada en header del mensaje reenviado (con brackets): ${email} → ${location.city}, ${location.country}`);
       return location;
+    } else {
+      console.log(`[mfs] ⚠️ Email ${email} no está en EMAIL_LOCATION_MAP`);
     }
   }
   
@@ -946,11 +949,14 @@ export function getLocationFromEmailInBody(body) {
   
   for (const match of headerMatchesWithoutBrackets) {
     const email = match[1].trim().toLowerCase();
+    console.log(`[mfs] Email encontrado en header (sin brackets): ${email}`);
     const location = EMAIL_LOCATION_MAP[email];
     
     if (location) {
-      console.log(`[mfs] Ubicación encontrada en header del mensaje reenviado (sin brackets): ${email} → ${location.city}, ${location.country}`);
+      console.log(`[mfs] ✓ Ubicación encontrada en header del mensaje reenviado (sin brackets): ${email} → ${location.city}, ${location.country}`);
       return location;
+    } else {
+      console.log(`[mfs] ⚠️ Email ${email} no está en EMAIL_LOCATION_MAP`);
     }
   }
   
@@ -959,12 +965,13 @@ export function getLocationFromEmailInBody(body) {
   const emailMatches = Array.from(body.matchAll(emailPattern));
   
   // Buscar el primer email que esté en el EMAIL_LOCATION_MAP
+  console.log(`[mfs] Buscando ${emailMatches.length} emails encontrados en el cuerpo del mensaje...`);
   for (const match of emailMatches) {
     const email = match[1].trim().toLowerCase();
     const location = EMAIL_LOCATION_MAP[email];
     
     if (location) {
-      console.log(`[mfs] Ubicación encontrada en cuerpo del mensaje: ${email} → ${location.city}, ${location.country}`);
+      console.log(`[mfs] ✓ Ubicación encontrada en cuerpo del mensaje: ${email} → ${location.city}, ${location.country}`);
       return location;
     }
   }
