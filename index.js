@@ -634,28 +634,25 @@ app.get("/control", async (_req, res) => {
       try {
         const res = await fetch('/control/status');
         const data = await res.json();
-        // Verificar que la respuesta sea válida (puede tener data.ok o directamente data.status)
-        const serviceStatus = data.status || (data.ok ? data.status : null);
-        const salesforceStatus = data.salesforce || (data.ok ? data.salesforce : null);
-        const emailSendingStatus = data.emailSending || (data.ok ? data.emailSending : null);
         
-        if (serviceStatus !== null) {
+        // El endpoint siempre devuelve data.ok: true y data.status, data.salesforce, data.emailSending
+        if (data && (data.ok || data.status !== undefined)) {
+          const serviceStatus = data.status || 'active';
+          const salesforceStatus = data.salesforce || 'active';
+          const emailSendingStatus = data.emailSending || 'active';
+          
           // Actualizar estado del servicio principal
           statusEl.className = 'status ' + serviceStatus;
           statusEl.textContent = serviceStatus === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
           btnStart.disabled = serviceStatus === 'active';
           btnStop.disabled = serviceStatus === 'stopped';
-        }
-        
-        if (salesforceStatus !== null) {
+          
           // Actualizar estado de Salesforce
           salesforceStatusEl.className = 'status-badge ' + salesforceStatus;
           salesforceStatusEl.textContent = salesforceStatus === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
           btnSalesforceStart.disabled = salesforceStatus === 'active';
           btnSalesforceStop.disabled = salesforceStatus === 'stopped';
-        }
-        
-        if (emailSendingStatus !== null) {
+          
           // Actualizar estado de envío de emails
           emailStatusEl.className = 'status-badge ' + emailSendingStatus;
           emailStatusEl.textContent = emailSendingStatus === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
