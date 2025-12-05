@@ -302,12 +302,20 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
     startHistoryId,
     notifHistoryId,
     idsEncontrados: Array.from(idsSet).slice(0, 10),
+    useSenderState,
   });
   
   // Si no encontramos mensajes en history.list, no hacer fallback
   // Solo procesar mensajes que realmente son nuevos según historyId
   if (idsSet.size === 0) {
     console.log("[mfs] [history] No hay mensajes nuevos según history.list. Todo está sincronizado.");
+    if (useSenderState) {
+      console.log("[mfs] [history] (Cuenta SENDER - secretmedia@feverup.com)");
+    }
+  } else {
+    if (useSenderState) {
+      console.log(`[mfs] [history] ✓ Encontrados ${idsSet.size} mensajes nuevos en cuenta SENDER (secretmedia@feverup.com)`);
+    }
   }
 
   const newHistoryId = notifHistoryId || startHistoryId;

@@ -114,6 +114,8 @@ export async function handlePubSub(req, res) {
       
       // Obtener mensajes nuevos de la cuenta SENDER (usando estado separado)
       console.log("[mfs] _pubsub: Obteniendo mensajes nuevos de cuenta SENDER...");
+      console.log("[mfs] _pubsub: notifHistoryId para cuenta SENDER:", notifHistoryId);
+      
       const { ids: senderIds, newHistoryId: senderHistoryIdTemp, usedFallback: senderUsedFallback } =
         await getNewInboxMessageIdsFromHistory(gmailSender, notifHistoryId, true); // useSenderState = true
       
@@ -124,7 +126,16 @@ export async function handlePubSub(req, res) {
         count: senderIds.length,
         ids: senderIds.slice(0, 10),
         usedFallback: senderUsedFallback,
+        newHistoryId: senderHistoryId,
       });
+      
+      if (senderIds.length === 0) {
+        console.log("[mfs] _pubsub: ⚠️ No se encontraron mensajes nuevos para procesar (cuenta SENDER)");
+        console.log("[mfs] _pubsub: Esto puede ser porque:");
+        console.log("[mfs] _pubsub: 1. No hay mensajes nuevos en INBOX");
+        console.log("[mfs] _pubsub: 2. Todos los mensajes ya tienen etiqueta 'processed'");
+        console.log("[mfs] _pubsub: 3. El historyId está desincronizado y se actualizó sin procesar mensajes");
+      }
 
       // Verificar estado del servicio UNA VEZ MÁS antes de procesar mensajes SENDER (cuarta verificación)
       const serviceStatusBeforeProcessingSender = await readServiceStatus();
