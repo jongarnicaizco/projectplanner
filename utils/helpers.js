@@ -919,17 +919,37 @@ export function getLocationFromEmailInBody(body) {
   if (!body || typeof body !== "string") return null;
   
   // Primero buscar en headers de mensajes reenviados (prioridad alta)
-  // Buscar patrones como "To: <email@domain.com>" o "To: email@domain.com"
-  const headerPattern = /(?:^|\n)(?:To|From|CC|BCC|Reply-To):\s*(?:<)?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(?:>)?/gim;
-  const headerMatches = Array.from(body.matchAll(headerPattern));
+  // Buscar patrones como:
+  // - "To: <email@domain.com>"
+  // - "To: email@domain.com"
+  // - "From: 'Name' via Something <email@domain.com>"
+  // - "From: Name <email@domain.com>"
   
-  // Buscar primero en los headers (prioridad alta)
-  for (const match of headerMatches) {
+  // Patrón mejorado que busca emails dentro de < > en headers, incluso si hay texto antes
+  const headerPatternWithBrackets = /(?:^|\n)(?:To|From|CC|BCC|Reply-To):[^<\n]*<([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>/gim;
+  const headerMatchesWithBrackets = Array.from(body.matchAll(headerPatternWithBrackets));
+  
+  // Buscar primero en headers con brackets (prioridad más alta)
+  for (const match of headerMatchesWithBrackets) {
     const email = match[1].trim().toLowerCase();
     const location = EMAIL_LOCATION_MAP[email];
     
     if (location) {
-      console.log(`[mfs] Ubicación encontrada en header del mensaje reenviado: ${email} → ${location.city}, ${location.country}`);
+      console.log(`[mfs] Ubicación encontrada en header del mensaje reenviado (con brackets): ${email} → ${location.city}, ${location.country}`);
+      return location;
+    }
+  }
+  
+  // También buscar en headers sin brackets (formato directo)
+  const headerPatternWithoutBrackets = /(?:^|\n)(?:To|From|CC|BCC|Reply-To):\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(?:\s|$|\n)/gim;
+  const headerMatchesWithoutBrackets = Array.from(body.matchAll(headerPatternWithoutBrackets));
+  
+  for (const match of headerMatchesWithoutBrackets) {
+    const email = match[1].trim().toLowerCase();
+    const location = EMAIL_LOCATION_MAP[email];
+    
+    if (location) {
+      console.log(`[mfs] Ubicación encontrada en header del mensaje reenviado (sin brackets): ${email} → ${location.city}, ${location.country}`);
       return location;
     }
   }
