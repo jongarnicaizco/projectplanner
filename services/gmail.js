@@ -509,9 +509,30 @@ export async function getGmailSenderClient() {
     try {
       const tokenResponse = await oAuth2Client.getAccessToken();
       console.log("[mfs] ✓ Token OAuth SENDER refrescado exitosamente");
-      console.log("[mfs] ✓ Cliente Gmail OAuth SENDER listo y verificado");
-      console.log("[mfs] ===== CLIENTE GMAIL SENDER CREADO EXITOSAMENTE =====");
-      return google.gmail({ version: "v1", auth: oAuth2Client });
+      
+      // Verificar que el token tiene los permisos necesarios probando una operación simple
+      console.log("[mfs] Verificando permisos del token OAuth SENDER...");
+      const testGmail = google.gmail({ version: "v1", auth: oAuth2Client });
+      try {
+        const profile = await testGmail.users.getProfile({ userId: "me" });
+        console.log("[mfs] ✓ Permisos verificados - Email de cuenta SENDER:", profile.data.emailAddress);
+        
+        // Verificar que puede listar labels (necesario para aplicar etiqueta processed)
+        try {
+          const labelsResponse = await testGmail.users.labels.list({ userId: "me" });
+          const processedLabel = labelsResponse.data.labels?.find(l => l.name?.toLowerCase() === "processed");
+          if (processedLabel) {
+            console.log(`[mfs] ✓ Label "processed" encontrado en cuenta SENDER - ID: ${processedLabel.id}`);
+          } else {
+            console.warn(`[mfs] ⚠️ Label "processed" NO encontrado en cuenta SENDER. Se usará el nombre como fallback.`);
+          }
+        } catch (labelsError) {
+          console.warn(`[mfs] ⚠️ No se pudo verificar labels en cuenta SENDER:`, labelsError?.message);
+        }
+        
+        console.log("[mfs] ✓ Cliente Gmail OAuth SENDER listo y verificado");
+        console.log("[mfs] ===== CLIENTE GMAIL SENDER CREADO EXITOSAMENTE =====");
+        return testGmail;
     } catch (oauthError) {
       const errorDetails = {
         message: oauthError?.message || "unknown",
