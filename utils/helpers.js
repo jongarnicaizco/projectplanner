@@ -908,4 +908,32 @@ export function getLocationFromEmail(toEmail) {
   return location;
 }
 
+/**
+ * Busca emails de ciudades en el cuerpo del mensaje y retorna la ubicación correspondiente
+ * Útil cuando el correo viene de secretmedia@feverup.com y el To no tiene información de ciudad
+ * Retorna { country, countryCode, city } o null si no se encuentra
+ */
+export function getLocationFromEmailInBody(body) {
+  if (!body || typeof body !== "string") return null;
+  
+  // Buscar todos los emails en el cuerpo del mensaje
+  const emailPattern = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi;
+  const emailMatches = Array.from(body.matchAll(emailPattern));
+  
+  // Buscar el primer email que esté en el EMAIL_LOCATION_MAP
+  for (const match of emailMatches) {
+    const email = match[1].trim().toLowerCase();
+    const location = EMAIL_LOCATION_MAP[email];
+    
+    if (location) {
+      console.log(`[mfs] Ubicación encontrada en cuerpo del mensaje: ${email} → ${location.city}, ${location.country}`);
+      return location;
+    }
+  }
+  
+  // Si no se encontró ningún email de ciudad en el cuerpo
+  console.log(`[mfs] No se encontró ningún email de ciudad en el cuerpo del mensaje`);
+  return null;
+}
+
 

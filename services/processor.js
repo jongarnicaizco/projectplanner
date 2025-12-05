@@ -425,7 +425,23 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
 
         // Datos básicos (simplificado)
       const language = detectLanguage(subject + " " + body);
-      const location = getLocationFromEmail(toHeader);
+      
+      // Detectar ubicación: si el correo viene de secretmedia@feverup.com, buscar en el cuerpo del mensaje
+      // en lugar de usar el To (que siempre será secretmedia@feverup.com)
+      let location;
+      if (isToSecretMedia) {
+        // Buscar emails de ciudades en el cuerpo del mensaje
+        const { getLocationFromEmailInBody } = await import("../utils/helpers.js");
+        location = getLocationFromEmailInBody(body);
+        
+        // Si no se encuentra en el cuerpo, intentar con el To como fallback
+        if (!location) {
+          location = getLocationFromEmail(toHeader);
+        }
+      } else {
+        // Para correos normales, usar el To como siempre
+        location = getLocationFromEmail(toHeader);
+      }
         const timestamp = msg.data.internalDate ? new Date(parseInt(msg.data.internalDate, 10)).toISOString() : new Date().toISOString();
 
         // Verificar si es reply (simplificado)
