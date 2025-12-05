@@ -533,6 +533,12 @@ export async function getGmailSenderClient() {
         console.log("[mfs] ✓ Cliente Gmail OAuth SENDER listo y verificado");
         console.log("[mfs] ===== CLIENTE GMAIL SENDER CREADO EXITOSAMENTE =====");
         return testGmail;
+      } catch (profileError) {
+        // Si falla la verificación del perfil, continuar de todas formas (el token puede ser válido)
+        console.warn(`[mfs] ⚠️ No se pudo verificar perfil de cuenta SENDER:`, profileError?.message);
+        console.log("[mfs] Continuando con cliente Gmail SENDER (sin verificación de perfil)");
+        return testGmail;
+      }
     } catch (oauthError) {
       const errorDetails = {
         message: oauthError?.message || "unknown",
