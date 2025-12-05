@@ -428,15 +428,22 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
       
       // Detectar ubicación: si el correo viene de secretmedia@feverup.com, buscar en el cuerpo del mensaje
       // en lugar de usar el To (que siempre será secretmedia@feverup.com)
+      // También actualizar el campo 'to' con el email encontrado en el body
       let location;
       if (isToSecretMedia) {
         // Buscar emails de ciudades en el cuerpo del mensaje
         const { getLocationFromEmailInBody } = await import("../utils/helpers.js");
-        location = getLocationFromEmailInBody(body);
+        const bodyResult = getLocationFromEmailInBody(body);
         
-        // Si no se encuentra en el cuerpo, intentar con el To como fallback
-        if (!location) {
+        if (bodyResult && bodyResult.location && bodyResult.email) {
+          // Se encontró un email de ciudad en el body - usar ese email para 'to' y su ubicación
+          location = bodyResult.location;
+          to = bodyResult.email;
+          console.log(`[mfs] ✓ Email de ciudad encontrado en body para correo TO secretmedia@feverup.com - Actualizando 'to' a: ${to}`);
+        } else {
+          // Si no se encuentra en el cuerpo, intentar con el To como fallback
           location = getLocationFromEmail(toHeader);
+          console.log(`[mfs] ⚠️ No se encontró email de ciudad en body, usando To original: ${to}`);
         }
       } else {
         // Para correos normales, usar el To como siempre

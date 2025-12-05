@@ -910,10 +910,10 @@ export function getLocationFromEmail(toEmail) {
 }
 
 /**
- * Busca emails de ciudades en el cuerpo del mensaje y retorna la ubicación correspondiente
+ * Busca emails de ciudades en el cuerpo del mensaje y retorna la ubicación y el email encontrado
  * Útil cuando el correo viene de secretmedia@feverup.com y el To no tiene información de ciudad
  * Prioriza emails encontrados en headers de mensajes reenviados (To:, From:, etc.)
- * Retorna { country, countryCode, city } o null si no se encuentra
+ * Retorna { location: { country, countryCode, city }, email: string } o null si no se encuentra
  */
 export function getLocationFromEmailInBody(body) {
   if (!body || typeof body !== "string") return null;
@@ -937,7 +937,7 @@ export function getLocationFromEmailInBody(body) {
     
     if (location) {
       console.log(`[mfs] ✓ Ubicación encontrada en header del mensaje reenviado (con brackets): ${email} → ${location.city}, ${location.country}`);
-      return location;
+      return { location, email };
     } else {
       console.log(`[mfs] ⚠️ Email ${email} no está en EMAIL_LOCATION_MAP`);
     }
@@ -954,7 +954,7 @@ export function getLocationFromEmailInBody(body) {
     
     if (location) {
       console.log(`[mfs] ✓ Ubicación encontrada en header del mensaje reenviado (sin brackets): ${email} → ${location.city}, ${location.country}`);
-      return location;
+      return { location, email };
     } else {
       console.log(`[mfs] ⚠️ Email ${email} no está en EMAIL_LOCATION_MAP`);
     }
@@ -972,7 +972,7 @@ export function getLocationFromEmailInBody(body) {
     
     if (location) {
       console.log(`[mfs] ✓ Ubicación encontrada en cuerpo del mensaje: ${email} → ${location.city}, ${location.country}`);
-      return location;
+      return { location, email };
     }
   }
   
