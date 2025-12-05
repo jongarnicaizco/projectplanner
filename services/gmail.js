@@ -237,106 +237,30 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
 
       if (code === "404" || status === "FAILED_PRECONDITION") {
         console.warn(
-          "[mfs] [history] startHistoryId demasiado antiguo. Intentando fallback para mensajes nuevos..."
+          "[mfs] [history] startHistoryId demasiado antiguo. Sincronizando historyId con la notificación..."
         );
 
-        // Si tenemos una notificación válida con historyId más reciente, intentar obtener mensajes nuevos
-        // NOTA: El fallback con queries puede fallar si el token no tiene el scope necesario
-        // En ese caso, simplemente actualizamos el historyId y retornamos vacío
-        // Los próximos mensajes se procesarán correctamente cuando lleguen nuevas notificaciones
+        // Cuando el historyId es demasiado antiguo, NO intentar fallback con queries
+        // Simplemente actualizar el historyId al de la notificación y retornar vacío
+        // Esto evita procesar mensajes antiguos y permite que los próximos mensajes se procesen correctamente
+        // Los mensajes que llegaron mientras el historyId estaba desincronizado se procesarán
+        // cuando lleguen nuevas notificaciones con historyId más reciente
         if (notifHistoryId) {
-          try {
-            console.log("[mfs] [history] Usando fallback: buscando mensajes nuevos en INBOX (últimos 15 minutos, sin processed)");
-            
-            // Obtener mensajes de los últimos 15 minutos que no tengan etiqueta "processed"
-            const fifteenMinutesAgo = Math.floor(Date.now() / 1000) - (15 * 60);
-            const query = `in:inbox -label:processed after:${fifteenMinutesAgo}`;
-            
-            const listResp = await backoff(
-              () =>
-                gmail.users.messages.list({
-                  userId: "me",
-                  q: query,
-                  maxResults: MAX_MESSAGES_PER_EXECUTION,
-                }),
-              "messages.list.fallback"
-            );
-            
-            const messageIds = (listResp.data.messages || []).map(m => m.id);
-            console.log(`[mfs] [history] Fallback: encontrados ${messageIds.length} mensajes nuevos en INBOX (últimos 15min, sin processed)`);
-            
-            // Actualizar historyId al de la notificación para sincronizar
-            if (useSenderState) {
-              await writeHistoryStateSender(String(notifHistoryId));
-            } else {
-              await writeHistoryState(String(notifHistoryId));
-            }
-            
-            return { ids: messageIds, newHistoryId: notifHistoryId, usedFallback: true };
-          } catch (fallbackError) {
-            const errorMessage = fallbackError?.message || String(fallbackError);
-            const isScopeError = errorMessage.includes("Metadata scope") || errorMessage.includes("does not support 'q' parameter");
-            
-            if (isScopeError) {
-              console.warn("[mfs] [history] ⚠️ Fallback falló: el token OAuth no tiene permisos para usar queries en messages.list");
-              console.warn("[mfs] [history] ⚠️ El token OAuth SENDER necesita el scope 'gmail.readonly' o 'gmail.modify' completo");
-              console.warn("[mfs] [history] ⚠️ Intentando alternativa: obtener mensajes sin query (solo INBOX, limitado)...");
-              
-              // Intentar alternativa: obtener mensajes del INBOX sin query (limitado a los más recientes)
-              try {
-                const listRespAlt = await backoff(
-                  () =>
-                    gmail.users.messages.list({
-                      userId: "me",
-                      labelIds: ["INBOX"],
-                      maxResults: Math.min(MAX_MESSAGES_PER_EXECUTION, 50), // Limitar a 50 para evitar procesar demasiados
-                    }),
-                  "messages.list.fallback.alt"
-                );
-                
-                const allMessageIds = (listRespAlt.data.messages || []).map(m => m.id);
-                console.log(`[mfs] [history] Alternativa: encontrados ${allMessageIds.length} mensajes en INBOX (sin filtro de tiempo)`);
-                
-                // Filtrar mensajes que ya tienen etiqueta "processed" obteniendo metadata
-                // Pero esto requiere permisos adicionales, así que mejor actualizar historyId y continuar
-                // Los mensajes sin processed se procesarán en la siguiente ejecución
-                
-                // Actualizar historyId al de la notificación para sincronizar
-                if (useSenderState) {
-                  await writeHistoryStateSender(String(notifHistoryId));
-                  console.log(`[mfs] [history] historyId SENDER actualizado a ${notifHistoryId} (sincronizado con notificación)`);
-                } else {
-                  await writeHistoryState(String(notifHistoryId));
-                  console.log(`[mfs] [history] historyId actualizado a ${notifHistoryId} (sincronizado con notificación)`);
-                }
-                
-                // IMPORTANTE: Retornar vacío para evitar procesar mensajes antiguos
-                // Los próximos mensajes se procesarán cuando lleguen nuevas notificaciones
-                console.warn("[mfs] [history] ⚠️ Retornando vacío para evitar procesar mensajes antiguos. Los próximos mensajes nuevos se procesarán correctamente.");
-                return { ids: [], newHistoryId: notifHistoryId || null, usedFallback: false };
-              } catch (altError) {
-                console.error("[mfs] [history] ✗ Error en alternativa de fallback:", altError?.message);
-                // Continuar con la actualización del historyId
-              }
-            } else {
-              console.error("[mfs] [history] Error en fallback para mensajes nuevos:", fallbackError?.message);
-            }
-            
-            // CRÍTICO: Actualizar historyId al de la notificación para sincronizar
-            // Esto permite que los próximos mensajes se procesen correctamente
-            if (notifHistoryId) {
-              if (useSenderState) {
-                await writeHistoryStateSender(String(notifHistoryId));
-                console.log(`[mfs] [history] historyId SENDER actualizado a ${notifHistoryId} (sincronizado con notificación)`);
-              } else {
-                await writeHistoryState(String(notifHistoryId));
-                console.log(`[mfs] [history] historyId actualizado a ${notifHistoryId} (sincronizado con notificación)`);
-              }
-            }
-            
-            // Retornar vacío - los próximos mensajes se procesarán cuando lleguen nuevas notificaciones
-            return { ids: [], newHistoryId: notifHistoryId || null, usedFallback: false };
+          console.log("[mfs] [history] Actualizando historyId a la notificación para sincronizar");
+          console.log(`[mfs] [history] historyId anterior: ${startHistoryId}, historyId notificación: ${notifHistoryId}`);
+          
+          // CRÍTICO: Actualizar historyId al de la notificación para sincronizar
+          if (useSenderState) {
+            await writeHistoryStateSender(String(notifHistoryId));
+            console.log(`[mfs] [history] ✓ historyId SENDER actualizado a ${notifHistoryId} (sincronizado con notificación)`);
+          } else {
+            await writeHistoryState(String(notifHistoryId));
+            console.log(`[mfs] [history] ✓ historyId actualizado a ${notifHistoryId} (sincronizado con notificación)`);
           }
+          
+          // Retornar vacío - los próximos mensajes se procesarán cuando lleguen nuevas notificaciones
+          console.log("[mfs] [history] Retornando vacío. Los próximos mensajes nuevos se procesarán correctamente cuando lleguen nuevas notificaciones.");
+          return { ids: [], newHistoryId: notifHistoryId, usedFallback: false };
         } else {
           // Si no hay notifHistoryId, no podemos hacer nada - retornar vacío
           console.log("[mfs] [history] HistoryId demasiado antiguo y no hay notifHistoryId. Retornando vacío para evitar procesar mensajes antiguos.");
