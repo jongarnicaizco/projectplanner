@@ -584,6 +584,27 @@ export async function getGmailSenderClient() {
           console.warn(`[mfs] ⚠️ No se pudo verificar labels en cuenta SENDER:`, labelsError?.message);
         }
         
+        // Verificar si el token puede usar queries en messages.list (necesario para el fallback)
+        try {
+          const testQuery = await testGmail.users.messages.list({
+            userId: "me",
+            q: "in:inbox",
+            maxResults: 1,
+          });
+          console.log("[mfs] ✓ Token OAuth SENDER puede usar queries en messages.list");
+        } catch (queryError) {
+          const queryErrorMsg = queryError?.message || String(queryError);
+          if (queryErrorMsg.includes("Metadata scope") || queryErrorMsg.includes("does not support 'q' parameter")) {
+            console.warn("[mfs] ⚠️ ADVERTENCIA: El token OAuth SENDER NO puede usar queries en messages.list");
+            console.warn("[mfs] ⚠️ El refresh token fue generado con un scope limitado (probablemente gmail.metadata)");
+            console.warn("[mfs] ⚠️ Para solucionarlo, regenera el refresh token con el scope completo: https://www.googleapis.com/auth/gmail.modify");
+            console.warn("[mfs] ⚠️ El fallback para mensajes nuevos fallará, pero el historyId se actualizará correctamente");
+          } else {
+            // Otro tipo de error, no es crítico
+            console.log("[mfs] No se pudo verificar queries (no crítico):", queryError?.message);
+          }
+        }
+        
         console.log("[mfs] ✓ Cliente Gmail OAuth SENDER listo y verificado");
         console.log("[mfs] ===== CLIENTE GMAIL SENDER CREADO EXITOSAMENTE =====");
         return testGmail;
