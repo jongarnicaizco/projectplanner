@@ -307,6 +307,7 @@ export async function createAirtableRecord({
   senderFirstName,
   language,
   location,
+  isFromSecretMedia,
 }) {
   // Verificar configuración básica antes de intentar crear
   if (!CFG.AIRTABLE_BASE_ID || !CFG.AIRTABLE_TABLE) {
@@ -472,6 +473,7 @@ export async function createAirtableRecord({
     await putName("Free Coverage Request", !!isFreeCoverage);
     await putName("Barter Request", !!isBarter);
     await putName("Media Kits/Pricing Request", !!isPricing);
+    await putName("Comes from secretmedia@feverup.com?", !!isFromSecretMedia);
     
     // Nuevos campos: nombre del cliente
     await putName("Client Name", senderName);

@@ -488,20 +488,25 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           isPricing = false;
         }
 
-      const toEmailLower = (to || "").toLowerCase().trim();
-      const isSecretMediaEmail = toEmailLower.includes("secretmedia@feverup.com");
-      
       let finalIntent = intent;
       let finalConfidence = confidence;
       let finalReasoning = reasoning;
       
-      if (isSecretMediaEmail && isReply) {
-        finalIntent = "Medium";
-        finalConfidence = Math.max(finalConfidence || 0.75, 0.75);
-        if (!finalReasoning || finalReasoning.length === 0) {
-          finalReasoning = "Email is a reply to secretmedia@feverup.com, automatically classified as Medium intent.";
-        } else {
-          finalReasoning = finalReasoning + " Email is a reply to secretmedia@feverup.com, automatically classified as Medium intent.";
+      // Si el correo viene de secretmedia@feverup.com, el intent debe ser como mínimo "Medium"
+      if (isToSecretMedia) {
+        const intentHierarchy = ["Discard", "Low", "Medium", "High", "Very High"];
+        const currentIntentIndex = intentHierarchy.indexOf(finalIntent || "Discard");
+        const mediumIndex = intentHierarchy.indexOf("Medium");
+        
+        if (currentIntentIndex < mediumIndex) {
+          finalIntent = "Medium";
+          finalConfidence = Math.max(finalConfidence || 0.75, 0.75);
+          if (!finalReasoning || finalReasoning.length === 0) {
+            finalReasoning = "Email comes from secretmedia@feverup.com, automatically classified as Medium intent (minimum).";
+          } else {
+            finalReasoning = finalReasoning + " Email comes from secretmedia@feverup.com, automatically classified as Medium intent (minimum).";
+          }
+          console.log(`[mfs] Intent actualizado a Medium (mínimo) para correo de secretmedia@feverup.com - Intent original: ${intent}`);
         }
       }
 
@@ -597,6 +602,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         meddicMetrics, meddicEconomicBuyer, meddicDecisionCriteria, meddicDecisionProcess,
         meddicIdentifyPain, meddicChampion, isFreeCoverage, isBarter, isPricing,
         senderName, senderFirstName, language, location,
+        isFromSecretMedia: isToSecretMedia,
       });
         } catch (airtableError) {
           // Si falla Airtable, verificar si es porque ya existe (duplicado)
