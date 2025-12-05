@@ -763,6 +763,7 @@ const EMAIL_LOCATION_MAP = {
   "koeln@secretmedianetwork.com": { country: "Germany", countryCode: "DE", city: "Cologne" },
   "muenchen@secretmedianetwork.com": { country: "Germany", countryCode: "DE", city: "Munich" },
   "hamburg@secretmedianetwork.com": { country: "Germany", countryCode: "DE", city: "Hamburg" },
+  "stuttgart@secretmedianetwork.com": { country: "Germany", countryCode: "DE", city: "Stuttgart" },
   "kobenhavn@secretmedianetwork.com": { country: "Denmark", countryCode: "DK", city: "København" },
   "hola@valenciasecreta.com": { country: "Spain", countryCode: "ES", city: "Valencia" },
   "madrid@secretmedianetwork.com": { country: "Spain", countryCode: "ES", city: "Madrid" },
