@@ -11,10 +11,11 @@ import { logErr } from "../utils/helpers.js";
  */
 export async function handlePubSub(req, res) {
   try {
-    // Verificar estado del servicio ANTES de procesar
+    // Verificar estado del servicio ANTES de procesar (máxima prioridad)
+    // Esta verificación se hace PRIMERO para evitar cualquier procesamiento si está detenido
     const serviceStatus = await readServiceStatus();
     if (serviceStatus.status === "stopped") {
-      console.log("[mfs] _pubsub: Servicio detenido. Ignorando notificación.");
+      console.log("[mfs] _pubsub: ⚠️ Servicio detenido. Ignorando notificación de Pub/Sub. No se procesarán mensajes hasta que se reactive manualmente desde el webapp.");
       return res.status(204).send();
     }
     
@@ -59,6 +60,14 @@ export async function handlePubSub(req, res) {
       usedFallback,
     });
 
+    // Verificar estado del servicio NUEVAMENTE antes de procesar mensajes (doble verificación)
+    // Esto previene que si el servicio se detiene mientras se están obteniendo mensajes, no se procesen
+    const serviceStatusBeforeProcessing = await readServiceStatus();
+    if (serviceStatusBeforeProcessing.status === "stopped") {
+      console.log("[mfs] _pubsub: ⚠️ Servicio detenido durante obtención de mensajes. Ignorando procesamiento. No se procesarán mensajes hasta que se reactive manualmente desde el webapp.");
+      return res.status(204).send();
+    }
+
     // 2) Procesamos secuencialmente cada mensaje de la cuenta principal
     if (ids.length) {
       console.log("[mfs] _pubsub: Procesando", ids.length, "mensajes de cuenta principal...");
@@ -74,6 +83,18 @@ export async function handlePubSub(req, res) {
     }
     
     console.log("[mfs] _pubsub: Fin de procesamiento de cuenta principal, continuando con cuenta SENDER...");
+
+    // Verificar estado del servicio ANTES de procesar cuenta SENDER (triple verificación)
+    const serviceStatusBeforeSender = await readServiceStatus();
+    if (serviceStatusBeforeSender.status === "stopped") {
+      console.log("[mfs] _pubsub: ⚠️ Servicio detenido antes de procesar cuenta SENDER. Ignorando procesamiento de cuenta SENDER. No se procesarán mensajes hasta que se reactive manualmente desde el webapp.");
+      // Actualizar historyId de la cuenta principal si se procesó
+      if (newHistoryId) {
+        console.log("[mfs] _pubsub: actualizo historyId guardado (cuenta principal) →", newHistoryId);
+        await writeHistoryState(newHistoryId);
+      }
+      return res.status(204).send();
+    }
 
     // Procesar emails de secretmedia@feverup.com (cuenta SENDER)
     // IMPORTANTE: Este código SIEMPRE se ejecuta, incluso si la cuenta principal falló
@@ -103,6 +124,20 @@ export async function handlePubSub(req, res) {
         ids: senderIds.slice(0, 10),
         usedFallback: senderUsedFallback,
       });
+
+      // Verificar estado del servicio UNA VEZ MÁS antes de procesar mensajes SENDER (cuarta verificación)
+      const serviceStatusBeforeProcessingSender = await readServiceStatus();
+      if (serviceStatusBeforeProcessingSender.status === "stopped") {
+        console.log("[mfs] _pubsub: ⚠️ Servicio detenido antes de procesar mensajes SENDER. Ignorando procesamiento. No se procesarán mensajes hasta que se reactive manualmente desde el webapp.");
+        // Actualizar historyId de ambas cuentas si es necesario
+        if (newHistoryId) {
+          await writeHistoryState(newHistoryId);
+        }
+        if (senderHistoryId) {
+          await writeHistoryStateSender(senderHistoryId);
+        }
+        return res.status(204).send();
+      }
 
       // Procesar mensajes de la cuenta SENDER
       if (senderIds.length) {

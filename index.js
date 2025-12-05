@@ -634,24 +634,33 @@ app.get("/control", async (_req, res) => {
       try {
         const res = await fetch('/control/status');
         const data = await res.json();
-        if (data.ok) {
+        // Verificar que la respuesta sea válida (puede tener data.ok o directamente data.status)
+        const serviceStatus = data.status || (data.ok ? data.status : null);
+        const salesforceStatus = data.salesforce || (data.ok ? data.salesforce : null);
+        const emailSendingStatus = data.emailSending || (data.ok ? data.emailSending : null);
+        
+        if (serviceStatus !== null) {
           // Actualizar estado del servicio principal
-          statusEl.className = 'status ' + data.status;
-          statusEl.textContent = data.status === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
-          btnStart.disabled = data.status === 'active';
-          btnStop.disabled = data.status === 'stopped';
-          
+          statusEl.className = 'status ' + serviceStatus;
+          statusEl.textContent = serviceStatus === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
+          btnStart.disabled = serviceStatus === 'active';
+          btnStop.disabled = serviceStatus === 'stopped';
+        }
+        
+        if (salesforceStatus !== null) {
           // Actualizar estado de Salesforce
-          salesforceStatusEl.className = 'status-badge ' + data.salesforce;
-          salesforceStatusEl.textContent = data.salesforce === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
-          btnSalesforceStart.disabled = data.salesforce === 'active';
-          btnSalesforceStop.disabled = data.salesforce === 'stopped';
-          
+          salesforceStatusEl.className = 'status-badge ' + salesforceStatus;
+          salesforceStatusEl.textContent = salesforceStatus === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
+          btnSalesforceStart.disabled = salesforceStatus === 'active';
+          btnSalesforceStop.disabled = salesforceStatus === 'stopped';
+        }
+        
+        if (emailSendingStatus !== null) {
           // Actualizar estado de envío de emails
-          emailStatusEl.className = 'status-badge ' + data.emailSending;
-          emailStatusEl.textContent = data.emailSending === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
-          btnEmailStart.disabled = data.emailSending === 'active';
-          btnEmailStop.disabled = data.emailSending === 'stopped';
+          emailStatusEl.className = 'status-badge ' + emailSendingStatus;
+          emailStatusEl.textContent = emailSendingStatus === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
+          btnEmailStart.disabled = emailSendingStatus === 'active';
+          btnEmailStop.disabled = emailSendingStatus === 'stopped';
         }
       } catch (e) {
         console.error('Error actualizando estado:', e);
