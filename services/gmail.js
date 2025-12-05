@@ -240,27 +240,22 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
           "[mfs] [history] startHistoryId demasiado antiguo. Intentando obtener mensajes desde historyId más reciente..."
         );
 
-        // Cuando el historyId es demasiado antiguo, usar messages.list con filtro de fecha reciente
-        // Esto es más confiable que intentar adivinar un historyId válido
+        // Cuando el historyId es demasiado antiguo, usar messages.list SIN query (solo labelIds)
+        // Esto funciona incluso con scope limitado (gmail.metadata)
+        // Luego filtramos localmente los mensajes recientes sin "processed"
         if (notifHistoryId) {
           try {
-            // Obtener mensajes de los últimos 15 minutos usando messages.list con query
-            // Esto captura mensajes nuevos sin depender del historyId
-            const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
-            const afterDate = Math.floor(fifteenMinutesAgo.getTime() / 1000);
-            const query = `in:inbox -label:processed after:${afterDate}`;
-            
-            console.log(`[mfs] [history] HistoryId demasiado antiguo. Usando messages.list con query para obtener mensajes recientes (últimos 15 minutos)`, {
+            console.log(`[mfs] [history] HistoryId demasiado antiguo. Usando messages.list SIN query (solo labelIds) para obtener mensajes recientes`, {
               useSenderState,
-              query,
               notifHistoryId,
             });
             
+            // Obtener mensajes del INBOX sin usar query (funciona con scope limitado)
             const messagesResp = await backoff(
               () =>
                 gmail.users.messages.list({
                   userId: "me",
-                  q: query,
+                  labelIds: ["INBOX"],
                   maxResults: MAX_MESSAGES_PER_EXECUTION,
                 }),
               "messages.list.recent"
@@ -268,23 +263,67 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
             
             const messages = messagesResp.data.messages || [];
             
-            console.log(`[mfs] [history] messages.list retornó ${messages.length} mensajes recientes`, {
+            console.log(`[mfs] [history] messages.list retornó ${messages.length} mensajes del INBOX`, {
               useSenderState,
-              query,
               messagesCount: messages.length,
             });
             
-            // Agregar los IDs de los mensajes encontrados
+            // Filtrar mensajes recientes (últimos 15 minutos) y sin "processed"
+            const fifteenMinutesAgo = Date.now() - 15 * 60 * 1000;
+            let processedCount = 0;
+            let tooOldCount = 0;
+            let addedCount = 0;
+            
+            // Obtener detalles de los mensajes para verificar labels y fecha
             for (const msg of messages) {
               if (idsSet.size >= MAX_MESSAGES_PER_EXECUTION) break;
-              if (msg.id) {
+              if (!msg.id) continue;
+              
+              try {
+                // Obtener metadata del mensaje (solo labels e internalDate, no el cuerpo completo)
+                const msgDetail = await backoff(
+                  () =>
+                    gmail.users.messages.get({
+                      userId: "me",
+                      id: msg.id,
+                      format: "metadata",
+                      metadataHeaders: [],
+                    }),
+                  "messages.get.metadata"
+                );
+                
+                const labels = msgDetail.data.labelIds || [];
+                const internalDate = parseInt(msgDetail.data.internalDate || "0", 10);
+                
+                // Verificar si tiene "processed"
+                if (labels.includes("processed")) {
+                  processedCount++;
+                  continue;
+                }
+                
+                // Verificar si es reciente (últimos 15 minutos)
+                if (internalDate < fifteenMinutesAgo) {
+                  tooOldCount++;
+                  continue;
+                }
+                
+                // Agregar el mensaje
                 idsSet.add(msg.id);
+                addedCount++;
+              } catch (msgError) {
+                // Si falla obtener el mensaje, continuar con el siguiente
+                console.warn(`[mfs] [history] Error obteniendo metadata de mensaje ${msg.id}:`, msgError?.message);
+                continue;
               }
             }
             
-            console.log(`[mfs] [history] Mensajes encontrados usando messages.list: ${idsSet.size}`, {
+            console.log(`[mfs] [history] Filtrado de mensajes:`, {
               useSenderState,
-              notifHistoryId,
+              totalMessages: messages.length,
+              added: addedCount,
+              processed: processedCount,
+              tooOld: tooOldCount,
+              finalCount: idsSet.size,
             });
             
             // Actualizar historyId al de la notificación para sincronizar
@@ -300,11 +339,6 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
           } catch (messagesListError) {
             const errorMsg = messagesListError?.message || String(messagesListError);
             console.error(`[mfs] [history] Error obteniendo mensajes con messages.list:`, errorMsg);
-            
-            // Si el error es por scope limitado, solo actualizar historyId y retornar vacío
-            if (errorMsg.includes("Metadata scope") || errorMsg.includes("does not support 'q' parameter")) {
-              console.warn(`[mfs] [history] El token no puede usar queries. Actualizando historyId y retornando vacío.`);
-            }
             
             // Actualizar historyId al de la notificación para sincronizar
             if (useSenderState) {
