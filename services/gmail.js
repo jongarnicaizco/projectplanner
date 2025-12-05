@@ -629,6 +629,14 @@ export async function getGmailSenderClient() {
       const tokenResponse = await oAuth2Client.getAccessToken();
       console.log("[mfs] ✓ Token OAuth SENDER refrescado exitosamente");
       
+      // Logging de los scopes del token (si están disponibles)
+      const credentials = oAuth2Client.credentials;
+      if (credentials.scope) {
+        console.log("[mfs] Scopes del token OAuth SENDER:", credentials.scope);
+      } else {
+        console.log("[mfs] ⚠️ No se pudieron obtener los scopes del token (puede ser normal)");
+      }
+      
       // Verificar que el token tiene los permisos necesarios probando una operación simple
       console.log("[mfs] Verificando permisos del token OAuth SENDER...");
       const testGmail = google.gmail({ version: "v1", auth: oAuth2Client });
@@ -657,13 +665,15 @@ export async function getGmailSenderClient() {
             maxResults: 1,
           });
           console.log("[mfs] ✓ Token OAuth SENDER puede usar queries en messages.list");
+          console.log("[mfs] ✓ El token tiene permisos completos - se puede usar queries cuando sea necesario");
         } catch (queryError) {
           const queryErrorMsg = queryError?.message || String(queryError);
           if (queryErrorMsg.includes("Metadata scope") || queryErrorMsg.includes("does not support 'q' parameter")) {
             console.warn("[mfs] ⚠️ ADVERTENCIA: El token OAuth SENDER NO puede usar queries en messages.list");
-            console.warn("[mfs] ⚠️ El refresh token fue generado con un scope limitado (probablemente gmail.metadata)");
-            console.warn("[mfs] ⚠️ Para solucionarlo, regenera el refresh token con el scope completo: https://www.googleapis.com/auth/gmail.modify");
-            console.warn("[mfs] ⚠️ El fallback para mensajes nuevos fallará, pero el historyId se actualizará correctamente");
+            console.warn("[mfs] ⚠️ El refresh token en Secret Manager fue generado con un scope limitado (probablemente gmail.metadata)");
+            console.warn("[mfs] ⚠️ IMPORTANTE: Actualiza el refresh token en Secret Manager con el nuevo refresh token que tiene todos los permisos");
+            console.warn("[mfs] ⚠️ El refresh token debe tener estos scopes: https://mail.google.com/ https://www.googleapis.com/auth/gmail.modify");
+            console.warn("[mfs] ⚠️ El sistema usará fallback sin queries (messages.list con labelIds), que funciona pero es menos eficiente");
           } else {
             // Otro tipo de error, no es crítico
             console.log("[mfs] No se pudo verificar queries (no crítico):", queryError?.message);
