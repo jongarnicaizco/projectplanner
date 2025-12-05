@@ -65,10 +65,29 @@ async function getProcessedLabelId(gmail) {
       console.log(`[mfs] Label "processed" encontrado con ID: ${labelId}`);
       return labelId;
     }
-    // Si no se encuentra, usar el nombre como fallback
-    console.warn(`[mfs] Label "processed" no encontrado, usando nombre como fallback`);
-    processedLabelIdCache.set(gmail, "processed");
-    return "processed";
+    
+    // Si no se encuentra, CREAR el label automáticamente
+    console.warn(`[mfs] ⚠️ Label "processed" no encontrado. Creando label automáticamente...`);
+    try {
+      const createResponse = await gmail.users.labels.create({
+        userId: "me",
+        requestBody: {
+          name: "processed",
+          labelListVisibility: "labelShow",
+          messageListVisibility: "show",
+        },
+      });
+      const newLabelId = createResponse.data.id;
+      processedLabelIdCache.set(gmail, newLabelId);
+      console.log(`[mfs] ✓ Label "processed" creado exitosamente con ID: ${newLabelId}`);
+      return newLabelId;
+    } catch (createError) {
+      console.error(`[mfs] ✗ Error creando label "processed":`, createError?.message || createError);
+      // Si falla la creación, usar el nombre como fallback (puede que funcione en algunos casos)
+      console.warn(`[mfs] Usando nombre "processed" como fallback`);
+      processedLabelIdCache.set(gmail, "processed");
+      return "processed";
+    }
   } catch (error) {
     console.error(`[mfs] Error obteniendo label ID:`, error?.message || error);
     // Fallback al nombre del label
