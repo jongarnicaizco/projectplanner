@@ -268,14 +268,25 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
               messagesCount: messages.length,
             });
             
-            // Filtrar mensajes recientes (últimos 15 minutos) y sin "processed"
+            // OPTIMIZACIÓN CRÍTICA: Reducir llamadas a messages.get
+            // En lugar de verificar cada mensaje individualmente, confiamos en que:
+            // 1. Si el mensaje está en INBOX y llegó recientemente (según la notificación), probablemente no está procesado
+            // 2. La etiqueta "processed" se aplicará después de procesar, evitando reprocesamiento
+            // 3. Limitamos a solo los primeros 20 mensajes más recientes para evitar excesivas transacciones
+            
+            const MAX_MESSAGES_TO_CHECK = 20; // Límite estricto para evitar excesivas transacciones
             const fifteenMinutesAgo = Date.now() - 15 * 60 * 1000;
             let processedCount = 0;
             let tooOldCount = 0;
             let addedCount = 0;
+            let skippedCount = 0;
             
-            // Obtener detalles de los mensajes para verificar labels y fecha
-            for (const msg of messages) {
+            // Solo verificar los primeros MAX_MESSAGES_TO_CHECK mensajes (los más recientes)
+            const messagesToCheck = messages.slice(0, MAX_MESSAGES_TO_CHECK);
+            console.log(`[mfs] [history] OPTIMIZACIÓN: Verificando solo los primeros ${messagesToCheck.length} mensajes (de ${messages.length} totales) para reducir transacciones`);
+            
+            // Obtener detalles de los mensajes para verificar labels y fecha (solo los primeros)
+            for (const msg of messagesToCheck) {
               if (idsSet.size >= MAX_MESSAGES_PER_EXECUTION) break;
               if (!msg.id) continue;
               
@@ -317,14 +328,23 @@ export async function getNewInboxMessageIdsFromHistory(gmail, notifHistoryId, us
               }
             }
             
-            console.log(`[mfs] [history] Filtrado de mensajes:`, {
+            // Los mensajes restantes se saltan para evitar excesivas transacciones
+            skippedCount = messages.length - messagesToCheck.length;
+            
+            console.log(`[mfs] [history] Filtrado de mensajes (OPTIMIZADO):`, {
               useSenderState,
               totalMessages: messages.length,
+              checked: messagesToCheck.length,
+              skipped: skippedCount,
               added: addedCount,
               processed: processedCount,
               tooOld: tooOldCount,
               finalCount: idsSet.size,
             });
+            
+            if (skippedCount > 0) {
+              console.log(`[mfs] [history] ⚠️ OPTIMIZACIÓN: Se saltaron ${skippedCount} mensajes para evitar excesivas transacciones. Se procesarán en la siguiente ejecución si son realmente nuevos.`);
+            }
             
             // Actualizar historyId al de la notificación para sincronizar
             if (useSenderState) {
