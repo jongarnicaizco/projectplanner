@@ -437,10 +437,16 @@ async function classifyIntentHeuristic({
     (hasMediaInviteLanguage && (isPressStyle || mentionsEvent)) ||
     /(in exchange for|a cambio de|in return for|te invitamos|we invite you|invitaci[oó]n|convite (à|a) imprensa)/.test(mailText);
 
-  // Free Coverage Request: Incluye press releases, noticias compartidas, y peticiones directas de cobertura gratis
+  // Free Coverage Request: Incluye press releases, noticias compartidas, guest articles/posts, y peticiones directas de cobertura gratis
   // Si hay algo a cambio (invitación, servicio), NO es Free Coverage, es Barter
+  // IMPORTANTE: Guest articles/posts sin mencionar partnership/comercial son Free Coverage Request
+  const isGuestArticleRequest = /(guest (post|article|content)|write a guest (post|article)|contribute a guest (post|article)|we'?d love to contribute|we'?d love to write|high-quality.*guest|original guest)/i.test(mailText) && 
+    !hasPartnershipCollabAsk && 
+    !isPricing && 
+    !/(partnership|collaboration|advertising|sponsorship|paid|budget|fee|rate|pricing)/i.test(mailText);
+  
   const isFreeCoverageRequest = 
-    (isPressStyle || isCoverageRequest || isEventPrInfo) && !isBarterRequest;
+    (isPressStyle || isCoverageRequest || isEventPrInfo || isGuestArticleRequest) && !isBarterRequest;
   
   // IMPORTANTE: Si es un press release/media release sin pedir pricing explícitamente, NO es pricing request
   // También excluir si están ofreciendo una historia/estudio/datos sin pedir pricing
@@ -518,6 +524,23 @@ async function classifyIntentHeuristic({
 
   const isIgNotification = isIgSender && notificationTextRegex.test(mailText);
 
+  // Detección de newsletters/emails de marketing que deben ser Discard
+  // Características: unsubscribe links, tracking links, "updates & insights", contenido promocional sin solicitud directa
+  const newsletterKeywordsRegex = /(unsubscribe|unsubscribe preferences|manage your preferences|update your preferences|email preferences|subscription preferences|you're receiving this because|you received this email|update email preferences|change email preferences|stop receiving|opt[-\s]?out|darse de baja|cancelar suscripci[oó]n)/i;
+  const trackingLinkPattern = /(links\.|tracking|utm_source|utm_medium|utm_campaign|click tracking|email tracking)/i;
+  const newsletterSubjectPattern = /(new activity|updates & insights|weekly update|monthly update|newsletter|news digest|roundup|summary|insights|updates)/i;
+  const promotionalContentPattern = /(new buyers|businesses similar|valuation|indicative valuation|sell now|list your business|schedule a call|business advisor)/i;
+  
+  // Detectar si es newsletter/marketing: tiene unsubscribe Y (tracking links O subject/newsletter pattern O contenido promocional sin solicitud directa)
+  const hasUnsubscribeLink = newsletterKeywordsRegex.test(mailText);
+  const hasTrackingLinks = trackingLinkPattern.test(mailText);
+  const hasNewsletterSubject = newsletterSubjectPattern.test(subjectLc);
+  const hasPromotionalContent = promotionalContentPattern.test(mailText);
+  
+  // Es newsletter si tiene unsubscribe Y además tiene características de newsletter (tracking, subject pattern, o contenido promocional sin partnership/pricing request)
+  const isNewsletterOrMarketing = hasUnsubscribeLink && 
+    (hasTrackingLinks || hasNewsletterSubject || (hasPromotionalContent && !hasPartnershipCollabAsk && !isPricing && !isCoverageRequest));
+
   console.log("[mfs] [classify] Flags básicos:", {
     modelIntentRaw,
     isPressStyle,
@@ -528,11 +551,13 @@ async function classifyIntentHeuristic({
     hasCallOrMeetingInvite,
     isBarterRequest,
     isFreeCoverageRequest,
+    isGuestArticleRequest,
     isMediaKitPricingRequest: isExplicitPricingRequest,
     hasPartnershipCollabAsk,
     hasAnyCommercialSignalForUs,
     isTestEmail,
     isIgNotification,
+    isNewsletterOrMarketing,
   });
 
   let intent = null;
@@ -562,6 +587,12 @@ async function classifyIntentHeuristic({
     intent = "Discard";
     confidence = 0.99;
     reasoning = "Email is requesting promotions, partnerships, or advertising related to gambling, betting, or casinos. These requests are always categorized as Discard, regardless of pricing or partnership mentions.";
+  } 
+  // REGLA DURA: Newsletters/emails de marketing SIEMPRE Discard (verificación temprana, máxima prioridad)
+  else if (isNewsletterOrMarketing) {
+    intent = "Discard";
+    confidence = 0.99;
+    reasoning = "Email is a newsletter or marketing email (contains unsubscribe link and promotional content without direct business request), so it is discarded.";
   } else if (isBarterRequest) {
     intent = "Low";
     confidence = 0.8;
