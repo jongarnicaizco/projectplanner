@@ -649,15 +649,10 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
             continue; // Continuar con el siguiente mensaje (SECUENCIAL)
           }
           
-          // Si falla Airtable por otro motivo, loguear pero continuar - aplicar etiqueta processed para evitar bucles
+          // Si falla Airtable por otro motivo, loguear y NO aplicar etiqueta processed para permitir reintento
           console.error(`[mfs] ✗ Error creando registro en Airtable para ${id}:`, airtableError?.message || airtableError);
-          // Aplicar etiqueta processed para evitar que se quede pillado en bucle
-          try {
-            await applyProcessedLabel(gmail, id);
-            console.log(`[mfs] ✓ Etiqueta processed aplicada a ${id} después de error en Airtable (para evitar bucle)`);
-          } catch (labelError) {
-            console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id} después de error:`, labelError?.message);
-          }
+          console.error(`[mfs] ⚠️ NO se aplicará etiqueta processed a ${id} para permitir reintento en próxima ejecución`);
+          // NO aplicar etiqueta processed - permitir que se reintente en la próxima ejecución
           results.push({
             id,
             airtableId: null,
@@ -665,6 +660,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
             confidence: finalConfidence,
             skipped: false,
             error: "airtable_error",
+            willRetry: true, // Marcar para reintento
           });
           continue; // Continuar con el siguiente mensaje (SECUENCIAL)
         }
@@ -727,13 +723,17 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           // Incrementar contador de ejecuciones (cada mensaje procesado = 1 ejecución)
           await incrementRateLimit();
         } else {
-          // Si no se creó ni es duplicado, aplicar etiqueta processed para evitar bucles
-          console.warn(`[mfs] ⚠️ Registro en Airtable no se creó ni es duplicado para ${id}. Aplicando etiqueta processed para evitar bucle.`);
-          try {
-            await applyProcessedLabel(gmail, id);
-          } catch (labelError) {
-            console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
-          }
+          // Si no se creó ni es duplicado, NO aplicar etiqueta processed para permitir reintento
+          console.warn(`[mfs] ⚠️ Registro en Airtable no se creó ni es duplicado para ${id}. NO se aplicará etiqueta processed para permitir reintento.`);
+          results.push({
+            id,
+            airtableId: null,
+            intent: finalIntent,
+            confidence: finalConfidence,
+            skipped: false,
+            error: "airtable_creation_failed",
+            willRetry: true,
+          });
       }
 
       results.push({
@@ -746,13 +746,19 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         // En caso de error, loguear y aplicar etiqueta processed para evitar bucles infinitos
         console.error(`[mfs] ✗ Error procesando mensaje ${id}:`, e?.message || e);
         console.error(`[mfs] Stack trace:`, e?.stack);
+        console.error(`[mfs] ⚠️ NO se aplicará etiqueta processed a ${id} para permitir reintento en próxima ejecución`);
         
-        // Aplicar etiqueta processed para evitar que se quede pillado en bucle
-        try {
-          await applyProcessedLabel(gmail, id);
-          console.log(`[mfs] ✓ Etiqueta processed aplicada a ${id} después de error (para evitar bucle)`);
-        } catch (labelError) {
-          console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id} después de error:`, labelError?.message);
+        // NO aplicar etiqueta processed - permitir que se reintente en la próxima ejecución
+        // Solo aplicar etiqueta si es un error crítico que no permite procesamiento (ej: mensaje no existe)
+        const isCriticalError = String(e?.response?.status || e?.code || e?.status) === "404";
+        if (isCriticalError) {
+          // Si el mensaje no existe (404), aplicar etiqueta para no intentar de nuevo
+          try {
+            await applyProcessedLabel(gmail, id);
+            console.log(`[mfs] ✓ Etiqueta processed aplicada a ${id} después de error 404 (mensaje no existe)`);
+          } catch (labelError) {
+            console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
+          }
         }
         
         results.push({
