@@ -110,6 +110,7 @@ export async function createSalesforceLead({
       City_ID__c: cityId || null,
       Lead_AI_Scoring__c: normalizedBusinessOppt || null,
       MEDDIC_Analysis__c: meddicAnalysis || null,
+      Inbound_ID__c: "ASMN", // Siempre "ASMN" para todos los leads
     };
     
     console.log("[mfs] Salesforce: DEBUG - leadFields antes de eliminar nulls:", JSON.stringify(leadFields, null, 2));
