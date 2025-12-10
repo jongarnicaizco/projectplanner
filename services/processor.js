@@ -751,14 +751,14 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
               // Procesamiento secuencial: esperar a que se envíe antes de continuar
         if (isBarter) {
           try {
-            await sendBarterEmail(id, senderFirstName || "Client", brandName, subject);
+            await sendBarterEmail(id, senderFirstName || "Client", brandName, subject, language || "en", body);
                 } catch (emailError) {
                   console.warn(`[mfs] Error enviando email barter para ${id}:`, emailError?.message);
           }
         }
         if (isFreeCoverage) {
           try {
-            await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject);
+            await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject, language || "en", body);
                 } catch (emailError) {
                   console.warn(`[mfs] Error enviando email free coverage para ${id}:`, emailError?.message);
                 }

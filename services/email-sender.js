@@ -3,6 +3,7 @@
  */
 import { google } from "googleapis";
 import { accessSecret } from "./secrets.js";
+import { getEmailTemplate } from "../config/email-templates.js";
 
 /**
  * Crea un cliente de Gmail OAuth2 para enviar emails
@@ -160,57 +161,26 @@ export async function sendTestEmail(emailId) {
 }
 
 /**
- * Genera el template de email para barter request
- * @param {string} firstName - Primer nombre del cliente
- * @param {string} brandName - Nombre de la marca/empresa
+ * Codifica el subject del email usando MIME (RFC 2047) para respetar caracteres especiales como tildes
+ * @param {string} subject - Subject a codificar
+ * @returns {string} Subject codificado
  */
-function generateBarterEmailTemplate(firstName, brandName) {
-  return `Hi ${firstName || "[First Name]"},
-
-Thank you so much for reaching out and for thinking of Secret Media Network.
-
-I really appreciate your proposal to collaborate on a barter basis. To protect the trust we have with our readers, our editorial team operates fully independently and doesn't participate in barter or value-in-kind arrangements. Any sponsored or branded content is handled separately by our commercial partnerships team under clear paid programs.
-
-I completely understand why you'd explore a barter collaboration, especially when you're already investing in your product and experiences. Many of our partners felt the same way at first—they wanted to test the waters without committing to a large media budget. What they found is that structured paid campaigns, with clear content deliverables and guaranteed impressions, gave them much more predictable results and a stronger return on investment than one-off barter features.
-
-For businesses like yours, we usually recommend:
-
-- Content Creation: our team creates a dedicated, on-brand article and supporting assets (for example, a feature on our site, social posts, and/or newsletter placements).
-
-- Guaranteed Impressions: we promote that content across Secret Media Network channels until it reaches an agreed number of impressions, so you know exactly what reach you're getting.
-
-We can adapt the format (evergreen guide, spotlight article, launch feature, etc.) depending on whether your main goal is bookings, sales, or awareness.
-
-If you'd like, I'd be happy to put together a short proposal with options and pricing tailored to ${brandName || "[Brand Name]"} and your timelines, or jump on a quick call to walk you through what similar partners have achieved with us.
-
-Looking forward to hearing your thoughts.
-
-Best regards,
-
-Secret Media Network`;
-}
-
-/**
- * Genera el template de email para free coverage request
- * @param {string} firstName - Primer nombre del cliente
- * @param {string} brandName - Nombre de la marca/empresa
- */
-function generateFreeCoverageEmailTemplate(firstName, brandName) {
-  return `Hi ${firstName || "[First Name]"},
-
-Thank you so much for reaching out. I've passed your note and key details along to our editorial team so they can consider it for future coverage. Because our editors independently decide what to feature based on newsworthiness, timing, and overall fit for our readers, we're not able to guarantee coverage or a specific timeline—but they will review it as part of their regular planning.
-
-I completely understand that you're hoping to gain some organic exposure. Many of the local businesses we speak with feel the same way—they'd love to be featured editorially when they have a great story to tell. What they've found, however, is that relying only on earned media can be unpredictable: even strong stories sometimes don't line up with the editorial calendar, competing news, or space constraints.
-
-For businesses that want more certainty, we usually recommend exploring our paid partnership options. Through our Content Creation offering, our team develops a dedicated, on-brand feature about ${brandName || "[Brand Name]"}. With Guaranteed Impressions, we then promote that content across Secret Media Network channels until it reaches an agreed number of impressions—so instead of hoping for coverage, you know in advance the minimum reach you're getting.
-
-If you'd like, I'd be happy to share a short proposal with formats and pricing tailored to you and your goals, or we can jump on a quick call to walk through what similar partners have done with us.
-
-Thanks again for thinking of Secret Media Network, and I look forward to hearing your thoughts.
-
-Best regards,
-
-Secret Media Network`;
+function encodeSubject(subject) {
+  // Si el subject solo contiene caracteres ASCII, no necesita codificación
+  if (/^[\x00-\x7F]*$/.test(subject)) {
+    return subject;
+  }
+  
+  // Codificar usando MIME (RFC 2047) con UTF-8 y Base64
+  // Formato: =?charset?encoding?encoded-text?=
+  const encoded = Buffer.from(subject, 'utf-8').toString('base64');
+  // Dividir en chunks de 75 caracteres (límite de RFC 2047)
+  const chunks = [];
+  for (let i = 0; i < encoded.length; i += 75) {
+    chunks.push(encoded.slice(i, i + 75));
+  }
+  
+  return `=?UTF-8?B?${chunks.join('?=\r\n =?UTF-8?B?')}?=`;
 }
 
 /**
@@ -219,28 +189,46 @@ Secret Media Network`;
  * @param {string} firstName - Primer nombre del cliente
  * @param {string} brandName - Nombre de la marca/empresa (se extrae del from o subject si no está disponible)
  * @param {string} originalSubject - Subject del correo original recibido
+ * @param {string} language - Idioma del email (pt, it, en, es, fr, de) - se obtiene del campo Language de Airtable
+ * @param {string} originalBody - Body del correo original (opcional, se añade al final)
  */
-export async function sendBarterEmail(emailId, firstName, brandName, originalSubject) {
+export async function sendBarterEmail(emailId, firstName, brandName, originalSubject, language = "en", originalBody = null) {
   try {
     console.log("[mfs] ===== INICIANDO ENVÍO DE EMAIL BARTER (TEST) =====");
     console.log("[mfs] Email ID procesado:", emailId);
     console.log("[mfs] Destinatario: jongarnicaizco@gmail.com (TEST - NO se envía al cliente)");
     console.log("[mfs] Remitente: secretmedia@feverup.com");
     console.log("[mfs] Tipo: Barter Request");
+    console.log("[mfs] Idioma:", language);
     console.log("[mfs] Subject original:", originalSubject);
     
     const gmail = await getEmailSenderClient();
     
     const from = "secretmedia@feverup.com";
-    const to = "jongarnicaizco@gmail.com"; // IMPORTANTE: Solo a jongarnicaizco@gmail.com, NO al cliente
-    // El subject debe ser "Re: " seguido del subject original
-    const subject = originalSubject ? `Re: ${originalSubject}` : `Re: Barter Request Response for ${brandName || "Client"}`;
-    const body = generateBarterEmailTemplate(firstName, brandName);
+    const to = "jongarnicaizco@gmail.com"; // IMPORTANTE: Siempre a jongarnicaizco@gmail.com
+    
+    // Obtener template según idioma
+    let template = getEmailTemplate(language, "barter");
+    
+    // Reemplazar [First Name] con el firstName real
+    template = template.replace(/\[First Name\]/g, firstName || "Client");
+    
+    // Construir el body completo (template + body original si existe)
+    let body = template;
+    if (originalBody) {
+      body += "\n\n---\n\n";
+      body += "Original email body:\n\n";
+      body += originalBody;
+    }
+    
+    // El subject debe ser "Re: " seguido del subject original, codificado correctamente
+    const subjectText = originalSubject ? `Re: ${originalSubject}` : `Re: Barter Request Response for ${brandName || "Client"}`;
+    const encodedSubject = encodeSubject(subjectText);
     
     const messageHeaders = [
       `To: ${to}`,
       `From: ${from}`,
-      `Subject: ${subject}`,
+      `Subject: ${encodedSubject}`,
       `Content-Type: text/plain; charset=utf-8`,
     ];
     
@@ -470,28 +458,46 @@ Sistema de Automatización MFS`;
  * @param {string} firstName - Primer nombre del cliente
  * @param {string} brandName - Nombre de la marca/empresa (se extrae del from o subject si no está disponible)
  * @param {string} originalSubject - Subject del correo original recibido
+ * @param {string} language - Idioma del email (pt, it, en, es, fr, de) - se obtiene del campo Language de Airtable
+ * @param {string} originalBody - Body del correo original (opcional, se añade al final)
  */
-export async function sendFreeCoverageEmail(emailId, firstName, brandName, originalSubject) {
+export async function sendFreeCoverageEmail(emailId, firstName, brandName, originalSubject, language = "en", originalBody = null) {
   try {
     console.log("[mfs] ===== INICIANDO ENVÍO DE EMAIL FREE COVERAGE (TEST) =====");
     console.log("[mfs] Email ID procesado:", emailId);
     console.log("[mfs] Destinatario: jongarnicaizco@gmail.com (TEST - NO se envía al cliente)");
     console.log("[mfs] Remitente: secretmedia@feverup.com");
     console.log("[mfs] Tipo: Free Coverage Request");
+    console.log("[mfs] Idioma:", language);
     console.log("[mfs] Subject original:", originalSubject);
     
     const gmail = await getEmailSenderClient();
     
     const from = "secretmedia@feverup.com";
-    const to = "jongarnicaizco@gmail.com"; // IMPORTANTE: Solo a jongarnicaizco@gmail.com, NO al cliente
-    // El subject debe ser "Re: " seguido del subject original
-    const subject = originalSubject ? `Re: ${originalSubject}` : `Re: Free Coverage Request Response for ${brandName || "Client"}`;
-    const body = generateFreeCoverageEmailTemplate(firstName, brandName);
+    const to = "jongarnicaizco@gmail.com"; // IMPORTANTE: Siempre a jongarnicaizco@gmail.com
+    
+    // Obtener template según idioma
+    let template = getEmailTemplate(language, "free coverage request");
+    
+    // Reemplazar [First Name] con el firstName real
+    template = template.replace(/\[First Name\]/g, firstName || "Client");
+    
+    // Construir el body completo (template + body original si existe)
+    let body = template;
+    if (originalBody) {
+      body += "\n\n---\n\n";
+      body += "Original email body:\n\n";
+      body += originalBody;
+    }
+    
+    // El subject debe ser "Re: " seguido del subject original, codificado correctamente
+    const subjectText = originalSubject ? `Re: ${originalSubject}` : `Re: Free Coverage Request Response for ${brandName || "Client"}`;
+    const encodedSubject = encodeSubject(subjectText);
     
     const messageHeaders = [
       `To: ${to}`,
       `From: ${from}`,
-      `Subject: ${subject}`,
+      `Subject: ${encodedSubject}`,
       `Content-Type: text/plain; charset=utf-8`,
     ];
     
