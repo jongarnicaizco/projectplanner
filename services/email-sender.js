@@ -227,6 +227,73 @@ export async function sendTestEmail(emailId) {
 }
 
 /**
+ * Detecta si un string es un nombre de persona (no empresa, no genérico)
+ * @param {string} name - Nombre a verificar
+ * @returns {boolean} true si parece ser un nombre de persona, false si no
+ */
+function isPersonName(name) {
+  if (!name || typeof name !== "string") return false;
+  
+  const normalized = name.trim().toLowerCase();
+  
+  // Si está vacío o muy corto, no es un nombre
+  if (normalized.length < 2) return false;
+  
+  // Si contiene @, es un email, no un nombre
+  if (normalized.includes("@")) return false;
+  
+  // Palabras que indican que NO es un nombre de persona (empresas, departamentos, genéricos)
+  const nonPersonKeywords = [
+    "team", "marketing", "sales", "support", "info", "contact", "hello", "noreply", "no-reply",
+    "newsletter", "notifications", "alerts", "system", "automated", "bot", "service",
+    "customer service", "customer support", "help desk", "administrator", "admin",
+    "communications", "media relations", "press", "pr", "public relations",
+    "equipo", "marketing", "ventas", "soporte", "información", "contacto", "hola",
+    "comunicación", "prensa", "relaciones públicas", "redacción", "editorial",
+    "équipe", "marketing", "ventes", "support", "information", "contact", "bonjour",
+    "communication", "presse", "relations publiques", "rédaction", "éditorial",
+    "team", "marketing", "verkauf", "support", "information", "kontakt", "hallo",
+    "kommunikation", "presse", "öffentlichkeitsarbeit", "redaktion", "editorial",
+    "squadra", "marketing", "vendite", "supporto", "informazioni", "contatto", "ciao",
+    "comunicazione", "stampa", "relazioni pubbliche", "redazione", "editoriale"
+  ];
+  
+  // Si contiene alguna de estas palabras, probablemente no es un nombre de persona
+  for (const keyword of nonPersonKeywords) {
+    if (normalized.includes(keyword)) {
+      return false;
+    }
+  }
+  
+  // Si contiene números, probablemente no es un nombre de persona
+  if (/\d/.test(normalized)) {
+    return false;
+  }
+  
+  // Si es muy largo (más de 50 caracteres), probablemente no es un nombre
+  if (normalized.length > 50) {
+    return false;
+  }
+  
+  // Si contiene caracteres especiales raros (excepto espacios, guiones, apóstrofes, puntos)
+  if (!/^[a-záéíóúàèìòùâêîôûãõçñäëïöüÿ\s\-'\.]+$/i.test(name)) {
+    return false;
+  }
+  
+  // Si parece ser un nombre de empresa (contiene palabras como "inc", "ltd", "llc", "srl", etc.)
+  const companySuffixes = ["inc", "ltd", "llc", "srl", "sl", "sa", "gmbh", "ag", "spa", "sas", "bv", "nv"];
+  const words = normalized.split(/\s+/);
+  for (const word of words) {
+    if (companySuffixes.includes(word)) {
+      return false;
+    }
+  }
+  
+  // Si pasa todas las verificaciones, probablemente es un nombre de persona
+  return true;
+}
+
+/**
  * Codifica el subject del email usando MIME (RFC 2047) para respetar caracteres especiales como tildes
  * @param {string} subject - Subject a codificar
  * @returns {string} Subject codificado
@@ -289,8 +356,29 @@ export async function sendBarterEmail(emailId, firstName, brandName, originalSub
     // Obtener template según idioma
     let template = getEmailTemplate(language, "barter");
     
-    // Reemplazar [First Name] con el firstName real
-    template = template.replace(/\[First Name\]/g, firstName || "Client");
+    // Solo usar el nombre si es realmente un nombre de persona (no empresa, no genérico)
+    if (firstName && isPersonName(firstName)) {
+      // Reemplazar [First Name] con el firstName real
+      template = template.replace(/\[First Name\]/g, firstName);
+    } else {
+      // Si no es un nombre de persona, eliminar "[First Name]" y dejar solo el saludo
+      // Reemplazar "Hola [First Name]," o "Hi [First Name]," etc. con solo "Hola," o "Hi,"
+      template = template.replace(/^(Hola|Hi|Hello|Olá|Ciao|Bonjour|Hallo)\s+\[First Name\],/m, (match, greeting) => {
+        // Mapear saludos a su versión sin nombre
+        const greetingMap = {
+          "Hola": "Hola",
+          "Hi": "Hi",
+          "Hello": "Hello",
+          "Olá": "Olá",
+          "Ciao": "Ciao",
+          "Bonjour": "Bonjour",
+          "Hallo": "Hallo"
+        };
+        return `${greetingMap[greeting] || greeting},`;
+      });
+      // También manejar casos donde [First Name] está en otra posición
+      template = template.replace(/\[First Name\]/g, "");
+    }
     
     // Construir el body completo (template + body original si existe)
     let body = template;
@@ -576,8 +664,29 @@ export async function sendFreeCoverageEmail(emailId, firstName, brandName, origi
     // Obtener template según idioma
     let template = getEmailTemplate(language, "free coverage request");
     
-    // Reemplazar [First Name] con el firstName real
-    template = template.replace(/\[First Name\]/g, firstName || "Client");
+    // Solo usar el nombre si es realmente un nombre de persona (no empresa, no genérico)
+    if (firstName && isPersonName(firstName)) {
+      // Reemplazar [First Name] con el firstName real
+      template = template.replace(/\[First Name\]/g, firstName);
+    } else {
+      // Si no es un nombre de persona, eliminar "[First Name]" y dejar solo el saludo
+      // Reemplazar "Hola [First Name]," o "Hi [First Name]," etc. con solo "Hola," o "Hi,"
+      template = template.replace(/^(Hola|Hi|Hello|Olá|Ciao|Bonjour|Hallo)\s+\[First Name\],/m, (match, greeting) => {
+        // Mapear saludos a su versión sin nombre
+        const greetingMap = {
+          "Hola": "Hola",
+          "Hi": "Hi",
+          "Hello": "Hello",
+          "Olá": "Olá",
+          "Ciao": "Ciao",
+          "Bonjour": "Bonjour",
+          "Hallo": "Hallo"
+        };
+        return `${greetingMap[greeting] || greeting},`;
+      });
+      // También manejar casos donde [First Name] está en otra posición
+      template = template.replace(/\[First Name\]/g, "");
+    }
     
     // Construir el body completo (template + body original si existe)
     let body = template;
