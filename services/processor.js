@@ -646,6 +646,17 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         senderName, senderFirstName, language, location,
         isFromSecretMedia: isToSecretMedia,
       });
+          
+          // Log detallado del resultado de createAirtableRecord
+          if (isToSecretMedia) {
+            console.log(`[mfs] 🔍 DEBUG secretmedia@feverup.com - Resultado de createAirtableRecord:`, {
+              id: airtableRecord?.id,
+              duplicate: airtableRecord?.duplicate,
+              hasId: !!airtableRecord?.id,
+              isDuplicate: !!airtableRecord?.duplicate,
+              fullRecord: JSON.stringify(airtableRecord),
+            });
+          }
         } catch (airtableError) {
           // Si falla Airtable, verificar si es porque ya existe (duplicado)
           const errorData = airtableError?.response?.data;
@@ -673,6 +684,15 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           // Si falla Airtable por otro motivo, loguear y NO aplicar etiqueta processed para permitir reintento
           console.error(`[mfs] ✗ Error creando registro en Airtable para ${id}:`, airtableError?.message || airtableError);
           console.error(`[mfs] ⚠️ NO se aplicará etiqueta processed a ${id} para permitir reintento en próxima ejecución`);
+          if (isToSecretMedia) {
+            console.error(`[mfs] ✗ ERROR CRÍTICO para secretmedia@feverup.com - Excepción al crear registro en Airtable - ID: ${id}`, {
+              error: airtableError?.message || airtableError,
+              errorStatus: airtableError?.response?.status,
+              errorData: airtableError?.response?.data,
+              from: from,
+              to: to,
+            });
+          }
           // NO aplicar etiqueta processed - permitir que se reintente en la próxima ejecución
           results.push({
             id,
@@ -687,7 +707,20 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         }
 
         // Si se creó exitosamente o ya existía (duplicado): enviar emails y aplicar etiqueta processed
+        if (isToSecretMedia) {
+          console.log(`[mfs] 🔍 DEBUG secretmedia@feverup.com - Verificando condición para aplicar processed:`, {
+            hasId: !!airtableRecord?.id,
+            isDuplicate: !!airtableRecord?.duplicate,
+            conditionResult: !!(airtableRecord?.id || airtableRecord?.duplicate),
+            airtableRecordId: airtableRecord?.id,
+            airtableRecordDuplicate: airtableRecord?.duplicate,
+          });
+        }
+        
         if (airtableRecord?.id || airtableRecord?.duplicate) {
+          if (isToSecretMedia) {
+            console.log(`[mfs] ✓ Condición cumplida - Registro creado o duplicado para secretmedia@feverup.com - ID: ${id}, Airtable ID: ${airtableRecord?.id || "duplicado"}`);
+          }
           // Verificar límite antes de continuar (cada mensaje procesado cuenta como ejecución)
           if (!(await checkRateLimit())) {
             console.error(`[mfs] ⚠️ Límite de ${RATE_LIMIT_MAX} ejecuciones por minuto alcanzado. Servicio detenido automáticamente.`);
@@ -746,6 +779,14 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         } else {
           // Si no se creó ni es duplicado, NO aplicar etiqueta processed para permitir reintento
           console.warn(`[mfs] ⚠️ Registro en Airtable no se creó ni es duplicado para ${id}. NO se aplicará etiqueta processed para permitir reintento.`);
+          if (isToSecretMedia) {
+            console.error(`[mfs] ✗ ERROR CRÍTICO para secretmedia@feverup.com - Registro NO creado en Airtable - ID: ${id}`, {
+              airtableRecord: airtableRecord,
+              hasId: !!airtableRecord?.id,
+              isDuplicate: !!airtableRecord?.duplicate,
+              fullRecord: JSON.stringify(airtableRecord),
+            });
+          }
           results.push({
             id,
             airtableId: null,
