@@ -395,14 +395,22 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           continue;
         }
         if (from && from.includes("jongarnicaizco@gmail.com")) {
-          // Aplicar etiqueta processed para evitar reprocesar
-          try {
-            await applyProcessedLabel(gmail, id);
-          } catch (labelError) {
-            console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
+          // EXCEPCIÓN: Si el correo va TO secretmedia@feverup.com, procesarlo (son correos de prueba/forward)
+          if (isToSecretMedia) {
+            console.log(`[mfs] ✓ Procesando correo FROM jongarnicaizco@gmail.com TO secretmedia@feverup.com - ID: ${id}`);
+            // NO aplicar etiqueta processed aquí - continuar con el procesamiento normal
+          } else {
+            // Para otros correos FROM jongarnicaizco@gmail.com, saltarlos
+            console.log(`[mfs] ⏭️ Saltando correo FROM jongarnicaizco@gmail.com (no va TO secretmedia@feverup.com) - ID: ${id}`);
+            // Aplicar etiqueta processed para evitar reprocesar
+            try {
+              await applyProcessedLabel(gmail, id);
+            } catch (labelError) {
+              console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
+            }
+            releaseProcessingLock(id);
+            continue;
           }
-          releaseProcessingLock(id);
-          continue;
         }
         if (!from || !to) {
           console.log(`[mfs] ⏭️ Saltando correo sin from o to válido - ID: ${id}, From: ${from || "empty"}, To: ${to || "empty"}`);
