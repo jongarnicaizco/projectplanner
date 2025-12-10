@@ -430,11 +430,25 @@ async function classifyIntentHeuristic({
   const hasPressPassOrAccreditation = /(press pass|press accreditation|media pass|media accreditation|press credential|media credential)/i.test(mailText);
   const hasMediaInviteLanguage = /(media (are )?invited|press (are )?invited|reporters.*invited|photographers.*invited|broadcast media.*invited|media invite|press invite|media\/press invite)/i.test(mailText);
   
+  // Detectar ofertas de comida/comida gratis o servicios junto con solicitudes de compartir
+  const hasComplimentaryOffer = /(complimentary|free (lunch|dinner|meal|food|drink|drinks|tasting|experience|event|visit|stay|accommodation|ticket|tickets|pass|passes)|gratis|gratuito|invitaci[oó]n (a|para)|invited to|welcome you to|we'?d love to (welcome|host|invite))/i.test(mailText);
+  const hasSocialMediaShareRequest = /(share (your|the) (experience|visit|thoughts|review|photos?|videos?|content)|post (about|on)|tag (us|the venue|@)|instagram (stories?|posts?|reels?|carousel)|tiktok|social media|share with (your|the) (audience|followers|readers)|in return|in exchange)/i.test(mailText);
+  const hasInReturnLanguage = /(in return|in exchange|a cambio|en cambio|en retorno|en agradecimiento|as thanks|como agradecimiento)/i.test(mailText);
+  
+  // Detectar invitaciones a eventos con comida/comida gratis
+  const hasEventWithComplimentary = hasEventInvite && hasComplimentaryOffer;
+  
+  // Detectar ofertas de comida/comida gratis junto con solicitudes de compartir en redes sociales
+  const hasComplimentaryWithShare = hasComplimentaryOffer && hasSocialMediaShareRequest;
+  
   const isBarterRequest =
     (isCoverageRequest && hasEventInvite) ||
     (hasEventInvite && (isPressStyle || isCoverageRequest || mentionsEvent)) ||
     (hasPressPassOrAccreditation && (isPressStyle || mentionsEvent || isCoverageRequest)) ||
     (hasMediaInviteLanguage && (isPressStyle || mentionsEvent)) ||
+    hasEventWithComplimentary ||
+    hasComplimentaryWithShare ||
+    hasInReturnLanguage ||
     /(in exchange for|a cambio de|in return for|te invitamos|we invite you|invitaci[oó]n|convite (à|a) imprensa)/.test(mailText);
 
   // Free Coverage Request: Incluye press releases, noticias compartidas, guest articles/posts, y peticiones directas de cobertura gratis
