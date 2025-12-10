@@ -785,8 +785,13 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
               hasId: !!airtableRecord?.id,
               isDuplicate: !!airtableRecord?.duplicate,
               fullRecord: JSON.stringify(airtableRecord),
+              from: from,
+              to: to,
+              note: "Si from y to son iguales, Airtable rechaza el registro. Verificar lógica de detección de email en body.",
             });
           }
+          // CRÍTICO: NO aplicar etiqueta processed aquí - permitir reintento
+          // Si aplicamos la etiqueta aquí, el mensaje nunca se procesará
           results.push({
             id,
             airtableId: null,
@@ -796,6 +801,8 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
             error: "airtable_creation_failed",
             willRetry: true,
           });
+          releaseProcessingLock(id);
+          continue; // Continuar con el siguiente mensaje SIN aplicar etiqueta processed
       }
 
       results.push({
