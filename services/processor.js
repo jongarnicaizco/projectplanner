@@ -361,6 +361,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         const isToSecretMedia = (to || "").toLowerCase().includes("secretmedia@feverup.com");
         if (isToSecretMedia) {
           console.log(`[mfs] 📧 Correo detectado TO secretmedia@feverup.com - ID: ${id}, From: ${from}, To: ${to}`);
+          console.log(`[mfs] 🚀 INICIANDO PROCESAMIENTO de correo TO secretmedia@feverup.com - ID: ${id}`);
         }
         
         // FILTROS RÁPIDOS: saltar correos FROM secretmedia@feverup.com SOLO si NO van TO secretmedia@feverup.com
@@ -405,6 +406,9 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         }
         if (!from || !to) {
           console.log(`[mfs] ⏭️ Saltando correo sin from o to válido - ID: ${id}, From: ${from || "empty"}, To: ${to || "empty"}`);
+          if (isToSecretMedia) {
+            console.log(`[mfs] ⚠️ DEBUG - Correo TO secretmedia@feverup.com sin from o to válido - From: ${from || "empty"}, To: ${to || "empty"}`);
+          }
           // Aplicar etiqueta processed para evitar reprocesar
           try {
             await applyProcessedLabel(gmail, id);
@@ -413,6 +417,11 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           }
           releaseProcessingLock(id);
           continue;
+        }
+        
+        // Si llegamos aquí, el correo pasó todos los filtros
+        if (isToSecretMedia) {
+          console.log(`[mfs] ✓ Correo TO secretmedia@feverup.com pasó todos los filtros - ID: ${id}, continuando con procesamiento`);
         }
         
         // Log específico para correos a secretmedia@feverup.com antes de procesar
@@ -528,17 +537,26 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
       
         // VERIFICACIÓN DE DUPLICADOS: Verificar ANTES de crear para evitar duplicados
         // Procesamiento SECUENCIAL: un mensaje a la vez, completamente procesado antes del siguiente
+        if (isToSecretMedia) {
+          console.log(`[mfs] 🔍 Verificando duplicados en Airtable para ${id}...`);
+        }
         let existingRecord = null;
         try {
           existingRecord = await airtableFindByEmailId(id);
         } catch (checkError) {
           // Si falla la verificación, continuar (mejor intentar crear que perder el mensaje)
           console.warn(`[mfs] No se pudo verificar duplicado para ${id}, continuando:`, checkError?.message);
+          if (isToSecretMedia) {
+            console.log(`[mfs] ⚠️ Error verificando duplicado para secretmedia@feverup.com - ID: ${id}, continuando...`);
+          }
         }
 
         // Si ya existe, saltar y aplicar etiqueta processed
         if (existingRecord?.id) {
           console.log(`[mfs] Registro ya existe en Airtable para ${id}, saltando y aplicando etiqueta processed`);
+          if (isToSecretMedia) {
+            console.log(`[mfs] ⏭️ Registro duplicado para secretmedia@feverup.com - ID: ${id}, Airtable ID: ${existingRecord.id}`);
+          }
           try {
             await applyProcessedLabel(gmail, id);
           } catch (labelError) {
@@ -615,6 +633,9 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         }
 
         // Crear registro en Airtable (solo si no existe)
+        if (isToSecretMedia) {
+          console.log(`[mfs] 📝 Creando registro en Airtable para secretmedia@feverup.com - ID: ${id}, Intent: ${finalIntent}`);
+        }
         let airtableRecord;
         try {
           airtableRecord = await createAirtableRecord({
