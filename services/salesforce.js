@@ -83,12 +83,15 @@ export async function createSalesforceLead({
     // Verificar si la integración con Salesforce está activa
     const { readSalesforceStatus } = await import("./storage.js");
     const salesforceStatus = await readSalesforceStatus();
+    console.log("[mfs] Salesforce: Estado de integración:", salesforceStatus.status);
     if (salesforceStatus.status === "stopped") {
       console.log("[mfs] Salesforce: Integración detenida, no se creará lead");
       return { id: null, skipped: true, reason: "salesforce_stopped" };
     }
 
+    console.log("[mfs] Salesforce: Obteniendo access token...");
     const { accessToken, instanceUrl } = await getSalesforceAccessToken();
+    console.log("[mfs] Salesforce: Access token obtenido, instanceUrl:", instanceUrl);
 
     // Normalizar businessOppt (trim y asegurar formato correcto)
     const normalizedBusinessOppt = businessOppt ? String(businessOppt).trim() : null;
@@ -121,7 +124,10 @@ export async function createSalesforceLead({
       }
     });
 
+    console.log("[mfs] Salesforce: DEBUG - leadFields después de eliminar nulls:", JSON.stringify(leadFields, null, 2));
+
     const apiUrl = `${instanceUrl}/services/data/v58.0/sobjects/Lead/`;
+    console.log("[mfs] Salesforce: Enviando petición a:", apiUrl);
 
     const response = await axios.post(apiUrl, leadFields, {
       headers: {
@@ -129,6 +135,8 @@ export async function createSalesforceLead({
         "Content-Type": "application/json",
       },
     });
+
+    console.log("[mfs] Salesforce: Respuesta de API:", JSON.stringify(response.data, null, 2));
 
     if (response.data.success && response.data.id) {
       console.log("[mfs] Salesforce: ✓ Lead creado exitosamente", {
@@ -142,7 +150,8 @@ export async function createSalesforceLead({
       };
     }
 
-    throw new Error("Lead no se creó correctamente en Salesforce");
+    console.error("[mfs] Salesforce: ✗ Lead no se creó correctamente - respuesta inesperada:", response.data);
+    throw new Error("Lead no se creó correctamente en Salesforce - respuesta inesperada");
   } catch (error) {
     const errorData = error?.response?.data;
     const errorStatus = error?.response?.status;
