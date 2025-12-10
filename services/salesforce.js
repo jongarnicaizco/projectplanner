@@ -5,6 +5,7 @@ import axios from "axios";
 import { accessSecret } from "./secrets.js";
 
 let salesforceAccessToken = null;
+let salesforceInstanceUrl = null;
 let tokenExpiryTime = null;
 
 /**
@@ -12,8 +13,8 @@ let tokenExpiryTime = null;
  */
 async function getSalesforceAccessToken() {
   // Si tenemos un token válido, devolverlo
-  if (salesforceAccessToken && tokenExpiryTime && Date.now() < tokenExpiryTime) {
-    return salesforceAccessToken;
+  if (salesforceAccessToken && salesforceInstanceUrl && tokenExpiryTime && Date.now() < tokenExpiryTime) {
+    return { accessToken: salesforceAccessToken, instanceUrl: salesforceInstanceUrl };
   }
 
   try {
@@ -44,16 +45,14 @@ async function getSalesforceAccessToken() {
 
     if (response.data.access_token) {
       salesforceAccessToken = response.data.access_token;
+      salesforceInstanceUrl = response.data.instance_url;
       // El token expira en response.data.expires_in segundos (típicamente 2 horas)
       // Guardamos con un margen de 5 minutos antes de la expiración
       const expiresIn = response.data.expires_in || 7200; // 2 horas por defecto
       tokenExpiryTime = Date.now() + (expiresIn - 300) * 1000; // 5 minutos antes
       
-      // Guardar también la instance URL para las llamadas API
-      const instanceUrl = response.data.instance_url;
-      
       console.log("[mfs] Salesforce: ✓ Access token obtenido exitosamente");
-      return { accessToken: salesforceAccessToken, instanceUrl };
+      return { accessToken: salesforceAccessToken, instanceUrl: salesforceInstanceUrl };
     }
 
     throw new Error("No se recibió access_token en la respuesta de Salesforce");
