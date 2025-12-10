@@ -360,24 +360,16 @@ export async function sendBarterEmail(emailId, firstName, brandName, originalSub
     if (firstName && isPersonName(firstName)) {
       // Reemplazar [First Name] con el firstName real
       template = template.replace(/\[First Name\]/g, firstName);
+      console.log(`[mfs] ✓ Usando nombre de persona en saludo barter: "${firstName}"`);
     } else {
       // Si no es un nombre de persona, eliminar "[First Name]" y dejar solo el saludo
       // Reemplazar "Hola [First Name]," o "Hi [First Name]," etc. con solo "Hola," o "Hi,"
       template = template.replace(/^(Hola|Hi|Hello|Olá|Ciao|Bonjour|Hallo)\s+\[First Name\],/m, (match, greeting) => {
-        // Mapear saludos a su versión sin nombre
-        const greetingMap = {
-          "Hola": "Hola",
-          "Hi": "Hi",
-          "Hello": "Hello",
-          "Olá": "Olá",
-          "Ciao": "Ciao",
-          "Bonjour": "Bonjour",
-          "Hallo": "Hallo"
-        };
-        return `${greetingMap[greeting] || greeting},`;
+        return `${greeting},`;
       });
       // También manejar casos donde [First Name] está en otra posición
       template = template.replace(/\[First Name\]/g, "");
+      console.log(`[mfs] ⚠️ No se usa nombre en saludo barter (no es nombre de persona): "${firstName || "empty"}" - Usando solo saludo`);
     }
     
     // Construir el body completo (template + body original si existe)
@@ -668,24 +660,16 @@ export async function sendFreeCoverageEmail(emailId, firstName, brandName, origi
     if (firstName && isPersonName(firstName)) {
       // Reemplazar [First Name] con el firstName real
       template = template.replace(/\[First Name\]/g, firstName);
+      console.log(`[mfs] ✓ Usando nombre de persona en saludo free coverage: "${firstName}"`);
     } else {
       // Si no es un nombre de persona, eliminar "[First Name]" y dejar solo el saludo
       // Reemplazar "Hola [First Name]," o "Hi [First Name]," etc. con solo "Hola," o "Hi,"
       template = template.replace(/^(Hola|Hi|Hello|Olá|Ciao|Bonjour|Hallo)\s+\[First Name\],/m, (match, greeting) => {
-        // Mapear saludos a su versión sin nombre
-        const greetingMap = {
-          "Hola": "Hola",
-          "Hi": "Hi",
-          "Hello": "Hello",
-          "Olá": "Olá",
-          "Ciao": "Ciao",
-          "Bonjour": "Bonjour",
-          "Hallo": "Hallo"
-        };
-        return `${greetingMap[greeting] || greeting},`;
+        return `${greeting},`;
       });
       // También manejar casos donde [First Name] está en otra posición
       template = template.replace(/\[First Name\]/g, "");
+      console.log(`[mfs] ⚠️ No se usa nombre en saludo free coverage (no es nombre de persona): "${firstName || "empty"}" - Usando solo saludo`);
     }
     
     // Construir el body completo (template + body original si existe)
