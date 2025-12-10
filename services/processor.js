@@ -10,6 +10,7 @@ import {
   extractFromEmail,
   extractToEmail,
   extractSenderName,
+  extractNameFromSignature,
   detectLanguage,
   getLocationFromEmail,
 } from "../utils/helpers.js";
@@ -437,9 +438,34 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           console.log(`[mfs] 🚀 Iniciando procesamiento de correo TO secretmedia@feverup.com - ID: ${id}, Subject: ${subject?.slice(0, 50)}`);
         }
 
-        // Simplificar senderName
-        const senderName = extractSenderName(fromHeader)?.replace(/["'`]/g, "").trim().slice(0, 100) || "";
-        const senderFirstName = senderName.split(/\s+/)[0] || "";
+        // Extraer nombre: primero del header, luego de la firma del body, finalmente usar email
+        let senderName = extractSenderName(fromHeader)?.replace(/["'`]/g, "").trim().slice(0, 100) || "";
+        let senderFirstName = senderName.split(/\s+/)[0] || "";
+        
+        // Si no se encontró nombre en el header, buscar en la firma del body
+        if (!senderName || senderName.length < 2) {
+          const signatureName = extractNameFromSignature(body);
+          if (signatureName && signatureName.name) {
+            senderName = signatureName.name.slice(0, 100);
+            senderFirstName = signatureName.firstName.slice(0, 50);
+            console.log(`[mfs] ✓ Nombre extraído de firma del email: "${senderName}" (firstName: "${senderFirstName}")`);
+          }
+        }
+        
+        // Si aún no se encontró nombre, usar el email del from como fallback
+        if (!senderName || senderName.length < 2) {
+          senderName = from || "";
+          senderFirstName = from?.split("@")[0] || "";
+          console.log(`[mfs] ⚠️ No se encontró nombre, usando email como fallback: "${senderName}" (firstName: "${senderFirstName}")`);
+        }
+        
+        // Asegurar que siempre haya algo en ambos campos
+        if (!senderName || senderName.trim().length === 0) {
+          senderName = from || "Unknown";
+        }
+        if (!senderFirstName || senderFirstName.trim().length === 0) {
+          senderFirstName = from?.split("@")[0] || senderName.split(/\s+/)[0] || "Unknown";
+        }
 
         // Datos básicos (simplificado)
       const language = detectLanguage(subject + " " + body);

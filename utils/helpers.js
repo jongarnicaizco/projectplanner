@@ -587,6 +587,69 @@ export async function extractFirstName(fullName, vertexCallFn = null) {
 }
 
 /**
+ * Extrae el nombre del firmante del cuerpo del email
+ * Busca en la sección de firma (signature) que generalmente está al final del email
+ * @param {string} body - Cuerpo del email
+ * @returns {object|null} { name: string, firstName: string } o null si no se encuentra
+ */
+export function extractNameFromSignature(body) {
+  if (!body || typeof body !== "string") return null;
+  
+  // Patrones comunes para detectar firmas:
+  // - Líneas que terminan con nombres seguidos de información de contacto
+  // - Secciones después de "Best regards", "Saludos", "Cordialmente", etc.
+  // - Líneas con nombres seguidos de emails, teléfonos, etc.
+  
+  // Buscar patrones de firma comunes
+  const signaturePatterns = [
+    // Patrón: "Nombre Apellido" seguido de email o teléfono
+    /(?:^|\n)(?:Best regards|Saludos|Cordialmente|Atentamente|Sincerely|Cordiali saluti|Bien à vous|Mit freundlichen Grüßen|Com os melhores cumprimentos|Obrigado|Thanks|Thank you|Gracias|Merci|Danke)[\s\S]{0,200}?([A-ZÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇÑÄËÏÖÜ][a-záéíóúàèìòùâêîôûãõçñäëïöü]+(?:\s+[A-ZÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇÑÄËÏÖÜ][a-záéíóúàèìòùâêîôûãõçñäëïöü]+){0,3})/i,
+    // Patrón: Nombre al final del email (últimas 10 líneas)
+    /(?:^|\n)([A-ZÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇÑÄËÏÖÜ][a-záéíóúàèìòùâêîôûãõçñäëïöü]+(?:\s+[A-ZÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇÑÄËÏÖÜ][a-záéíóúàèìòùâêîôûãõçñäëïöü]+){0,3})(?:\s*\n\s*[^\n]{0,100}){0,3}(?:\s*\n\s*(?:[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|(?:\+?\d{1,3}[-.\s]?)?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}))/i,
+    // Patrón: Nombre seguido de información de contacto en las últimas líneas
+    /(?:^|\n)([A-ZÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇÑÄËÏÖÜ][a-záéíóúàèìòùâêîôûãõçñäëïöü]+(?:\s+[A-ZÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇÑÄËÏÖÜ][a-záéíóúàèìòùâêîôûãõçñäëïöü]+){0,3})\s*\n\s*(?:[A-ZÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇÑÄËÏÖÜ][a-záéíóúàèìòùâêîôûãõçñäëïöü]+(?:\s+[A-ZÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇÑÄËÏÖÜ][a-záéíóúàèìòùâêîôûãõçñäëïöü]+)*)?\s*\n\s*(?:[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|(?:\+?\d{1,3}[-.\s]?)?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9})/i,
+  ];
+  
+  // Obtener las últimas 500 caracteres del body (donde generalmente está la firma)
+  const lastPart = body.slice(-500);
+  
+  for (const pattern of signaturePatterns) {
+    const match = lastPart.match(pattern);
+    if (match) {
+      const name = match[1]?.trim();
+      if (name && name.length > 1 && name.length < 100) {
+        // Verificar que no sea una palabra común o genérica
+        const normalized = name.toLowerCase();
+        const commonWords = ["the", "and", "for", "are", "but", "not", "you", "all", "can", "her", "was", "one", "our", "out", "day", "get", "has", "him", "his", "how", "man", "new", "now", "old", "see", "two", "way", "who", "boy", "did", "its", "let", "put", "say", "she", "too", "use"];
+        if (!commonWords.includes(normalized)) {
+          const firstName = name.split(/\s+/)[0] || name;
+          console.log(`[mfs] ✓ Nombre extraído de firma: "${name}" (firstName: "${firstName}")`);
+          return { name, firstName };
+        }
+      }
+    }
+  }
+  
+  // Si no se encontró con patrones, buscar en las últimas líneas del email
+  const lines = body.split('\n').slice(-10); // Últimas 10 líneas
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    // Buscar líneas que parezcan nombres (2-4 palabras, cada una con mayúscula inicial)
+    const nameMatch = line.match(/^([A-ZÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇÑÄËÏÖÜ][a-záéíóúàèìòùâêîôûãõçñäëïöü]+(?:\s+[A-ZÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇÑÄËÏÖÜ][a-záéíóúàèìòùâêîôûãõçñäëïöü]+){0,3})$/);
+    if (nameMatch) {
+      const name = nameMatch[1];
+      if (name.length > 1 && name.length < 100) {
+        const firstName = name.split(/\s+/)[0] || name;
+        console.log(`[mfs] ✓ Nombre extraído de última línea: "${name}" (firstName: "${firstName}")`);
+        return { name, firstName };
+      }
+    }
+  }
+  
+  return null;
+}
+
+/**
  * Usa IA (Gemini) para extraer y limpiar el nombre de un header From complejo
  * Solo se usa si el nombre después de la limpieza básica sigue siendo problemático
  */
