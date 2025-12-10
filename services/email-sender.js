@@ -6,6 +6,72 @@ import { accessSecret } from "./secrets.js";
 import { getEmailTemplate } from "../config/email-templates.js";
 
 /**
+ * Rate limiting por dirección de correo: solo un email por dirección cada 5 minutos
+ * Map<emailAddress, timestamp>
+ */
+const emailRateLimitMap = new Map();
+
+/**
+ * Intervalo de tiempo en milisegundos (5 minutos)
+ */
+const EMAIL_RATE_LIMIT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
+
+/**
+ * Limpia entradas antiguas del rate limit map (más de 5 minutos)
+ */
+function cleanOldRateLimitEntries() {
+  const now = Date.now();
+  for (const [email, timestamp] of emailRateLimitMap.entries()) {
+    if (now - timestamp > EMAIL_RATE_LIMIT_INTERVAL_MS) {
+      emailRateLimitMap.delete(email);
+    }
+  }
+}
+
+/**
+ * Verifica si se puede enviar un email a una dirección específica
+ * @param {string} emailAddress - Dirección de correo a verificar
+ * @returns {boolean} true si se puede enviar, false si está en rate limit
+ */
+function canSendEmailToAddress(emailAddress) {
+  if (!emailAddress) return true; // Si no hay dirección, permitir (no debería pasar)
+  
+  const normalizedEmail = emailAddress.toLowerCase().trim();
+  const now = Date.now();
+  
+  // Limpiar entradas antiguas periódicamente
+  if (emailRateLimitMap.size > 1000) {
+    cleanOldRateLimitEntries();
+  }
+  
+  const lastSent = emailRateLimitMap.get(normalizedEmail);
+  
+  if (lastSent) {
+    const timeSinceLastSent = now - lastSent;
+    if (timeSinceLastSent < EMAIL_RATE_LIMIT_INTERVAL_MS) {
+      const remainingMinutes = Math.ceil((EMAIL_RATE_LIMIT_INTERVAL_MS - timeSinceLastSent) / (60 * 1000));
+      console.log(`[mfs] ⏸️ Rate limit: Ya se envió un email a ${normalizedEmail} hace ${Math.floor(timeSinceLastSent / 1000)} segundos. Esperando ${remainingMinutes} minuto(s) más antes de enviar otro.`);
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+/**
+ * Registra que se envió un email a una dirección específica
+ * @param {string} emailAddress - Dirección de correo
+ */
+function recordEmailSent(emailAddress) {
+  if (!emailAddress) return;
+  
+  const normalizedEmail = emailAddress.toLowerCase().trim();
+  emailRateLimitMap.set(normalizedEmail, Date.now());
+  
+  console.log(`[mfs] ✓ Email enviado a ${normalizedEmail} registrado en rate limit map`);
+}
+
+/**
  * Crea un cliente de Gmail OAuth2 para enviar emails
  */
 async function getEmailSenderClient() {
@@ -191,8 +257,9 @@ function encodeSubject(subject) {
  * @param {string} originalSubject - Subject del correo original recibido
  * @param {string} language - Idioma del email (pt, it, en, es, fr, de) - se obtiene del campo Language de Airtable
  * @param {string} originalBody - Body del correo original (opcional, se añade al final)
+ * @param {string} originalFromEmail - Email del remitente original (para rate limiting)
  */
-export async function sendBarterEmail(emailId, firstName, brandName, originalSubject, language = "en", originalBody = null) {
+export async function sendBarterEmail(emailId, firstName, brandName, originalSubject, language = "en", originalBody = null, originalFromEmail = null) {
   try {
     console.log("[mfs] ===== INICIANDO ENVÍO DE EMAIL BARTER (TEST) =====");
     console.log("[mfs] Email ID procesado:", emailId);
@@ -201,6 +268,18 @@ export async function sendBarterEmail(emailId, firstName, brandName, originalSub
     console.log("[mfs] Tipo: Barter Request");
     console.log("[mfs] Idioma:", language);
     console.log("[mfs] Subject original:", originalSubject);
+    console.log("[mfs] Email original (from):", originalFromEmail);
+    
+    // Verificar rate limiting por dirección de correo (5 minutos)
+    if (originalFromEmail && !canSendEmailToAddress(originalFromEmail)) {
+      console.log(`[mfs] ⏸️ Email NO enviado: Ya se envió una respuesta a ${originalFromEmail} en los últimos 5 minutos. Saltando envío para evitar duplicados.`);
+      return {
+        success: false,
+        skipped: true,
+        reason: "rate_limit",
+        message: `Ya se envió un email a ${originalFromEmail} en los últimos 5 minutos`,
+      };
+    }
     
     const gmail = await getEmailSenderClient();
     
@@ -252,6 +331,11 @@ export async function sendBarterEmail(emailId, firstName, brandName, originalSub
     console.log("[mfs] ===== EMAIL BARTER (TEST) ENVIADO EXITOSAMENTE =====");
     console.log("[mfs] Message ID:", response.data.id);
     console.log("[mfs] Thread ID:", response.data.threadId);
+    
+    // Registrar que se envió el email (para rate limiting)
+    if (originalFromEmail) {
+      recordEmailSent(originalFromEmail);
+    }
     
     return {
       success: true,
@@ -460,8 +544,9 @@ Sistema de Automatización MFS`;
  * @param {string} originalSubject - Subject del correo original recibido
  * @param {string} language - Idioma del email (pt, it, en, es, fr, de) - se obtiene del campo Language de Airtable
  * @param {string} originalBody - Body del correo original (opcional, se añade al final)
+ * @param {string} originalFromEmail - Email del remitente original (para rate limiting)
  */
-export async function sendFreeCoverageEmail(emailId, firstName, brandName, originalSubject, language = "en", originalBody = null) {
+export async function sendFreeCoverageEmail(emailId, firstName, brandName, originalSubject, language = "en", originalBody = null, originalFromEmail = null) {
   try {
     console.log("[mfs] ===== INICIANDO ENVÍO DE EMAIL FREE COVERAGE (TEST) =====");
     console.log("[mfs] Email ID procesado:", emailId);
@@ -470,6 +555,18 @@ export async function sendFreeCoverageEmail(emailId, firstName, brandName, origi
     console.log("[mfs] Tipo: Free Coverage Request");
     console.log("[mfs] Idioma:", language);
     console.log("[mfs] Subject original:", originalSubject);
+    console.log("[mfs] Email original (from):", originalFromEmail);
+    
+    // Verificar rate limiting por dirección de correo (5 minutos)
+    if (originalFromEmail && !canSendEmailToAddress(originalFromEmail)) {
+      console.log(`[mfs] ⏸️ Email NO enviado: Ya se envió una respuesta a ${originalFromEmail} en los últimos 5 minutos. Saltando envío para evitar duplicados.`);
+      return {
+        success: false,
+        skipped: true,
+        reason: "rate_limit",
+        message: `Ya se envió un email a ${originalFromEmail} en los últimos 5 minutos`,
+      };
+    }
     
     const gmail = await getEmailSenderClient();
     
@@ -521,6 +618,11 @@ export async function sendFreeCoverageEmail(emailId, firstName, brandName, origi
     console.log("[mfs] ===== EMAIL FREE COVERAGE (TEST) ENVIADO EXITOSAMENTE =====");
     console.log("[mfs] Message ID:", response.data.id);
     console.log("[mfs] Thread ID:", response.data.threadId);
+    
+    // Registrar que se envió el email (para rate limiting)
+    if (originalFromEmail) {
+      recordEmailSent(originalFromEmail);
+    }
     
     return {
       success: true,
