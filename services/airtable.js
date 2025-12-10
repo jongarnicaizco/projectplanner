@@ -308,6 +308,7 @@ export async function createAirtableRecord({
   language,
   location,
   isFromSecretMedia,
+  salesforceLeadId,
 }) {
   // Verificar configuración básica antes de intentar crear
   if (!CFG.AIRTABLE_BASE_ID || !CFG.AIRTABLE_TABLE) {
@@ -481,6 +482,12 @@ export async function createAirtableRecord({
     
     // Idioma
     await putName("Language", language);
+    
+    // Salesforce ID (si se creó un lead)
+    if (salesforceLeadId) {
+      await putName("Salesforce ID", salesforceLeadId);
+      console.log(`[mfs] Airtable: Salesforce ID ${salesforceLeadId} asignado al registro`);
+    }
     
     // Ubicación (basada en email To)
     if (location) {

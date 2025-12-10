@@ -679,6 +679,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         meddicIdentifyPain, meddicChampion, isFreeCoverage, isBarter, isPricing,
         senderName, senderFirstName, language, location,
         isFromSecretMedia: isToSecretMedia,
+        salesforceLeadId: salesforceLeadId || null,
       });
           
           // Log detallado del resultado de createAirtableRecord
