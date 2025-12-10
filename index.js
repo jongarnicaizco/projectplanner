@@ -221,34 +221,121 @@ app.post("/control/email-sending", async (req, res) => {
 
 /**
  * Endpoint para procesar correos sin etiqueta "processed" (fallback automático cada 15 minutos)
- * Procesa correos de los últimos 20 minutos que no tengan la etiqueta "processed"
+ * Procesa correos de los últimos 30 minutos que no tengan la etiqueta "processed"
+ * Usa fallback sin query si la query falla (para tokens con scope limitado)
  */
 app.post("/control/process-unprocessed", async (_req, res) => {
   try {
-    console.log(`[mfs] /control/process-unprocessed → Procesando correos sin etiqueta "processed" (fallback automático - últimos 20 minutos)`);
+    console.log(`[mfs] /control/process-unprocessed → Procesando correos sin etiqueta "processed" (fallback automático - últimos 30 minutos)`);
     
-    const MAX_MESSAGES_PER_EXECUTION = 100;
-    const twentyMinutesAgo = Math.floor(Date.now() / 1000) - (20 * 60); // Últimos 20 minutos
-    const query = `in:inbox -label:processed after:${twentyMinutesAgo}`;
+    const MAX_MESSAGES_TO_CHECK = 20; // Límite para evitar excesivas transacciones
+    const thirtyMinutesAgo = Math.floor(Date.now() / 1000) - (30 * 60); // Últimos 30 minutos
+    const thirtyMinutesAgoMs = Date.now() - (30 * 60 * 1000); // Para comparar internalDate
     
     let totalProcesados = 0;
     let totalFallidos = 0;
     let totalSaltados = 0;
     let totalEncontrados = 0;
     
+    // Función auxiliar para obtener mensajes sin processed usando query (método preferido)
+    async function getUnprocessedWithQuery(gmail, accountName) {
+      try {
+        const query = `in:inbox -label:processed after:${thirtyMinutesAgo}`;
+        console.log(`[mfs] /control/process-unprocessed → Query ${accountName}: ${query}`);
+        
+        const list = await gmail.users.messages.list({
+          userId: "me",
+          q: query,
+          maxResults: MAX_MESSAGES_TO_CHECK,
+        });
+        
+        return (list.data.messages || []).map(m => m.id);
+      } catch (queryError) {
+        const errorMsg = queryError?.message || String(queryError);
+        if (errorMsg.includes("Metadata scope") || errorMsg.includes("does not support 'q' parameter")) {
+          console.warn(`[mfs] /control/process-unprocessed → Query no disponible para ${accountName} (scope limitado), usando fallback sin query`);
+          return null; // Indicar que se debe usar fallback
+        }
+        throw queryError; // Re-lanzar otros errores
+      }
+    }
+    
+    // Función auxiliar para obtener mensajes sin processed usando fallback (sin query)
+    async function getUnprocessedWithFallback(gmail, accountName) {
+      try {
+        console.log(`[mfs] /control/process-unprocessed → Fallback sin query para ${accountName} (últimos ${MAX_MESSAGES_TO_CHECK} mensajes del INBOX)`);
+        
+        // Obtener mensajes del INBOX sin query (funciona con scope limitado)
+        const list = await gmail.users.messages.list({
+          userId: "me",
+          labelIds: ["INBOX"],
+          maxResults: MAX_MESSAGES_TO_CHECK,
+        });
+        
+        const messages = list.data.messages || [];
+        console.log(`[mfs] /control/process-unprocessed → Fallback ${accountName}: encontrados ${messages.length} mensajes en INBOX`);
+        
+        // Verificar cada mensaje para ver si tiene "processed" y es reciente
+        const unprocessedIds = [];
+        let processedCount = 0;
+        let tooOldCount = 0;
+        
+        for (const msg of messages) {
+          if (!msg.id) continue;
+          if (unprocessedIds.length >= MAX_MESSAGES_TO_CHECK) break;
+          
+          try {
+            // Obtener metadata del mensaje (solo labels e internalDate)
+            const msgDetail = await gmail.users.messages.get({
+              userId: "me",
+              id: msg.id,
+              format: "metadata",
+              metadataHeaders: [],
+            });
+            
+            const labels = msgDetail.data.labelIds || [];
+            const internalDate = parseInt(msgDetail.data.internalDate || "0", 10);
+            
+            // Verificar si tiene "processed"
+            if (labels.includes("processed")) {
+              processedCount++;
+              continue;
+            }
+            
+            // Verificar si es reciente (últimos 30 minutos)
+            if (internalDate < thirtyMinutesAgoMs) {
+              tooOldCount++;
+              continue;
+            }
+            
+            // Agregar el mensaje
+            unprocessedIds.push(msg.id);
+          } catch (msgError) {
+            console.warn(`[mfs] /control/process-unprocessed → Error obteniendo metadata de mensaje ${msg.id} (${accountName}):`, msgError?.message);
+            continue;
+          }
+        }
+        
+        console.log(`[mfs] /control/process-unprocessed → Fallback ${accountName}: ${unprocessedIds.length} sin processed, ${processedCount} ya procesados, ${tooOldCount} muy antiguos`);
+        return unprocessedIds;
+      } catch (fallbackError) {
+        console.error(`[mfs] /control/process-unprocessed → Error en fallback para ${accountName}:`, fallbackError?.message || fallbackError);
+        return [];
+      }
+    }
+    
     // Procesar cuenta principal (media.manager@feverup.com)
     try {
       const gmail = await getGmailClient();
       
-      console.log(`[mfs] /control/process-unprocessed → Query cuenta principal: ${query}`);
+      // Intentar primero con query
+      let messageIds = await getUnprocessedWithQuery(gmail, "cuenta principal");
       
-      const list = await gmail.users.messages.list({
-        userId: "me",
-        q: query,
-        maxResults: MAX_MESSAGES_PER_EXECUTION,
-      });
+      // Si la query falló (null), usar fallback
+      if (messageIds === null) {
+        messageIds = await getUnprocessedWithFallback(gmail, "cuenta principal");
+      }
       
-      const messageIds = (list.data.messages || []).map(m => m.id);
       totalEncontrados += messageIds.length;
       console.log(`[mfs] /control/process-unprocessed → Encontrados ${messageIds.length} mensajes sin processed (cuenta principal)`);
       
@@ -269,15 +356,14 @@ app.post("/control/process-unprocessed", async (_req, res) => {
     try {
       const gmailSender = await getGmailSenderClient();
       
-      console.log(`[mfs] /control/process-unprocessed → Query cuenta SENDER: ${query}`);
+      // Intentar primero con query
+      let senderMessageIds = await getUnprocessedWithQuery(gmailSender, "cuenta SENDER");
       
-      const list = await gmailSender.users.messages.list({
-        userId: "me",
-        q: query,
-        maxResults: MAX_MESSAGES_PER_EXECUTION,
-      });
+      // Si la query falló (null), usar fallback
+      if (senderMessageIds === null) {
+        senderMessageIds = await getUnprocessedWithFallback(gmailSender, "cuenta SENDER");
+      }
       
-      const senderMessageIds = (list.data.messages || []).map(m => m.id);
       totalEncontrados += senderMessageIds.length;
       console.log(`[mfs] /control/process-unprocessed → Encontrados ${senderMessageIds.length} mensajes sin processed (cuenta SENDER)`);
       
