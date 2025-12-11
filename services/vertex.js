@@ -598,6 +598,10 @@ async function classifyIntentHeuristic({
   // Detectar ofertas de comida/comida gratis junto con solicitudes de compartir en redes sociales
   const hasComplimentaryWithShare = hasComplimentaryOffer && hasSocialMediaShareRequest;
   
+  // Detectar "Best of" awards/rankings (ofrecen reconocimiento a cambio de publicidad) - BARTER REQUEST
+  const hasBestOfAward = /(best of|readers'? choice|readers choice|award|certificate|recognition|recognized as|be recognized|nominated|nomination)/i.test(mailText);
+  const hasAwardWithAdvertising = hasBestOfAward && /(advertising|advertise|publicidad|anunciar|promote|promocionar|sponsor|sponsorship|patrocinio)/i.test(mailText);
+  
   const isBarterRequest =
     (isCoverageRequest && hasEventInvite) ||
     (hasEventInvite && (isPressStyle || isCoverageRequest || mentionsEvent)) ||
@@ -606,6 +610,7 @@ async function classifyIntentHeuristic({
     hasEventWithComplimentary ||
     hasComplimentaryWithShare ||
     hasInReturnLanguage ||
+    hasAwardWithAdvertising ||
     /(in exchange for|a cambio de|in return for|te invitamos|we invite you|invitaci[oó]n|convite (à|a) imprensa)/.test(mailText);
 
   // Free Coverage Request: Incluye press releases, noticias compartidas, guest articles/posts, y peticiones directas de cobertura gratis
@@ -670,6 +675,24 @@ async function classifyIntentHeuristic({
     );
 
   const isTestEmail = hasTestKeyword || appearsAsTestText;
+
+  // Detección de respuestas genéricas de agradecimiento que deben descartarse
+  // Si es una respuesta muy corta con solo agradecimiento y ya hubo una respuesta previa, descartar
+  const genericThankYouPatterns = [
+    /^(thank you|thanks|gracias|merci|danke|obrigado)[\s.,!]*$/i,
+    /^(thank you|thanks|gracias|merci|danke|obrigado)[\s.,!]*\s*(very much|so much|a lot|muchas|mucho|muito)[\s.,!]*$/i,
+    /^(thank you|thanks|gracias|merci|danke|obrigado)[\s.,!]*\s*(for|por|pour|f[üu]r)[\s.,!]*$/i,
+  ];
+  
+  // Verificar si es una respuesta genérica de agradecimiento
+  const isGenericThankYou = genericThankYouPatterns.some(regex => regex.test(normalizedBody.trim())) && 
+    normalizedBody.trim().length < 100; // Solo si es muy corto
+  
+  // Detectar si el email es una respuesta (Re:, Fwd:, etc.) con solo agradecimiento
+  const isReplyWithOnlyThanks = (
+    /^(re|fwd?|fw):/i.test(subjectLc) && 
+    isGenericThankYou
+  );
 
   // Detección de apuestas, casinos y temas relacionados de gambling
   const gamblingKeywordsRegex = /(apuestas|betting|casino|casinos|sports betting|sportsbook|bookmaker|bookmakers|poker|póker|gambling|juegos de azar|juego de azar|ruleta|blackjack|baccarat|slots|tragamonedas|máquinas tragaperras|bet|bets|apostar|apuesta|apostamos|apostar en|betting platform|betting site|casino online|online casino|casino en línea|casino virtual|promoción de casino|promoción de apuestas|promo de casino|promo de apuestas|publicidad de casino|publicidad de apuestas|anunciar casino|anunciar apuestas|promover casino|promover apuestas|colaboración casino|colaboración apuestas|partnership casino|partnership apuestas|sponsorship casino|sponsorship apuestas|patrocinio casino|patrocinio apuestas)/i;
@@ -782,6 +805,12 @@ async function classifyIntentHeuristic({
     intent = "Discard";
     confidence = 0.99;
     reasoning = "Email is a newsletter or marketing email (contains unsubscribe link and promotional content without direct business request), so it is discarded.";
+  }
+  // REGLA DURA: Respuestas genéricas de agradecimiento SIEMPRE Discard (verificación temprana, máxima prioridad)
+  else if (isReplyWithOnlyThanks || (isGenericThankYou && normalizedBody.trim().length < 50)) {
+    intent = "Discard";
+    confidence = 0.99;
+    reasoning = "Email is a generic thank you response with no meaningful business content, so it is discarded.";
   } else if (isBarterRequest) {
     intent = "Low";
     confidence = 0.8;
