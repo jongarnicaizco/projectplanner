@@ -339,6 +339,86 @@ async function classifyIntentHeuristic({
   
   const isSeoAgencyEmail = isSeoAgency || hasSeoAgencyPattern;
 
+  // Detección de programas de afiliados/influencer marketing - debe ejecutarse temprano para forzar Discard
+  const affiliateKeywords = [
+    // Términos en el dominio/email
+    /(affiliate|influencer|influator|noxinfluencermgmt|influencermgmt)/i,
+    // Términos comunes en programas de afiliados
+    /(affiliate program|affiliate marketing|influencer program|influencer marketing|brand ambassador|creator program|creator partnership)/i,
+    // Términos en español
+    /(programa de afiliados|afiliados|influencer|embajador de marca|programa de creadores|colaboraci[oó]n con creadores)/i,
+  ];
+  
+  // Verificar si el email viene de un programa de afiliados/influencer
+  const isAffiliateProgram = affiliateKeywords.some(regex => 
+    regex.test(fromLc) || 
+    regex.test(subjectLc) || 
+    regex.test(normalizedBody)
+  );
+  
+  // Detectar tracking links de programas de afiliados/influencer
+  const affiliateTrackingLinks = [
+    /(url\d+\.app\.influeator\.com|track\.noxinfluencermgmt\.com|influeator\.com|influencermgmt\.com)/i,
+    /(affiliate.*tracking|influencer.*tracking|commission.*tracking)/i,
+  ];
+  
+  const hasAffiliateTrackingLinks = affiliateTrackingLinks.some(regex => regex.test(mailText));
+  
+  // Patrones específicos de programas de afiliados/influencer en el cuerpo
+  const affiliatePatterns = [
+    /(we'd love to invite you to join (in|our) (campaign|program|partnership))/i,
+    /(commission a (short|video|post|content))/i,
+    /(paid (collab|collaboration|partnership|video|post|content))/i,
+    /(brand ambassador (program|partnership|opportunity))/i,
+    /(creator (program|partnership|collaboration|opportunity))/i,
+    /(influencer (program|partnership|collaboration|opportunity|campaign))/i,
+    /(we're reaching out to (influencers|creators|content creators|brand ambassadors))/i,
+    /(we work with (influencers|creators|content creators|brand ambassadors))/i,
+    /(invite you to join (our|in) (affiliate|influencer|creator) (program|campaign|partnership))/i,
+    /(te invitamos a (unirte|participar) en (nuestro|nuestra) (programa|campana|colaboraci[oó]n) (de afiliados|de influencers|de creadores))/i,
+    /(colaboraci[oó]n (pagada|remunerada|con pago))/i,
+    /(comisi[oó]n (por|de|del))/i,
+  ];
+  
+  const hasAffiliatePattern = affiliatePatterns.some(regex => regex.test(mailText));
+  
+  const isAffiliateEmail = isAffiliateProgram || hasAffiliateTrackingLinks || hasAffiliatePattern;
+
+  // Detección de agencias de SEO - debe ejecutarse temprano para forzar Discard
+  const seoAgencyKeywords = [
+    // Términos en el dominio/email
+    /(seo|search engine optimization|search engine marketing|sem\b)/i,
+    // Términos comunes en nombres de agencias SEO
+    /(seo agency|seo company|seo services|seo firm|seo consultant|seo expert|seo specialist|seo marketing|digital marketing agency|search marketing)/i,
+    // Términos en español
+    /(agencia seo|agencia de seo|empresa seo|servicios seo|consultor[íi]a seo|especialista seo|marketing digital|posicionamiento web|posicionamiento seo)/i,
+    // Términos en otros idiomas
+    /(agence seo|agence de seo|soci[ée]t[ée] seo|services seo|consultant seo|expert seo|sp[ée]cialiste seo)/i,
+  ];
+  
+  // Verificar si el email viene de una agencia de SEO
+  // Buscar en: dominio del email, nombre del remitente (si está disponible), subject, y body
+  const isSeoAgency = seoAgencyKeywords.some(regex => 
+    regex.test(fromLc) || 
+    regex.test(subjectLc) || 
+    regex.test(normalizedBody)
+  );
+  
+  // También verificar patrones específicos de agencias SEO en el cuerpo
+  const seoAgencyPatterns = [
+    /(we are (an|a) (seo|search engine) (agency|company|firm|specialist))/i,
+    /(our (seo|search engine) (services|agency|company))/i,
+    /(specializ(e|ing) in (seo|search engine optimization|search marketing))/i,
+    /(especializ(amos|ados) en (seo|posicionamiento web|posicionamiento seo))/i,
+    /(nos especializamos en (seo|posicionamiento web|posicionamiento seo))/i,
+    /(we help (businesses|companies|clients) (with|improve) (seo|search engine|ranking))/i,
+    /(ayudamos (a empresas|empresas|clientes) (con|a mejorar) (seo|posicionamiento|ranking))/i,
+  ];
+  
+  const hasSeoAgencyPattern = seoAgencyPatterns.some(regex => regex.test(mailText));
+  
+  const isSeoAgencyEmail = isSeoAgency || hasSeoAgencyPattern;
+
   // Regex patterns
   // Detección mejorada de press release - incluye variantes en múltiples idiomas
   const pressReleaseRegex =
@@ -636,6 +716,12 @@ async function classifyIntentHeuristic({
     intent = "Discard";
     confidence = 0.99;
     reasoning = "Email is from an SEO agency. SEO agency requests are always categorized as Discard, regardless of pricing or partnership mentions.";
+  }
+  // REGLA DURA: Programas de afiliados/influencer marketing SIEMPRE Discard (verificación temprana, máxima prioridad)
+  else if (isAffiliateEmail) {
+    intent = "Discard";
+    confidence = 0.99;
+    reasoning = "Email is from an affiliate/influencer marketing program. Affiliate program requests are always categorized as Discard, regardless of pricing or partnership mentions.";
   }
   // REGLA DURA: Gambling/Betting/Casino related requests SIEMPRE Discard (verificación temprana, máxima prioridad)
   else if (isGamblingRelated) {
