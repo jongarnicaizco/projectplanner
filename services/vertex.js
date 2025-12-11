@@ -304,6 +304,41 @@ async function classifyIntentHeuristic({
   const normalizedBody = (body || "").toLowerCase().replace(/\s+/g, " ").trim();
   let reasoningLc = (reasoning || "").toLowerCase();
 
+  // Detección de agencias de SEO - debe ejecutarse temprano para forzar Discard
+  const seoAgencyKeywords = [
+    // Términos en el dominio/email
+    /(seo|search engine optimization|search engine marketing|sem\b)/i,
+    // Términos comunes en nombres de agencias SEO
+    /(seo agency|seo company|seo services|seo firm|seo consultant|seo expert|seo specialist|seo marketing|digital marketing agency|search marketing)/i,
+    // Términos en español
+    /(agencia seo|agencia de seo|empresa seo|servicios seo|consultor[íi]a seo|especialista seo|marketing digital|posicionamiento web|posicionamiento seo)/i,
+    // Términos en otros idiomas
+    /(agence seo|agence de seo|soci[ée]t[ée] seo|services seo|consultant seo|expert seo|sp[ée]cialiste seo)/i,
+  ];
+  
+  // Verificar si el email viene de una agencia de SEO
+  // Buscar en: dominio del email, nombre del remitente (si está disponible), subject, y body
+  const isSeoAgency = seoAgencyKeywords.some(regex => 
+    regex.test(fromLc) || 
+    regex.test(subjectLc) || 
+    regex.test(normalizedBody)
+  );
+  
+  // También verificar patrones específicos de agencias SEO en el cuerpo
+  const seoAgencyPatterns = [
+    /(we are (an|a) (seo|search engine) (agency|company|firm|specialist))/i,
+    /(our (seo|search engine) (services|agency|company))/i,
+    /(specializ(e|ing) in (seo|search engine optimization|search marketing))/i,
+    /(especializ(amos|ados) en (seo|posicionamiento web|posicionamiento seo))/i,
+    /(nos especializamos en (seo|posicionamiento web|posicionamiento seo))/i,
+    /(we help (businesses|companies|clients) (with|improve) (seo|search engine|ranking))/i,
+    /(ayudamos (a empresas|empresas|clientes) (con|a mejorar) (seo|posicionamiento|ranking))/i,
+  ];
+  
+  const hasSeoAgencyPattern = seoAgencyPatterns.some(regex => regex.test(mailText));
+  
+  const isSeoAgencyEmail = isSeoAgency || hasSeoAgencyPattern;
+
   // Regex patterns
   // Detección mejorada de press release - incluye variantes en múltiples idiomas
   const pressReleaseRegex =
@@ -596,6 +631,12 @@ async function classifyIntentHeuristic({
     confidence = 0.99;
     reasoning = "Email contains primarily an automatic email client signature (Outlook, Gmail, etc.) with no meaningful business content, so it is discarded.";
   } 
+  // REGLA DURA: Agencias de SEO SIEMPRE Discard (verificación temprana, máxima prioridad)
+  else if (isSeoAgencyEmail) {
+    intent = "Discard";
+    confidence = 0.99;
+    reasoning = "Email is from an SEO agency. SEO agency requests are always categorized as Discard, regardless of pricing or partnership mentions.";
+  }
   // REGLA DURA: Gambling/Betting/Casino related requests SIEMPRE Discard (verificación temprana, máxima prioridad)
   else if (isGamblingRelated) {
     intent = "Discard";
