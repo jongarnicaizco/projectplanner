@@ -419,6 +419,48 @@ async function classifyIntentHeuristic({
   
   const isSeoAgencyEmail = isSeoAgency || hasSeoAgencyPattern;
 
+  // Detección de ofertas donde NOSOTROS seríamos los creadores/influencers (deben descartarse)
+  // CRÍTICO: Si están OFRECIENDO que seamos influencers/creators para su marca, NO están pidiendo que hagamos algo para ellos
+  const offeringUsToBeInfluencerPatterns = [
+    // Ofertas directas para que seamos influencers/creators
+    /(convertirte en (un|una) (influencer|creator|creador|creadora) (de|para|of))/i,
+    /(become (an|a) (influencer|creator) (for|of|with) (us|our brand|our company))/i,
+    /(si te gustar[ií]a (convertirte|ser) (en|un|una) (influencer|creator|creador|creadora))/i,
+    /(if you'd like to become (an|a) (influencer|creator))/i,
+    /(te gustar[ií]a (convertirte|ser) (en|un|una) (influencer|creator|creador|creadora))/i,
+    /(would you like to become (an|a) (influencer|creator))/i,
+    /(colaboraciones pagadas.*para ti|paid collaborations.*for you)/i,
+    /(colaboraciones.*donde.*t[uú] (ser[ií]as|eres)|collaborations.*where.*you (would be|are))/i,
+    // Ofertas de códigos de promoción para nosotros (significa que seríamos los influencers)
+    /(c[oó]digo de promoci[oó]n (exclusivo|para ti|para tus seguidores)|promo code (exclusive|for you|for your followers))/i,
+    /(c[oó]digo (exclusivo|personalizado) (para ti|para tus seguidores)|exclusive code (for you|for your followers))/i,
+    // Ofertas de promociones de nuestros canales (a cambio de ser influencers)
+    /(promociones de (tus|nuestros) canales|promotions of (your|our) channels)/i,
+    /(promote (your|our) channels|promocionar (tus|nuestros) canales)/i,
+    // Contexto: "trabajar contigo" pero ofreciendo que seamos influencers
+    /(trabajar contigo.*(influencer|creator|creador)|work with you.*(influencer|creator))/i,
+    /(colaborar contigo.*(influencer|creator|creador)|collaborate with you.*(influencer|creator))/i,
+    // Ofertas de colaboraciones donde nosotros crearíamos contenido para ellos (como influencers)
+    /(colaboraciones.*(video dedicado|video integrado|cortos|cuadro de descripci[oó]n)|collaborations.*(dedicated video|integrated video|shorts|description box))/i,
+    /(crear contenido (para nosotros|para nuestra marca)|create content (for us|for our brand))/i,
+    // Patrones específicos de marcas que buscan influencers
+    /(muchos creadores de contenido colaboran con nosotros|many content creators collaborate with us)/i,
+    /(sus visualizaciones son m[aá]s altas cuando publican para|their views are higher when they post for)/i,
+    /(si te gustar[ií]a.*colaborar.*env[ií]anos.*tarifas|if you'd like.*collaborate.*send us.*rates)/i,
+  ];
+  
+  const isOfferingUsToBeInfluencer = offeringUsToBeInfluencerPatterns.some(regex => regex.test(mailText));
+  
+  // También detectar cuando el contexto general es "queremos que seas nuestro influencer" vs "queremos que promociones algo"
+  // Si mencionan "influencer", "creator", "colaboraciones pagadas" Y "trabajar contigo" pero NO piden que promocionemos algo específico
+  const hasInfluencerOfferContext = (
+    /(influencer|creator|creador|creadora|colaboraciones pagadas|paid collaborations)/i.test(mailText) &&
+    /(trabajar contigo|work with you|colaborar contigo|collaborate with you)/i.test(mailText) &&
+    !/(promocionar|promote|anunciar|advertise|publicitar|publicize) (nuestro|nuestra|our|my) (producto|product|servicio|service|marca|brand|evento|event)/i.test(mailText)
+  );
+  
+  const isOfferingUsSomething = isOfferingUsToBeInfluencer || hasInfluencerOfferContext;
+
   // Regex patterns
   // Detección mejorada de press release - incluye variantes en múltiples idiomas
   const pressReleaseRegex =
@@ -722,6 +764,12 @@ async function classifyIntentHeuristic({
     intent = "Discard";
     confidence = 0.99;
     reasoning = "Email is from an affiliate/influencer marketing program. Affiliate program requests are always categorized as Discard, regardless of pricing or partnership mentions.";
+  }
+  // REGLA DURA: Ofertas donde NOSOTROS seríamos los influencers/creators SIEMPRE Discard (verificación temprana, máxima prioridad)
+  else if (isOfferingUsSomething) {
+    intent = "Discard";
+    confidence = 0.99;
+    reasoning = "Email is offering us to become influencers/creators for their brand, rather than asking us to do something for them. These offers are always categorized as Discard.";
   }
   // REGLA DURA: Gambling/Betting/Casino related requests SIEMPRE Discard (verificación temprana, máxima prioridad)
   else if (isGamblingRelated) {
