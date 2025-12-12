@@ -852,11 +852,24 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         intent: finalIntent,
         confidence: finalConfidence,
       });
-    } catch (e) {
-        // En caso de error, loguear y aplicar etiqueta processed para evitar bucles infinitos
+      } catch (e) {
+        // En caso de error, loguear y NO aplicar etiqueta processed para permitir reintento
         console.error(`[mfs] ✗ Error procesando mensaje ${id}:`, e?.message || e);
         console.error(`[mfs] Stack trace:`, e?.stack);
         console.error(`[mfs] ⚠️ NO se aplicará etiqueta processed a ${id} para permitir reintento en próxima ejecución`);
+        
+        // Log detallado para debugging
+        if (isToSecretMedia) {
+          console.error(`[mfs] ✗ ERROR CRÍTICO procesando correo TO secretmedia@feverup.com - ID: ${id}`, {
+            error: e?.message || e,
+            stack: e?.stack,
+            from: from,
+            to: to,
+            subject: subject,
+            errorStatus: e?.response?.status || e?.code || e?.status,
+            errorData: e?.response?.data || e?.data,
+          });
+        }
         
         // NO aplicar etiqueta processed - permitir que se reintente en la próxima ejecución
         // Solo aplicar etiqueta si es un error crítico que no permite procesamiento (ej: mensaje no existe)
@@ -874,10 +887,11 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         results.push({
           id,
           airtableId: null,
-          intent: null,
-          confidence: null,
+          intent: finalIntent || null,
+          confidence: finalConfidence || null,
           skipped: false,
           error: e?.message || "unknown_error",
+          willRetry: !isCriticalError, // Marcar para reintento si no es error crítico
         });
       } finally {
         // Liberar el lock siempre, incluso si hubo error o continue
@@ -885,8 +899,19 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
       }
     } catch (e) {
       // Error en el procesamiento del mensaje - liberar lock si existe
+      console.error(`[mfs] ✗ Error crítico en procesamiento de mensaje ${id}:`, e?.message || e);
+      console.error(`[mfs] Stack trace:`, e?.stack);
       releaseProcessingLock(id);
-      // Silently continue - el mensaje se intentará procesar de nuevo
+      // NO aplicar etiqueta processed - permitir reintento
+      results.push({
+        id,
+        airtableId: null,
+        intent: null,
+        confidence: null,
+        skipped: false,
+        error: e?.message || "critical_error",
+        willRetry: true,
+      });
     }
   }
 

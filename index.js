@@ -226,11 +226,11 @@ app.post("/control/email-sending", async (req, res) => {
  */
 app.post("/control/process-unprocessed", async (_req, res) => {
   try {
-    console.log(`[mfs] /control/process-unprocessed → Procesando correos sin etiqueta "processed" (fallback automático - últimos 30 minutos)`);
+    console.log(`[mfs] /control/process-unprocessed → Procesando correos sin etiqueta "processed" (fallback automático - últimos 60 minutos)`);
     
-    const MAX_MESSAGES_TO_CHECK = 20; // Límite para evitar excesivas transacciones
-    const thirtyMinutesAgo = Math.floor(Date.now() / 1000) - (30 * 60); // Últimos 30 minutos
-    const thirtyMinutesAgoMs = Date.now() - (30 * 60 * 1000); // Para comparar internalDate
+    const MAX_MESSAGES_TO_CHECK = 100; // Aumentado para capturar más correos perdidos
+    const sixtyMinutesAgo = Math.floor(Date.now() / 1000) - (60 * 60); // Últimos 60 minutos (aumentado de 30)
+    const sixtyMinutesAgoMs = Date.now() - (60 * 60 * 1000); // Para comparar internalDate
     
     let totalProcesados = 0;
     let totalFallidos = 0;
@@ -240,7 +240,7 @@ app.post("/control/process-unprocessed", async (_req, res) => {
     // Función auxiliar para obtener mensajes sin processed usando query (método preferido)
     async function getUnprocessedWithQuery(gmail, accountName) {
       try {
-        const query = `in:inbox -label:processed after:${thirtyMinutesAgo}`;
+        const query = `in:inbox -label:processed after:${sixtyMinutesAgo}`;
         console.log(`[mfs] /control/process-unprocessed → Query ${accountName}: ${query}`);
         
         const list = await gmail.users.messages.list({
@@ -249,7 +249,9 @@ app.post("/control/process-unprocessed", async (_req, res) => {
           maxResults: MAX_MESSAGES_TO_CHECK,
         });
         
-        return (list.data.messages || []).map(m => m.id);
+        const messageIds = (list.data.messages || []).map(m => m.id);
+        console.log(`[mfs] /control/process-unprocessed → Query ${accountName}: encontrados ${messageIds.length} mensajes sin processed`);
+        return messageIds;
       } catch (queryError) {
         const errorMsg = queryError?.message || String(queryError);
         if (errorMsg.includes("Metadata scope") || errorMsg.includes("does not support 'q' parameter")) {
@@ -302,8 +304,8 @@ app.post("/control/process-unprocessed", async (_req, res) => {
               continue;
             }
             
-            // Verificar si es reciente (últimos 30 minutos)
-            if (internalDate < thirtyMinutesAgoMs) {
+            // Verificar si es reciente (últimos 60 minutos)
+            if (internalDate < sixtyMinutesAgoMs) {
               tooOldCount++;
               continue;
             }
