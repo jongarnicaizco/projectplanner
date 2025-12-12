@@ -741,6 +741,248 @@ async function classifyIntentHeuristic({
   
   const isUserSupportRequest = (hasUserSupportKeywords || hasUserSupportQuestionPattern) && !hasBusinessContext;
 
+  // Detección de respuestas de cuentas internas en el hilo del correo
+  // Si hay una respuesta de alguna de estas cuentas o de @feverup.com en el cuerpo, descartar automáticamente
+  const internalSecretMediaAccounts = [
+    'abudhabi@secretmedianetwork.com',
+    'dubai@secretmedianetwork.com',
+    'abudhabi+managers@secretmedianetwork.com',
+    'baires@secretmedianetwork.com',
+    'buenosaires@secretmedianetwork.com',
+    'wien@secretmedianetwork.com',
+    'brisbane@secretmedianetwork.com',
+    'melbourne@secretmedianetwork.com',
+    'perth@secretmedianetwork.com',
+    'adelaide@secretmedianetwork.com',
+    'sydney@secretmedianetwork.com',
+    'canberra@secretmedianetwork.com',
+    'goldcoast@secretmedianetwork.com',
+    'newcastle.au@secretmedianetwork.com',
+    'bruxelles@secretmedianetwork.com',
+    'ghent@secretmedianetwork.com',
+    'riodejaneiro@secretmedianetwork.com',
+    'saopaulo@secretmedianetwork.com',
+    'fortaleza@secretmedianetwork.com',
+    'belohorizonte@secretmedianetwork.com',
+    'saopaulo+noreply@secretmedianetwork.com',
+    'portoalegre@secretmedianetwork.com',
+    'calgary@secretmedianetwork.com',
+    'ottawa@secretmedianetwork.com',
+    'edmonton@secretmedianetwork.com',
+    'toronto@secretmedianetwork.com',
+    'montreal@secretmedianetwork.com',
+    'vancouver@secretmedianetwork.com',
+    'geneve@secretmedianetwork.com',
+    'santiago@secretmedianetwork.com',
+    'berlin@secretmedianetwork.com',
+    'frankfurt@secretmedianetwork.com',
+    'koeln@secretmedianetwork.com',
+    'muenchen@secretmedianetwork.com',
+    'hamburg@secretmedianetwork.com',
+    'kobenhavn@secretmedianetwork.com',
+    'hola@valenciasecreta.com',
+    'madrid@secretmedianetwork.com',
+    'hola@barcelonasecreta.com',
+    'bilbao@secretmedianetwork.com',
+    'malaga@secretmedianetwork.com',
+    'zaragoza@secretmedianetwork.com',
+    'gijon@secretmedianetwork.com',
+    'cadiz@secretmedianetwork.com',
+    'santander@secretmedianetwork.com',
+    'barcelona@secretmedianetwork.com',
+    'ibiza@secretmedianetwork.com',
+    'sevilla@secretmedianetwork.com',
+    'alicante@secretmedianetwork.com',
+    'toulouse@secretmedianetwork.com',
+    'marseille@secretmedianetwork.com',
+    'paris@secretmedianetwork.com',
+    'lyon@secretmedianetwork.com',
+    'nimes@secretmedianetwork.com',
+    'bordeaux@secretmedianetwork.com',
+    'lille@secretmedianetwork.com',
+    'larochelle@secretmedianetwork.com',
+    'nice@secretmedianetwork.com',
+    'nantes@secretmedianetwork.com',
+    'hello@secretldn.com',
+    'glasgow@secretmedianetwork.com',
+    'manchester@secretmedianetwork.com',
+    'nottingham@secretmedianetwork.com',
+    'bristol@secretmedianetwork.com',
+    'brighton@secretmedianetwork.com',
+    'belfast@secretmedianetwork.com',
+    'leeds@secretmedianetwork.com',
+    'sheffield@secretmedianetwork.com',
+    'plymouth@secretmedianetwork.com',
+    'liverpool@secretmedianetwork.com',
+    'birmingham@secretmedianetwork.com',
+    'derry+managers@secretmedianetwork.com',
+    'edinburgh@secretmedianetwork.com',
+    'editor@secretldn.com',
+    'london@secretmedianetwork.com',
+    'dublin@secretmedianetwork.com',
+    'bhopal@secretmedianetwork.com',
+    'mumbai@secretmedianetwork.com',
+    'newdelhi@secretmedianetwork.com',
+    'bologna@secretmedianetwork.com',
+    'milano@secretmedianetwork.com',
+    'genova@secretmedianetwork.com',
+    'palermo@secretmedianetwork.com',
+    'bari@secretmedianetwork.com',
+    'catania@secretmedianetwork.com',
+    'venezia@secretmedianetwork.com',
+    'roma@secretmedianetwork.com',
+    'napoli@secretmedianetwork.com',
+    'torino@secretmedianetwork.com',
+    'firenze@secretmedianetwork.com',
+    'tokyo@secretmedianetwork.com',
+    'daegu@secretmedianetwork.com',
+    'seoul@secretmedianetwork.com',
+    'suwon@secretmedianetwork.com',
+    'busan@secretmedianetwork.com',
+    'tijuana@secretmedianetwork.com',
+    'guadalajara@secretmedianetwork.com',
+    'cdmx@secretmedianetwork.com',
+    'monterrey@secretmedianetwork.com',
+    'toluca@secretmedianetwork.com',
+    'thehague@secretmedianetwork.com',
+    'rotterdam@secretmedianetwork.com',
+    'eindhoven@secretmedianetwork.com',
+    'utrecht@secretmedianetwork.com',
+    'amsterdam@secretmedianetwork.com',
+    'auckland@secretmedianetwork.com',
+    'wellington@secretmedianetwork.com',
+    'lisboa@secretmedianetwork.com',
+    'porto@secretmedianetwork.com',
+    'Lisboa@secretmedianetwork.com',
+    'stockholm@secretmedianetwork.com',
+    'singapore@secretmedianetwork.com',
+    'indianapolis@secretmedianetwork.com',
+    'hello@secretnyc.co',
+    'miami@secretmedianetwork.com',
+    'houston@secretmedianetwork.com',
+    'dc@secretmedianetwork.com',
+    'dallas@secretmedianetwork.com',
+    'tampa@secretmedianetwork.com',
+    'charlotte@secretmedianetwork.com',
+    'sandiego@secretmedianetwork.com',
+    'stlouis@secretmedianetwork.com',
+    'la@secretmedianetwork.com',
+    'sanfrancisco@secretmedianetwork.com',
+    'charleston@secretmedianetwork.com',
+    'tulsa@secretmedianetwork.com',
+    'raleigh@secretmedianetwork.com',
+    'seattle@secretmedianetwork.com',
+    'atlanta@secretmedianetwork.com',
+    'chicago@secretmedianetwork.com',
+    'boston@secretmedianetwork.com',
+    'philadelphia@secretmedianetwork.com',
+    'detroit@secretmedianetwork.com',
+    'austin@secretmedianetwork.com',
+    'baltimore@secretmedianetwork.com',
+    'portland@secretmedianetwork.com',
+    'nashville@secretmedianetwork.com',
+    'richmond@secretmedianetwork.com',
+    'lasvegas@secretmedianetwork.com',
+    'jacksonville@secretmedianetwork.com',
+    'cleveland@secretmedianetwork.com',
+    'neworleans@secretmedianetwork.com',
+    'cincinnati@secretmedianetwork.com',
+    'phoenix@secretmedianetwork.com',
+    'minneapolis@secretmedianetwork.com',
+    'denver@secretmedianetwork.com',
+    'sacramento@secretmedianetwork.com',
+    'kansascity@secretmedianetwork.com',
+    'orlando@secretmedianetwork.com',
+    'albuquerque@secretmedianetwork.com',
+    'london-editorial@feverup.com',
+    'sanantonio@secretmedianetwork.com',
+    'quebec@secretmedianetwork.com',
+    'stuttgart@secretmedianetwork.com',
+  ];
+  
+  // Patrones para detectar respuestas en hilos de correo
+  // Buscar patrones típicos de respuestas: "From:", "De:", "On [date] wrote:", etc.
+  const replyPatterns = [
+    // Patrón inglés: "From: email@domain.com" o "From: Name <email@domain.com>"
+    /from:\s*([^\n<]*<)?([a-zA-Z0-9._%+-]+@(?:secretmedianetwork\.com|feverup\.com|secretldn\.com|barcelonasecreta\.com|valenciasecreta\.com|secretnyc\.co))([^\n>]*>)?/i,
+    // Patrón español: "De: email@domain.com" o "De: Nombre <email@domain.com>"
+    /de:\s*([^\n<]*<)?([a-zA-Z0-9._%+-]+@(?:secretmedianetwork\.com|feverup\.com|secretldn\.com|barcelonasecreta\.com|valenciasecreta\.com|secretnyc\.co))([^\n>]*>)?/i,
+    // Patrón francés: "De : email@domain.com"
+    /de\s*:\s*([^\n<]*<)?([a-zA-Z0-9._%+-]+@(?:secretmedianetwork\.com|feverup\.com|secretldn\.com|barcelonasecreta\.com|valenciasecreta\.com|secretnyc\.co))([^\n>]*>)?/i,
+    // Patrón "On [date], [email] wrote:" o "Le [date], [email] a écrit :"
+    /(on|le|el)\s+[^\n]+\s+([a-zA-Z0-9._%+-]+@(?:secretmedianetwork\.com|feverup\.com|secretldn\.com|barcelonasecreta\.com|valenciasecreta\.com|secretnyc\.co))[^\n]*wrote|a écrit|escribió/i,
+    // Patrón "Sent from" o "Enviado desde" seguido de email
+    /(sent from|enviado desde|envoyé depuis)\s+([a-zA-Z0-9._%+-]+@(?:secretmedianetwork\.com|feverup\.com|secretldn\.com|barcelonasecreta\.com|valenciasecreta\.com|secretnyc\.co))/i,
+    // Patrón de bloque de respuesta con email en líneas separadas
+    /(from|de|von|da|van)\s*:\s*[^\n]*\n\s*([a-zA-Z0-9._%+-]+@(?:secretmedianetwork\.com|feverup\.com|secretldn\.com|barcelonasecreta\.com|valenciasecreta\.com|secretnyc\.co))/i,
+  ];
+  
+  // Verificar si hay una respuesta de alguna cuenta interna en el cuerpo
+  // Buscar bloques de respuesta de email que contengan estas direcciones
+  let hasInternalReply = false;
+  
+  // Crear un regex que busque cualquier email de los dominios internos
+  const internalEmailRegex = /([a-zA-Z0-9._%+-]+@(?:secretmedianetwork\.com|feverup\.com|secretldn\.com|barcelonasecreta\.com|valenciasecreta\.com|secretnyc\.co))/gi;
+  
+  // Buscar todos los emails internos en el cuerpo
+  const internalEmailsInBody = [];
+  let match;
+  while ((match = internalEmailRegex.exec(body)) !== null) {
+    internalEmailsInBody.push(match[1].toLowerCase());
+  }
+  
+  // Si hay emails internos, verificar si están en un contexto de respuesta
+  if (internalEmailsInBody.length > 0) {
+    // Verificar si alguno de estos emails está en un contexto de respuesta
+    // Buscar patrones típicos de respuestas de email alrededor de estos emails
+    
+    for (const email of internalEmailsInBody) {
+      // Verificar si es una de las cuentas específicas o @feverup.com
+      const isInternalAccount = internalSecretMediaAccounts.some(acc => acc.toLowerCase() === email) || 
+                                 email.includes('@feverup.com');
+      
+      if (isInternalAccount) {
+        // Buscar contexto de respuesta alrededor de este email
+        // Buscar en un rango de 200 caracteres antes y después del email
+        const emailIndex = body.toLowerCase().indexOf(email);
+        if (emailIndex !== -1) {
+          const contextStart = Math.max(0, emailIndex - 200);
+          const contextEnd = Math.min(body.length, emailIndex + email.length + 200);
+          const context = body.substring(contextStart, contextEnd).toLowerCase();
+          
+          // Verificar si hay indicadores de respuesta en el contexto
+          const hasReplyIndicators = [
+            /from\s*:/i,
+            /de\s*:/i,
+            /von\s*:/i,
+            /da\s*:/i,
+            /van\s*:/i,
+            /sent\s+from/i,
+            /enviado\s+desde/i,
+            /envoyé\s+depuis/i,
+            /on\s+[^\n]+\s+wrote/i,
+            /le\s+[^\n]+\s+a\s+écrit/i,
+            /el\s+[^\n]+\s+escribió/i,
+            /original\s+message/i,
+            /mensaje\s+original/i,
+            /message\s+original/i,
+            /---\s*original\s+message/i,
+            /---\s*mensaje\s+original/i,
+            /^>\s+/m, // Líneas que empiezan con ">" (típico de respuestas)
+            /^on\s+/m, // Líneas que empiezan con "On" (típico de respuestas en inglés)
+            /^le\s+/m, // Líneas que empiezan con "Le" (típico de respuestas en francés)
+            /^el\s+/m, // Líneas que empiezan con "El" (típico de respuestas en español)
+          ].some(pattern => pattern.test(context));
+          
+          if (hasReplyIndicators) {
+            hasInternalReply = true;
+            break;
+          }
+        }
+      }
+    }
+  }
+
   // Detección de apuestas, casinos y temas relacionados de gambling
   const gamblingKeywordsRegex = /(apuestas|betting|casino|casinos|sports betting|sportsbook|bookmaker|bookmakers|poker|póker|gambling|juegos de azar|juego de azar|ruleta|blackjack|baccarat|slots|tragamonedas|máquinas tragaperras|bet|bets|apostar|apuesta|apostamos|apostar en|betting platform|betting site|casino online|online casino|casino en línea|casino virtual|promoción de casino|promoción de apuestas|promo de casino|promo de apuestas|publicidad de casino|publicidad de apuestas|anunciar casino|anunciar apuestas|promover casino|promover apuestas|colaboración casino|colaboración apuestas|partnership casino|partnership apuestas|sponsorship casino|sponsorship apuestas|patrocinio casino|patrocinio apuestas)/i;
   
@@ -864,6 +1106,12 @@ async function classifyIntentHeuristic({
     intent = "Discard";
     confidence = 0.99;
     reasoning = "Email is a user support request (questions about tickets, hours, location, etc.) with no business/partnership intent, so it is discarded.";
+  }
+  // REGLA DURA: Si hay una respuesta de cuenta interna en el hilo, SIEMPRE Discard (verificación temprana, máxima prioridad)
+  else if (hasInternalReply) {
+    intent = "Discard";
+    confidence = 0.99;
+    reasoning = "Email contains a reply from an internal account (secretmedianetwork.com, feverup.com, etc.) in the thread, so it is discarded.";
   } else if (isBarterRequest) {
     intent = "Low";
     confidence = 0.8;
