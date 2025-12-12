@@ -141,6 +141,60 @@ Summary:`;
 }
 
 /**
+ * Verificación rápida antes de llamar a la API - detecta casos obvios de Discard
+ * OPTIMIZACIÓN: Evita llamadas innecesarias a la API
+ */
+function quickDiscardCheck({ subject, from, to, body }) {
+  const fromLc = (from || "").toLowerCase();
+  const subjectLc = (subject || "").toLowerCase();
+  const bodyLc = (body || "").toLowerCase();
+  const mailText = `${subjectLc}\n${bodyLc}`;
+  
+  // Verificaciones rápidas de casos obvios de Discard
+  // 1. Test emails
+  if (subjectLc === "test" || /test\s+email|email\s+test/i.test(subjectLc)) {
+    return { isDiscard: true, reason: "Test email" };
+  }
+  
+  // 2. SEO agencies (verificación rápida por dominio)
+  if (/seo|search engine optimization|search engine marketing|sem\b/i.test(fromLc) ||
+      /seo agency|seo company|seo services/i.test(mailText)) {
+    return { isDiscard: true, reason: "SEO agency" };
+  }
+  
+  // 3. Affiliate programs (verificación rápida)
+  if (/affiliate|influator|noxinfluencermgmt|influencermgmt/i.test(fromLc) ||
+      /affiliate program|influencer program|brand ambassador/i.test(mailText)) {
+    return { isDiscard: true, reason: "Affiliate program" };
+  }
+  
+  // 4. Gambling/Betting
+  if (/(apuestas|betting|casino|sports betting|bookmaker|gambling)/i.test(mailText)) {
+    return { isDiscard: true, reason: "Gambling related" };
+  }
+  
+  // 5. Instagram/Facebook notifications
+  if (/instagram\.com|facebookmail\.com/.test(fromLc) &&
+      /(new login|security alert|password reset|verification code)/i.test(mailText)) {
+    return { isDiscard: true, reason: "Social media notification" };
+  }
+  
+  // 6. User support requests (verificación rápida)
+  if (/(ticket|billet|entrée|admission|horaires|opening hours|adresse|address|location)/i.test(mailText) &&
+      !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboración)/i.test(mailText)) {
+    return { isDiscard: true, reason: "User support request" };
+  }
+  
+  // 7. Contact change emails (verificación rápida)
+  if (/(left the company|no longer with|deixei de fazer parte|please contact|contact instead)/i.test(mailText) &&
+      !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboración)/i.test(mailText)) {
+    return { isDiscard: true, reason: "Contact change email" };
+  }
+  
+  return { isDiscard: false };
+}
+
+/**
  * Clasifica el intent de un correo
  */
 export async function classifyIntent({ subject, from, to, body }) {
@@ -150,6 +204,14 @@ export async function classifyIntent({ subject, from, to, body }) {
     to,
     subject: subjectLog,
   });
+
+  // OPTIMIZACIÓN: Limitar el body a 8000 caracteres para reducir tokens
+  // Las primeras líneas suelen contener la información más relevante
+  const bodyToAnalyze = body ? body.slice(0, 8000) : "";
+  
+  // Si el body es muy largo, añadir nota al final
+  const bodyTruncated = body && body.length > 8000;
+  const bodyNote = bodyTruncated ? "\n\n[Email body truncated for analysis]" : "";
 
   const prompt = `${INTENT_PROMPT}
 
@@ -163,7 +225,7 @@ Subject: ${subject}
 
 Body:
 
-${body}`.trim();
+${bodyToAnalyze}${bodyNote}`.trim();
 
   let raw = "";
   let modelIntentRaw = null;
@@ -178,10 +240,19 @@ ${body}`.trim();
   let modelBarter = false;
   let modelPricing = false;
 
-  try {
-    raw = await callModelText(CFG.VERTEX_INTENT_MODEL, prompt);
-  } catch {
-    raw = "";
+  // OPTIMIZACIÓN: Verificación rápida antes de llamar a la API
+  // Si es un caso obvio de Discard, saltamos la llamada a la API
+  const quickCheck = quickDiscardCheck({ subject, from, to, body });
+  if (quickCheck.isDiscard) {
+    console.log(`[mfs] [classify] ⚡ Verificación rápida detectó Discard: ${quickCheck.reason} - Saltando llamada a API`);
+    // No llamamos a la API, usamos solo heurísticas
+  } else {
+    // Solo llamamos a la API si no es un caso obvio de Discard
+    try {
+      raw = await callModelText(CFG.VERTEX_INTENT_MODEL, prompt);
+    } catch {
+      raw = "";
+    }
   }
 
   if (raw && raw.trim()) {
