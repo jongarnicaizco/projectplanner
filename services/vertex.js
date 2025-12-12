@@ -694,6 +694,53 @@ async function classifyIntentHeuristic({
     isGenericThankYou
   );
 
+  // Detección de solicitudes de soporte al usuario (user support requests) - deben descartarse
+  // Estas son preguntas de clientes sobre tickets, horarios, ubicación, etc., no solicitudes de negocio
+  const userSupportKeywords = [
+    // Tickets/entradas
+    /(ticket|billet|entr[ée]e|admission|admission ticket|ticket price|precio.*ticket|prix.*billet)/i,
+    // Preguntas sobre compra/regalo de tickets
+    /(acheter.*ticket|buy.*ticket|purchase.*ticket|offrir.*ticket|give.*ticket|gift.*ticket|regalar.*ticket)/i,
+    // Preguntas sobre tickets digitales/sin fecha
+    /(ticket.*num[ée]rique|digital.*ticket|ticket.*sans.*date|ticket.*without.*date|ticket.*no.*date)/i,
+    // Horarios
+    /(horaires?|opening.*hours?|opening.*times?|hours?.*open|quand.*ouvert|when.*open|schedule|horario)/i,
+    // Ubicación/direcciones
+    /(adresse|address|location|o[ùu].*est|where.*is|directions?|c[oó]mo.*llegar|how.*get.*there)/i,
+    // Preguntas sobre servicios básicos
+    /(visite|visit|tour|acc[èe]s|access|entrance|entrada|acceso)/i,
+    // Preguntas sobre información básica
+    /(information|informaci[oó]n|info|renseignements?|contact.*info)/i,
+  ];
+  
+  // Patrones de preguntas de soporte al usuario
+  const userSupportQuestionPatterns = [
+    // Preguntas que empiezan con "Existe-t-il", "Do you have", "Can I", etc.
+    /(existe-t-il|existe.*il|do you have|do you offer|can i (buy|purchase|get|obtain)|puis-je (acheter|obtenir|avoir))/i,
+    // Preguntas sobre cómo hacer algo básico
+    /(how can i (buy|purchase|get|obtain|visit)|comment (acheter|obtenir|visiter|r[ée]server))/i,
+    // Preguntas sobre disponibilidad
+    /(are.*available|sont.*disponibles|est.*disponible|available.*ticket|ticket.*available)/i,
+    // Preguntas sobre regalar/comprar para otros
+    /(offrir.*[àa]|give.*to|gift.*to|buy.*for|acheter.*pour|regalar.*a)/i,
+  ];
+  
+  // Verificar si es una solicitud de soporte al usuario
+  const hasUserSupportKeywords = userSupportKeywords.some(regex => 
+    regex.test(subjectLc) || 
+    regex.test(normalizedBody)
+  );
+  
+  const hasUserSupportQuestionPattern = userSupportQuestionPatterns.some(regex => 
+    regex.test(normalizedBody)
+  );
+  
+  // Si tiene keywords de soporte Y pregunta sobre tickets/horarios/ubicación, es user support
+  // PERO excluir si menciona partnership, collaboration, advertising, sponsorship (esas son solicitudes de negocio)
+  const hasBusinessContext = /(partnership|collaboration|advertising|advertise|sponsorship|sponsor|publicidad|colaboraci[oó]n|partenariat|partenariado|media kit|rate card|pricing|budget|fee|tarif)/i.test(mailText);
+  
+  const isUserSupportRequest = (hasUserSupportKeywords || hasUserSupportQuestionPattern) && !hasBusinessContext;
+
   // Detección de apuestas, casinos y temas relacionados de gambling
   const gamblingKeywordsRegex = /(apuestas|betting|casino|casinos|sports betting|sportsbook|bookmaker|bookmakers|poker|póker|gambling|juegos de azar|juego de azar|ruleta|blackjack|baccarat|slots|tragamonedas|máquinas tragaperras|bet|bets|apostar|apuesta|apostamos|apostar en|betting platform|betting site|casino online|online casino|casino en línea|casino virtual|promoción de casino|promoción de apuestas|promo de casino|promo de apuestas|publicidad de casino|publicidad de apuestas|anunciar casino|anunciar apuestas|promover casino|promover apuestas|colaboración casino|colaboración apuestas|partnership casino|partnership apuestas|sponsorship casino|sponsorship apuestas|patrocinio casino|patrocinio apuestas)/i;
   
@@ -811,6 +858,12 @@ async function classifyIntentHeuristic({
     intent = "Discard";
     confidence = 0.99;
     reasoning = "Email is a generic thank you response with no meaningful business content, so it is discarded.";
+  }
+  // REGLA DURA: Solicitudes de soporte al usuario SIEMPRE Discard (verificación temprana, máxima prioridad)
+  else if (isUserSupportRequest) {
+    intent = "Discard";
+    confidence = 0.99;
+    reasoning = "Email is a user support request (questions about tickets, hours, location, etc.) with no business/partnership intent, so it is discarded.";
   } else if (isBarterRequest) {
     intent = "Low";
     confidence = 0.8;
