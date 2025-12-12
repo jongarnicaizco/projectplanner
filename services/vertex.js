@@ -1655,13 +1655,6 @@ async function classifyIntentHeuristic({
     }
   }
   // For Low or Discard: all MEDDIC fields are already set to "no info" above
-    finalMeddicMetrics = "";
-    finalMeddicEconomicBuyer = "";
-    finalMeddicDecisionCriteria = "";
-    finalMeddicDecisionProcess = "";
-    finalMeddicIdentifyPain = "";
-    finalMeddicChampion = "";
-  }
 
   // Reasoning coherente
   if (!reasoning) {
