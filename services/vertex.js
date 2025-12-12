@@ -191,6 +191,13 @@ function quickDiscardCheck({ subject, from, to, body }) {
     return { isDiscard: true, reason: "Contact change email" };
   }
   
+  // 8. Unrelated physical service requests (verificación rápida)
+  // Alquiler de espacios, salas, etc. que no tienen que ver con contenido multimedia
+  if (/(alquilar|rent|rental|alquiler|sala de cine|cinema|movie theater|theater|venue|espacio de eventos|event space|capacidad|capacity)/i.test(mailText) &&
+      !/(contenido|content|marketing|publicidad|advertising|artículo|article|post|instagram|tiktok|blog|social media|redes sociales|cobertura|coverage|partnership|colaboración|media kit|rate card|pricing|budget|sponsorship)/i.test(mailText)) {
+    return { isDiscard: true, reason: "Unrelated physical service request" };
+  }
+  
   return { isDiscard: false };
 }
 
