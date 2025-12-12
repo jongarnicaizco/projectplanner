@@ -384,41 +384,6 @@ async function classifyIntentHeuristic({
   
   const isAffiliateEmail = isAffiliateProgram || hasAffiliateTrackingLinks || hasAffiliatePattern;
 
-  // Detección de agencias de SEO - debe ejecutarse temprano para forzar Discard
-  const seoAgencyKeywords = [
-    // Términos en el dominio/email
-    /(seo|search engine optimization|search engine marketing|sem\b)/i,
-    // Términos comunes en nombres de agencias SEO
-    /(seo agency|seo company|seo services|seo firm|seo consultant|seo expert|seo specialist|seo marketing|digital marketing agency|search marketing)/i,
-    // Términos en español
-    /(agencia seo|agencia de seo|empresa seo|servicios seo|consultor[íi]a seo|especialista seo|marketing digital|posicionamiento web|posicionamiento seo)/i,
-    // Términos en otros idiomas
-    /(agence seo|agence de seo|soci[ée]t[ée] seo|services seo|consultant seo|expert seo|sp[ée]cialiste seo)/i,
-  ];
-  
-  // Verificar si el email viene de una agencia de SEO
-  // Buscar en: dominio del email, nombre del remitente (si está disponible), subject, y body
-  const isSeoAgency = seoAgencyKeywords.some(regex => 
-    regex.test(fromLc) || 
-    regex.test(subjectLc) || 
-    regex.test(normalizedBody)
-  );
-  
-  // También verificar patrones específicos de agencias SEO en el cuerpo
-  const seoAgencyPatterns = [
-    /(we are (an|a) (seo|search engine) (agency|company|firm|specialist))/i,
-    /(our (seo|search engine) (services|agency|company))/i,
-    /(specializ(e|ing) in (seo|search engine optimization|search marketing))/i,
-    /(especializ(amos|ados) en (seo|posicionamiento web|posicionamiento seo))/i,
-    /(nos especializamos en (seo|posicionamiento web|posicionamiento seo))/i,
-    /(we help (businesses|companies|clients) (with|improve) (seo|search engine|ranking))/i,
-    /(ayudamos (a empresas|empresas|clientes) (con|a mejorar) (seo|posicionamiento|ranking))/i,
-  ];
-  
-  const hasSeoAgencyPattern = seoAgencyPatterns.some(regex => regex.test(mailText));
-  
-  const isSeoAgencyEmail = isSeoAgency || hasSeoAgencyPattern;
-
   // Detección de ofertas donde NOSOTROS seríamos los creadores/influencers (deben descartarse)
   // CRÍTICO: Si están OFRECIENDO que seamos influencers/creators para su marca, NO están pidiendo que hagamos algo para ellos
   const offeringUsToBeInfluencerPatterns = [
@@ -922,13 +887,17 @@ async function classifyIntentHeuristic({
   let hasInternalReply = false;
   
   // Crear un regex que busque cualquier email de los dominios internos
-  const internalEmailRegex = /([a-zA-Z0-9._%+-]+@(?:secretmedianetwork\.com|feverup\.com|secretldn\.com|barcelonasecreta\.com|valenciasecreta\.com|secretnyc\.co))/gi;
+  // Incluir caracteres especiales como + para capturar variantes como "abudhabi+managers@..."
+  const internalEmailRegex = /([a-zA-Z0-9._%+\-]+@(?:secretmedianetwork\.com|feverup\.com|secretldn\.com|barcelonasecreta\.com|valenciasecreta\.com|secretnyc\.co))/gi;
   
   // Buscar todos los emails internos en el cuerpo
   const internalEmailsInBody = [];
   let match;
   while ((match = internalEmailRegex.exec(body)) !== null) {
-    internalEmailsInBody.push(match[1].toLowerCase());
+    const foundEmail = match[1].toLowerCase().trim();
+    if (foundEmail && !internalEmailsInBody.includes(foundEmail)) {
+      internalEmailsInBody.push(foundEmail);
+    }
   }
   
   // Si hay emails internos, verificar si están en un contexto de respuesta
@@ -937,8 +906,9 @@ async function classifyIntentHeuristic({
     // Buscar patrones típicos de respuestas de email alrededor de estos emails
     
     for (const email of internalEmailsInBody) {
-      // Verificar si es una de las cuentas específicas o @feverup.com
-      const isInternalAccount = internalSecretMediaAccounts.some(acc => acc.toLowerCase() === email) || 
+      // Verificar si es una de las cuentas específicas de la lista (comparación exacta, case-insensitive)
+      // O si es cualquier cuenta de @feverup.com
+      const isInternalAccount = internalSecretMediaAccounts.some(acc => acc.toLowerCase().trim() === email) || 
                                  email.includes('@feverup.com');
       
       if (isInternalAccount) {
