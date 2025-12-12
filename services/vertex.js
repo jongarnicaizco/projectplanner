@@ -281,32 +281,31 @@ ${bodyToAnalyze}${bodyNote}`.trim();
         modelPricing = Boolean(parsed.pricing_request);
       }
       
-      // Extract MEDDIC fields (only if not Discard)
-      if (modelIntentRaw && modelIntentRaw !== "Discard") {
-        if (parsed.meddic_metrics) {
-          meddicMetrics = String(parsed.meddic_metrics).trim();
-        }
-        if (parsed.meddic_economic_buyer) {
-          meddicEconomicBuyer = String(parsed.meddic_economic_buyer).trim();
-        }
-        if (parsed.meddic_decision_criteria) {
-          meddicDecisionCriteria = String(parsed.meddic_decision_criteria).trim();
-        }
-        if (parsed.meddic_decision_process) {
-          meddicDecisionProcess = String(parsed.meddic_decision_process).trim();
-        }
-        if (parsed.meddic_identify_pain) {
-          meddicIdentifyPain = String(parsed.meddic_identify_pain).trim();
-        }
-        if (parsed.meddic_champion) {
-          meddicChampion = String(parsed.meddic_champion).trim();
-        }
-        
-        // Legacy support: if old meddic_pain_hypothesis exists, use it for Identify Pain
-        if (!meddicIdentifyPain && parsed.meddic_pain_hypothesis) {
-          meddicIdentifyPain = String(parsed.meddic_pain_hypothesis).trim();
-        }
+      // Extract MEDDIC fields (only for Medium, High, or Very High - not for Low or Discard)
+      // IMPORTANT: All MEDDIC fields must always have a value (use "no info" if not available)
+      const validMeddicIntents = ["Medium", "High", "Very High"];
+      const shouldExtractMeddic = modelIntentRaw && validMeddicIntents.includes(modelIntentRaw);
+      
+      // Always extract MEDDIC fields, but use "no info" if intent is Low or Discard
+      meddicMetrics = parsed.meddic_metrics ? String(parsed.meddic_metrics).trim() : (shouldExtractMeddic ? "" : "no info");
+      meddicEconomicBuyer = parsed.meddic_economic_buyer ? String(parsed.meddic_economic_buyer).trim() : (shouldExtractMeddic ? "" : "no info");
+      meddicDecisionCriteria = parsed.meddic_decision_criteria ? String(parsed.meddic_decision_criteria).trim() : (shouldExtractMeddic ? "" : "no info");
+      meddicDecisionProcess = parsed.meddic_decision_process ? String(parsed.meddic_decision_process).trim() : (shouldExtractMeddic ? "" : "no info");
+      meddicIdentifyPain = parsed.meddic_identify_pain ? String(parsed.meddic_identify_pain).trim() : (shouldExtractMeddic ? "" : "no info");
+      meddicChampion = parsed.meddic_champion ? String(parsed.meddic_champion).trim() : (shouldExtractMeddic ? "" : "no info");
+      
+      // Legacy support: if old meddic_pain_hypothesis exists, use it for Identify Pain
+      if (!meddicIdentifyPain && parsed.meddic_pain_hypothesis) {
+        meddicIdentifyPain = String(parsed.meddic_pain_hypothesis).trim();
       }
+      
+      // Ensure all MEDDIC fields have a value (use "no info" if empty)
+      if (!meddicMetrics) meddicMetrics = "no info";
+      if (!meddicEconomicBuyer) meddicEconomicBuyer = "no info";
+      if (!meddicDecisionCriteria) meddicDecisionCriteria = "no info";
+      if (!meddicDecisionProcess) meddicDecisionProcess = "no info";
+      if (!meddicIdentifyPain) meddicIdentifyPain = "no info";
+      if (!meddicChampion) meddicChampion = "no info";
     } catch {
       console.warn(
         "[mfs] [classify] Respuesta de Vertex no es JSON limpio, sigo con heurísticas"
@@ -1565,60 +1564,97 @@ async function classifyIntentHeuristic({
   }
   
 
-  // MEDDIC: Use model values if available, otherwise generate fallbacks (only for non-Discard)
-  let finalMeddicMetrics = meddicMetrics;
-  let finalMeddicEconomicBuyer = meddicEconomicBuyer;
-  let finalMeddicDecisionCriteria = meddicDecisionCriteria;
-  let finalMeddicDecisionProcess = meddicDecisionProcess;
-  let finalMeddicIdentifyPain = meddicIdentifyPain;
-  let finalMeddicChampion = meddicChampion;
+  // MEDDIC: Only for Medium, High, or Very High - use "no info" for Low or Discard
+  // IMPORTANT: All MEDDIC fields must always have a value
+  const validMeddicIntents = ["Medium", "High", "Very High"];
+  const shouldHaveMeddic = validMeddicIntents.includes(intent);
+  
+  let finalMeddicMetrics = shouldHaveMeddic ? meddicMetrics : "no info";
+  let finalMeddicEconomicBuyer = shouldHaveMeddic ? meddicEconomicBuyer : "no info";
+  let finalMeddicDecisionCriteria = shouldHaveMeddic ? meddicDecisionCriteria : "no info";
+  let finalMeddicDecisionProcess = shouldHaveMeddic ? meddicDecisionProcess : "no info";
+  let finalMeddicIdentifyPain = shouldHaveMeddic ? meddicIdentifyPain : "no info";
+  let finalMeddicChampion = shouldHaveMeddic ? meddicChampion : "no info";
 
-  if (intent !== "Discard") {
-    // Generate fallbacks only if model didn't provide them
-    if (!finalMeddicIdentifyPain) {
+  if (shouldHaveMeddic) {
+    // Generate fallbacks only if model didn't provide them and intent is Medium+
+    // Ensure all fields have a value (use "no info" if empty)
+    if (!finalMeddicMetrics || finalMeddicMetrics.trim() === "" || finalMeddicMetrics === "no info") {
+      finalMeddicMetrics = "no info";
+    }
+    if (!finalMeddicEconomicBuyer || finalMeddicEconomicBuyer.trim() === "" || finalMeddicEconomicBuyer === "no info") {
+      finalMeddicEconomicBuyer = "no info";
+    }
+    if (!finalMeddicDecisionCriteria || finalMeddicDecisionCriteria.trim() === "" || finalMeddicDecisionCriteria === "no info") {
+      finalMeddicDecisionCriteria = "no info";
+    }
+    if (!finalMeddicDecisionProcess || finalMeddicDecisionProcess.trim() === "" || finalMeddicDecisionProcess === "no info") {
+      finalMeddicDecisionProcess = "no info";
+    }
+    if (!finalMeddicIdentifyPain || finalMeddicIdentifyPain.trim() === "" || finalMeddicIdentifyPain === "no info") {
+      // Generate fallback for Identify Pain if not provided
       if (isBarterRequest) {
         finalMeddicIdentifyPain = "Limited cash marketing budget is pushing them to trade invitations or experiences for exposure and coverage.";
-    } else if (isFreeCoverageRequest) {
+      } else if (isFreeCoverageRequest) {
         finalMeddicIdentifyPain = "They rely on earned media and editorial exposure to boost awareness and attendance without strong paid media investment.";
-    } else if (isMediaKitPricingRequest) {
+      } else if (isMediaKitPricingRequest) {
         finalMeddicIdentifyPain = "Unclear media costs are blocking planning of campaigns, creating risk of delayed or suboptimal investment.";
-    } else if (hasPartnershipCollabAsk) {
+      } else if (hasPartnershipCollabAsk) {
         finalMeddicIdentifyPain = "They lack a strong media or distribution partner to scale reach and engagement for their events, artists or experiences.";
-    } else if (mailText.includes("ticket") || mailText.includes("event")) {
+      } else if (mailText.includes("ticket") || mailText.includes("event")) {
         finalMeddicIdentifyPain = "Insufficient reach is limiting event attendance and ticket revenue, prompting the search for stronger promotional partners.";
-    } else if (mailText.includes("sponsor")) {
+      } else if (mailText.includes("sponsor")) {
         finalMeddicIdentifyPain = "Brand visibility is lagging in key markets, prompting them to explore sponsorships and high-impact placements.";
-    } else {
+      } else {
         finalMeddicIdentifyPain = "They are seeking partners to improve reach, engagement and efficiency of their marketing and commercial efforts.";
+      }
     }
-  }
+    if (!finalMeddicChampion || finalMeddicChampion.trim() === "" || finalMeddicChampion === "no info") {
+      finalMeddicChampion = "no info";
+    }
 
     // Limit total MEDDIC to 200 words (~1200 characters total across all fields)
-    // Calculate total length and trim proportionally if needed
-    const allMeddicText = [
+    // Only trim if fields have actual content (not "no info")
+    const meddicFields = [
       finalMeddicMetrics,
       finalMeddicEconomicBuyer,
       finalMeddicDecisionCriteria,
       finalMeddicDecisionProcess,
       finalMeddicIdentifyPain,
       finalMeddicChampion
-    ].filter(Boolean).join(" ");
+    ];
+    const meddicFieldsWithContent = meddicFields.filter(f => f && f !== "no info" && f.trim() !== "");
     
-    const maxTotalChars = 1200; // ~200 words
-    if (allMeddicText.length > maxTotalChars) {
-      // Trim proportionally - keep Identify Pain (I) as priority, then others
-      const ratio = maxTotalChars / allMeddicText.length;
-      const trimLength = (text) => Math.floor((text || "").length * ratio);
-      
-      finalMeddicMetrics = (finalMeddicMetrics || "").slice(0, trimLength(finalMeddicMetrics));
-      finalMeddicEconomicBuyer = (finalMeddicEconomicBuyer || "").slice(0, trimLength(finalMeddicEconomicBuyer));
-      finalMeddicDecisionCriteria = (finalMeddicDecisionCriteria || "").slice(0, trimLength(finalMeddicDecisionCriteria));
-      finalMeddicDecisionProcess = (finalMeddicDecisionProcess || "").slice(0, trimLength(finalMeddicDecisionProcess));
-      finalMeddicIdentifyPain = (finalMeddicIdentifyPain || "").slice(0, Math.min(trimLength(finalMeddicIdentifyPain) + 50, (finalMeddicIdentifyPain || "").length)); // Prioritize I
-      finalMeddicChampion = (finalMeddicChampion || "").slice(0, trimLength(finalMeddicChampion));
+    if (meddicFieldsWithContent.length > 0) {
+      const allMeddicText = meddicFieldsWithContent.join(" ");
+      const maxTotalChars = 1200; // ~200 words
+      if (allMeddicText.length > maxTotalChars) {
+        // Trim proportionally - keep Identify Pain (I) as priority, then others
+        const ratio = maxTotalChars / allMeddicText.length;
+        const trimLength = (text) => Math.floor((text || "").length * ratio);
+        
+        if (finalMeddicMetrics !== "no info") {
+          finalMeddicMetrics = finalMeddicMetrics.slice(0, trimLength(finalMeddicMetrics));
+        }
+        if (finalMeddicEconomicBuyer !== "no info") {
+          finalMeddicEconomicBuyer = finalMeddicEconomicBuyer.slice(0, trimLength(finalMeddicEconomicBuyer));
+        }
+        if (finalMeddicDecisionCriteria !== "no info") {
+          finalMeddicDecisionCriteria = finalMeddicDecisionCriteria.slice(0, trimLength(finalMeddicDecisionCriteria));
+        }
+        if (finalMeddicDecisionProcess !== "no info") {
+          finalMeddicDecisionProcess = finalMeddicDecisionProcess.slice(0, trimLength(finalMeddicDecisionProcess));
+        }
+        if (finalMeddicIdentifyPain !== "no info") {
+          finalMeddicIdentifyPain = finalMeddicIdentifyPain.slice(0, Math.min(trimLength(finalMeddicIdentifyPain) + 50, finalMeddicIdentifyPain.length)); // Prioritize I
+        }
+        if (finalMeddicChampion !== "no info") {
+          finalMeddicChampion = finalMeddicChampion.slice(0, trimLength(finalMeddicChampion));
+        }
+      }
     }
-  } else {
-    // Discard: empty all MEDDIC fields
+  }
+  // For Low or Discard: all MEDDIC fields are already set to "no info" above
     finalMeddicMetrics = "";
     finalMeddicEconomicBuyer = "";
     finalMeddicDecisionCriteria = "";

@@ -335,27 +335,36 @@ STEP 4: Additional Outputs
 - Body Summary: Summarize the email content (this will be generated separately, but you should consider it in your reasoning)
 - Classification Reasoning: Provide reasoning for why you categorized it this way (max 300 characters)
 
-STEP 5: MEDDIC Analysis (ONLY for Low, Medium, High, or Very High - NOT for Discard)
+STEP 5: MEDDIC Analysis (ONLY for Medium, High, or Very High - NOT for Low or Discard)
+- CRITICAL: MEDDIC analysis is ONLY required for Medium, High, or Very High intent. For Low or Discard, set all MEDDIC fields to "no info"
 - Read the email content and infer what the client needs using the MEDDIC framework
-- Provide reasoning for EACH of the MEDDIC acronym letters (max 200 words total for all MEDDIC fields):
+- Provide reasoning for EACH of the MEDDIC acronym letters (max 200 words total for all MEDDIC fields)
+- IMPORTANT: ALL 6 MEDDIC fields MUST always be provided. If information is not available, use "no info" as the value
+- ALL MEDDIC fields are REQUIRED in the JSON response, even if the value is "no info"
 
 M - Metrics: The Quantifiable Value
 What measurable economic outcomes the client hopes to achieve (increasing revenue, reducing costs, mitigating risk, etc.)
+If not available, use "no info"
 
 E - Economic Buyer: The Final Decision-Maker
 The individual with ultimate P&L responsibility who can say "yes" when everyone else says "no" - who holds the budget and final authority
+If not available, use "no info"
 
 D - Decision Criteria: The Client's "Scorecard"
 The specific factors the client will use to judge and compare solutions (technical, business-related, cultural/legal)
+If not available, use "no info"
 
 D - Decision Process: The Path to "Yes"
 The map of how the organization will make a decision - all steps, stakeholders, and timelines from technical validation to business approval to legal/procurement
+If not available, use "no info"
 
 I - Identify Pain: The Reason to Act Now
 The specific business challenge or problem driving the need for a solution. Must be severe enough to compel action.
+If not available, use "no info"
 
 C - Champion: Our Internal Advocate
 An influential person inside the client's organization who believes in our solution, sees a personal win in its success, and will actively sell on our behalf
+If not available, use "no info"
 
 OUTPUT FORMAT:
 
@@ -368,15 +377,15 @@ Return ONLY a valid JSON object with this exact structure:
   "free_coverage_request": true/false,
   "barter_request": true/false,
   "pricing_request": true/false,
-  "meddic_metrics": "description (only if intent is Low/Medium/High/Very High, all MEDDIC fields combined must be max 200 words total)",
-  "meddic_economic_buyer": "description (only if intent is Low/Medium/High/Very High, all MEDDIC fields combined must be max 200 words total)",
-  "meddic_decision_criteria": "description (only if intent is Low/Medium/High/Very High, all MEDDIC fields combined must be max 200 words total)",
-  "meddic_decision_process": "description (only if intent is Low/Medium/High/Very High, all MEDDIC fields combined must be max 200 words total)",
-  "meddic_identify_pain": "description (only if intent is Low/Medium/High/Very High, all MEDDIC fields combined must be max 200 words total)",
-  "meddic_champion": "description (only if intent is Low/Medium/High/Very High, all MEDDIC fields combined must be max 200 words total)"
+  "meddic_metrics": "description or 'no info' (REQUIRED for Medium/High/Very High, use 'no info' for Low/Discard, all MEDDIC fields combined must be max 200 words total)",
+  "meddic_economic_buyer": "description or 'no info' (REQUIRED for Medium/High/Very High, use 'no info' for Low/Discard, all MEDDIC fields combined must be max 200 words total)",
+  "meddic_decision_criteria": "description or 'no info' (REQUIRED for Medium/High/Very High, use 'no info' for Low/Discard, all MEDDIC fields combined must be max 200 words total)",
+  "meddic_decision_process": "description or 'no info' (REQUIRED for Medium/High/Very High, use 'no info' for Low/Discard, all MEDDIC fields combined must be max 200 words total)",
+  "meddic_identify_pain": "description or 'no info' (REQUIRED for Medium/High/Very High, use 'no info' for Low/Discard, all MEDDIC fields combined must be max 200 words total)",
+  "meddic_champion": "description or 'no info' (REQUIRED for Medium/High/Very High, use 'no info' for Low/Discard, all MEDDIC fields combined must be max 200 words total)"
 }
 
-Note: All MEDDIC fields combined should not exceed 200 words total. If intent is "Discard", set all MEDDIC fields to empty strings.
+Note: All MEDDIC fields are REQUIRED in the JSON response. For Medium/High/Very High: provide descriptions (or 'no info' if not available). For Low/Discard: always use 'no info' for all MEDDIC fields. All MEDDIC fields combined should not exceed 200 words total.
 
 Do not add any additional text outside the JSON.
 
