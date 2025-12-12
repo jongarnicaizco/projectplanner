@@ -908,8 +908,9 @@ async function classifyIntentHeuristic({
     for (const email of internalEmailsInBody) {
       // Verificar si es una de las cuentas específicas de la lista (comparación exacta, case-insensitive)
       // O si es cualquier cuenta de @feverup.com
-      const isInternalAccount = internalSecretMediaAccounts.some(acc => acc.toLowerCase().trim() === email) || 
-                                 email.includes('@feverup.com');
+      const normalizedEmail = email.toLowerCase().trim();
+      const isInternalAccount = internalSecretMediaAccounts.some(acc => acc.toLowerCase().trim() === normalizedEmail) || 
+                                 normalizedEmail.includes('@feverup.com');
       
       if (isInternalAccount) {
         // Buscar contexto de respuesta alrededor de este email
