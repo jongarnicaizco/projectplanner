@@ -1724,6 +1724,48 @@ async function classifyIntentHeuristic({
     }
   }
 
+  // VERIFICACIÓN FINAL: Comprobar si la oportunidad tiene sentido para nuestro negocio
+  // Secret Media Network se enfoca en contenido multimedia (posts, artículos, TikTok, cobertura de eventos, etc.)
+  // NO ofrecemos servicios físicos como alquiler de espacios, salas, locales, etc.
+  // Esta verificación se aplica SOLO para Medium, High, Very High (oportunidades de negocio)
+  const validBusinessIntents = ["Medium", "High", "Very High"];
+  if (validBusinessIntents.includes(intent)) {
+    // Servicios físicos que NO ofrecemos
+    const physicalServiceKeywords = [
+      // Alquiler de espacios físicos (salas, locales, etc.)
+      /(alquilar (una )?(sala|local|espacio|venue|room|hall)|rent (a )?(room|space|venue|hall|sala|local|espacio)|rental (of )?(room|space|venue|hall|sala|local|espacio)|alquiler de (sala|local|espacio|venue|room|hall))/i,
+      // Salas de cine específicamente (alquiler, no invitación a evento)
+      /(alquilar (una )?sala de cine|rent (a )?cinema|rent (a )?movie theater|rent (a )?theater|alquiler de (sala de )?cine|alquiler de (sala de )?cinema)/i,
+      // Capacidad y condiciones de alquiler
+      /(capacidad (de|para) (sala|local|espacio|venue)|capacity (of|for) (room|space|venue|hall)|condiciones de alquiler|rental conditions|terms of rental|precio de alquiler|rental price|cost of rental)/i,
+      // Disponibilidad de espacios físicos para alquiler
+      /(disponibilidad de (sala|local|espacio|venue)|available (room|space|venue|hall) (for rent|para alquiler)|(sala|local|espacio|venue) (disponible|available) (para|for) (alquiler|rent))/i,
+    ];
+    
+    // Servicios completamente no relacionados
+    const unrelatedServiceKeywords = [
+      /(catering|limpieza|cleaning|maintenance|mantenimiento|servicio de limpieza|cleaning service)/i,
+      /(seguridad|security|vigilancia|surveillance|guard|guarda)/i,
+      /(transporte|transport|delivery|entrega|env[ií]o)/i,
+      /(instalaci[oó]n|installation|montaje|assembly|setup f[ií]sico)/i,
+    ];
+    
+    // Términos que indican que SÍ es nuestro negocio (incluye invitaciones a eventos)
+    const ourBusinessKeywords = /(contenido|content|marketing|publicidad|advertising|art[ií]culo|article|post|instagram|tiktok|blog|social media|redes sociales|cobertura|coverage|partnership|colaboraci[oó]n|partenariat|partenariado|media kit|rate card|pricing|budget|fee|tarif|sponsorship|sponsor|patrocinio|invitaci[oó]n (a|para) (evento|event)|invitamos|we invite|invite you|invitation (to|for) (event|evento))/i;
+    
+    const hasPhysicalServiceRequest = physicalServiceKeywords.some(regex => regex.test(mailText));
+    const hasUnrelatedServiceRequest = unrelatedServiceKeywords.some(regex => regex.test(mailText));
+    const hasOurBusinessContext = ourBusinessKeywords.test(mailText);
+    
+    // Si menciona servicios físicos o no relacionados Y NO menciona términos de nuestro negocio → Discard
+    if ((hasPhysicalServiceRequest || hasUnrelatedServiceRequest) && !hasOurBusinessContext) {
+      console.log("[mfs] [classify] ⚠️ Oportunidad de negocio detectada pero NO tiene sentido para nuestro negocio - Cambiando a Discard");
+      intent = "Discard";
+      confidence = 0.99;
+      reasoning = "Email was classified as a business opportunity but is requesting physical services (venue rental, space rental, etc.) that are not related to our multimedia content business (posts, articles, TikTok, event coverage, etc.), so it is discarded.";
+    }
+  }
+
   console.log("[mfs] [classify] Resultado final de clasificación:", {
     intent,
     confidence,
