@@ -706,6 +706,33 @@ async function classifyIntentHeuristic({
   
   const isUserSupportRequest = (hasUserSupportKeywords || hasUserSupportQuestionPattern) && !hasBusinessContext;
 
+  // Detección de correos informativos sobre cambios de contacto o personas que dejaron la empresa
+  // Estos correos NO son leads - son puramente informativos y deben descartarse
+  const contactChangeKeywords = [
+    // Indicadores de que alguien dejó la empresa
+    /(left the company|no longer with|deixei de fazer parte|deixou de fazer parte|já não faço parte|não faço mais parte|no longer part of|no longer working|no longer at|left [a-z]+ company|saiu da empresa|deixou a empresa)/i,
+    // Indicadores de redirección de contacto
+    /(please contact|contact instead|por favor contacte|contacte em vez|redirect|forward|redirecionar|encaminhar|transfer|transferir)/i,
+    // Indicadores de cambio de contacto
+    /(new contact|novo contacto|new person|nova pessoa|different person|pessoa diferente|will handle|vai tratar|will assist|vai ajudar)/i,
+    // Frases comunes en estos correos
+    /(for any matters|para qualquer assunto|for ongoing|para projectos|ongoing projects|projectos em curso|partnerships in course|parcerias em curso)/i,
+  ];
+  
+  // Verificar si el correo contiene indicadores de cambio de contacto
+  const hasContactChangeKeywords = contactChangeKeywords.some(regex => regex.test(mailText));
+  
+  // Verificar si menciona redirigir a otra persona con email/teléfono
+  const hasContactRedirect = /(contact|contacte|reach|ligar|telefonar)\s+([a-z]+(?:\s+[a-z]+)*)\s+(at|através|through|via|por|pelo|pela)\s+([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}|\+\d+[\d\s]+)/i.test(mailText);
+  
+  // Verificar si es principalmente informativo (no tiene solicitud comercial)
+  const isInformationalOnly = hasContactChangeKeywords && 
+    !hasBusinessContext && 
+    !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboraci[oó]n|partenariat|partenariado|media kit|rate card|pricing|budget|fee|tarif|proposal|proposta|offer|oferta|interested|interessado)/i.test(mailText);
+  
+  // Si tiene keywords de cambio de contacto Y redirección Y es informativo, es un correo de cambio de contacto
+  const isContactChangeEmail = (hasContactChangeKeywords || hasContactRedirect) && isInformationalOnly;
+
   // Detección de respuestas de cuentas internas en el hilo del correo
   // Si hay una respuesta de alguna de estas cuentas o de @feverup.com en el cuerpo, descartar automáticamente
   const internalSecretMediaAccounts = [
@@ -1083,6 +1110,12 @@ async function classifyIntentHeuristic({
     intent = "Discard";
     confidence = 0.99;
     reasoning = "Email contains a reply from an internal account (secretmedianetwork.com, feverup.com, etc.) in the thread, so it is discarded.";
+  }
+  // REGLA DURA: Correos informativos sobre cambios de contacto SIEMPRE Discard (verificación temprana, máxima prioridad)
+  else if (isContactChangeEmail) {
+    intent = "Discard";
+    confidence = 0.99;
+    reasoning = "Email is an informational message about a contact change or person leaving a company, redirecting inquiries to a new contact. No commercial intent, so it is discarded.";
   } else if (isBarterRequest) {
     intent = "Low";
     confidence = 0.8;
