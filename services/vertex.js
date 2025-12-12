@@ -191,13 +191,6 @@ function quickDiscardCheck({ subject, from, to, body }) {
     return { isDiscard: true, reason: "Contact change email" };
   }
   
-  // 8. Unrelated physical service requests (verificación rápida)
-  // Alquiler de espacios, salas, etc. que no tienen que ver con contenido multimedia
-  if (/(alquilar|rent|rental|alquiler|sala de cine|cinema|movie theater|theater|venue|espacio de eventos|event space|capacidad|capacity)/i.test(mailText) &&
-      !/(contenido|content|marketing|publicidad|advertising|artículo|article|post|instagram|tiktok|blog|social media|redes sociales|cobertura|coverage|partnership|colaboración|media kit|rate card|pricing|budget|sponsorship)/i.test(mailText)) {
-    return { isDiscard: true, reason: "Unrelated physical service request" };
-  }
-  
   return { isDiscard: false };
 }
 
@@ -810,53 +803,6 @@ async function classifyIntentHeuristic({
   // Si tiene keywords de cambio de contacto Y redirección Y es informativo, es un correo de cambio de contacto
   const isContactChangeEmail = (hasContactChangeKeywords || hasContactRedirect) && isInformationalOnly;
 
-  // Detección de solicitudes de servicios físicos no relacionados con nuestro negocio
-  // Secret Media Network se enfoca en contenido multimedia (posts, artículos, TikTok, etc.)
-  // NO ofrecemos servicios físicos como alquiler de espacios, salas, locales, etc.
-  const physicalServiceKeywords = [
-    // Alquiler de espacios físicos
-    /(alquilar|rent|rental|alquiler|rentar|alugar|location|ubicaci[oó]n|espacio|space|sala|room|hall|local|venue|espacio de eventos|event space|event venue)/i,
-    // Salas de cine, teatros, auditorios
-    /(sala de cine|cinema|movie theater|theater|theatre|auditorio|auditorium|proyecci[oó]n|screening room)/i,
-    // Capacidad de espacios
-    /(capacidad|capacity|personas|people|asientos|seats|aforo)/i,
-    // Horarios de espacios físicos
-    /(horario de (sala|local|espacio|venue)|disponibilidad de (sala|local|espacio|venue)|available (room|space|venue|hall))/i,
-    // Condiciones de alquiler
-    /(condiciones de alquiler|rental conditions|terms of rental|precio de alquiler|rental price|cost of rental)/i,
-  ];
-  
-  // Servicios que NO ofrecemos (servicios físicos, no digitales)
-  const unrelatedServiceKeywords = [
-    // Servicios de catering, limpieza, mantenimiento
-    /(catering|limpieza|cleaning|maintenance|mantenimiento|servicio de limpieza|cleaning service)/i,
-    // Servicios de seguridad, vigilancia
-    /(seguridad|security|vigilancia|surveillance|guard|guarda)/i,
-    // Servicios de transporte
-    /(transporte|transport|delivery|entrega|env[ií]o)/i,
-    // Servicios de instalación física
-    /(instalaci[oó]n|installation|montaje|assembly|setup f[ií]sico)/i,
-  ];
-  
-  // Verificar si es una solicitud de servicio físico no relacionado
-  const hasPhysicalServiceRequest = physicalServiceKeywords.some(regex => 
-    regex.test(subjectLc) || 
-    regex.test(normalizedBody)
-  );
-  
-  const hasUnrelatedServiceRequest = unrelatedServiceKeywords.some(regex => 
-    regex.test(subjectLc) || 
-    regex.test(normalizedBody)
-  );
-  
-  // Si menciona servicios físicos Y NO menciona términos relacionados con nuestro negocio (contenido, marketing, publicidad, etc.)
-  const hasOurBusinessContext = /(contenido|content|marketing|publicidad|advertising|art[ií]culo|article|post|instagram|tiktok|blog|social media|redes sociales|cobertura|coverage|partnership|colaboraci[oó]n|partenariat|media kit|rate card|pricing|budget|fee|tarif|sponsorship|sponsor|patrocinio)/i.test(mailText);
-  
-  // Es una solicitud de servicio físico no relacionado si:
-  // 1. Menciona servicios físicos (alquiler, salas, etc.) O servicios no relacionados (catering, limpieza, etc.)
-  // 2. Y NO menciona términos de nuestro negocio (contenido, marketing, publicidad, etc.)
-  const isUnrelatedPhysicalService = (hasPhysicalServiceRequest || hasUnrelatedServiceRequest) && !hasOurBusinessContext;
-
   // Detección de respuestas de cuentas internas en el hilo del correo
   // Si hay una respuesta de alguna de estas cuentas o de @feverup.com en el cuerpo, descartar automáticamente
   const internalSecretMediaAccounts = [
@@ -1240,12 +1186,6 @@ async function classifyIntentHeuristic({
     intent = "Discard";
     confidence = 0.99;
     reasoning = "Email is an informational message about a contact change or person leaving a company, redirecting inquiries to a new contact. No commercial intent, so it is discarded.";
-  }
-  // REGLA DURA: Solicitudes de servicios físicos no relacionados con nuestro negocio SIEMPRE Discard (verificación temprana, máxima prioridad)
-  else if (isUnrelatedPhysicalService) {
-    intent = "Discard";
-    confidence = 0.99;
-    reasoning = "Email is requesting physical services (venue rental, space rental, etc.) that are not related to our multimedia content business (posts, articles, TikTok, etc.), so it is discarded.";
   } else if (isBarterRequest) {
     intent = "Low";
     confidence = 0.8;
