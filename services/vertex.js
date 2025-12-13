@@ -803,6 +803,33 @@ async function classifyIntentHeuristic({
   // Si tiene keywords de cambio de contacto Y redirección Y es informativo, es un correo de cambio de contacto
   const isContactChangeEmail = (hasContactChangeKeywords || hasContactRedirect) && isInformationalOnly;
 
+  // Detección de correos informativos sobre cierre de organizaciones/programas
+  // Estos correos NO son leads - son puramente informativos y deben descartarse
+  const organizationClosureKeywords = [
+    // Indicadores de cierre de organización/programa
+    /(closed (our )?doors|cerramos (nuestras )?puertas|cerrado|closed|shut down|cerrado definitivamente|permanently closed|cerrado permanentemente)/i,
+    /(has closed|ha cerrado|han cerrado|we have closed|hemos cerrado)/i,
+    /(closing (our )?doors|cerrando (nuestras )?puertas|closing down|cerrando definitivamente)/i,
+    // Indicadores de finalización de programa/organización
+    /(ended|terminado|finalizado|concluded|concluido|discontinued|descontinuado)/i,
+    /(no longer (operating|operating|active|activo)|ya no (operamos|estamos activos|estamos operando))/i,
+    // Frases comunes en estos correos
+    /(after \d+ years|después de \d+ años|it's been an honor|ha sido un honor|with gratitude|con gratitud)/i,
+    // Redirección a otra organización después del cierre
+    /(please contact|por favor contacte|reach out to|contactar a|if you need|si necesita)/i,
+  ];
+  
+  // Verificar si el correo contiene indicadores de cierre de organización
+  const hasClosureKeywords = organizationClosureKeywords.some(regex => regex.test(mailText));
+  
+  // Verificar si es principalmente informativo (no tiene solicitud comercial)
+  const isClosureInformational = hasClosureKeywords && 
+    !hasBusinessContext && 
+    !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboraci[oó]n|partenariat|partenariado|media kit|rate card|pricing|budget|fee|tarif|proposal|proposta|offer|oferta|interested|interessado)/i.test(mailText);
+  
+  // Si tiene keywords de cierre Y es informativo, es un correo de cierre de organización
+  const isOrganizationClosureEmail = isClosureInformational;
+
   // Detección de respuestas de cuentas internas en el hilo del correo
   // Si hay una respuesta de alguna de estas cuentas o de @feverup.com en el cuerpo, descartar automáticamente
   const internalSecretMediaAccounts = [
@@ -1186,6 +1213,12 @@ async function classifyIntentHeuristic({
     intent = "Discard";
     confidence = 0.99;
     reasoning = "Email is an informational message about a contact change or person leaving a company, redirecting inquiries to a new contact. No commercial intent, so it is discarded.";
+  }
+  // REGLA DURA: Correos informativos sobre cierre de organizaciones/programas SIEMPRE Discard (verificación temprana, máxima prioridad)
+  else if (isOrganizationClosureEmail) {
+    intent = "Discard";
+    confidence = 0.99;
+    reasoning = "Email is an informational message about an organization/program closing, redirecting inquiries to a new contact. No commercial intent, so it is discarded.";
   } else if (isBarterRequest) {
     intent = "Low";
     confidence = 0.8;
