@@ -170,6 +170,136 @@ const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minuto
 const processingLocks = new Set();
 const PROCESSING_LOCK_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutos máximo
 
+// Sistema de deduplicación: cache de correos procesados recientemente
+// Almacena los últimos 20 correos procesados con from, to, subject para verificación de duplicados
+const recentProcessedEmails = [];
+const MAX_RECENT_EMAILS = 20;
+
+// Cache de correos procesados basado en from, to, timestamp (para verificación general de duplicados)
+const processedEmailsCache = new Map(); // Key: `${from}|${to}|${timestamp}`, Value: { messageId, processedAt }
+
+/**
+ * Verifica si un correo es duplicado basado en from, to y timestamp
+ * @param {string} from - Email del remitente
+ * @param {string} to - Email del destinatario
+ * @param {string} timestamp - Timestamp del correo (ISO string)
+ * @returns {boolean} - true si es duplicado
+ */
+function isDuplicateByFromToTimestamp(from, to, timestamp) {
+  if (!from || !to || !timestamp) return false;
+  
+  // Normalizar emails (lowercase, trim)
+  const normalizedFrom = String(from).trim().toLowerCase();
+  const normalizedTo = String(to).trim().toLowerCase();
+  
+  // Crear key única basada en from, to y timestamp (redondeado a segundo para tolerar pequeñas diferencias)
+  const timestampDate = new Date(timestamp);
+  const timestampSeconds = Math.floor(timestampDate.getTime() / 1000);
+  const cacheKey = `${normalizedFrom}|${normalizedTo}|${timestampSeconds}`;
+  
+  // Verificar si ya existe en el cache
+  if (processedEmailsCache.has(cacheKey)) {
+    const cached = processedEmailsCache.get(cacheKey);
+    console.log(`[mfs] 🔍 Duplicado detectado por from/to/timestamp: ${cacheKey} (procesado anteriormente en ${cached.messageId})`);
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Registra un correo procesado en el cache de from/to/timestamp
+ * @param {string} from - Email del remitente
+ * @param {string} to - Email del destinatario
+ * @param {string} timestamp - Timestamp del correo (ISO string)
+ * @param {string} messageId - ID del mensaje procesado
+ */
+function registerProcessedEmailByFromToTimestamp(from, to, timestamp, messageId) {
+  if (!from || !to || !timestamp) return;
+  
+  // Normalizar emails (lowercase, trim)
+  const normalizedFrom = String(from).trim().toLowerCase();
+  const normalizedTo = String(to).trim().toLowerCase();
+  
+  // Crear key única basada en from, to y timestamp (redondeado a segundo)
+  const timestampDate = new Date(timestamp);
+  const timestampSeconds = Math.floor(timestampDate.getTime() / 1000);
+  const cacheKey = `${normalizedFrom}|${normalizedTo}|${timestampSeconds}`;
+  
+  // Registrar en el cache
+  processedEmailsCache.set(cacheKey, {
+    messageId,
+    processedAt: Date.now(),
+  });
+  
+  // Limpiar cache antiguo (más de 24 horas)
+  const now = Date.now();
+  const maxAge = 24 * 60 * 60 * 1000; // 24 horas
+  for (const [key, value] of processedEmailsCache.entries()) {
+    if (now - value.processedAt > maxAge) {
+      processedEmailsCache.delete(key);
+    }
+  }
+}
+
+/**
+ * Verifica si un correo coincide con alguno de los últimos 20 procesados (from, to, subject)
+ * @param {string} from - Email del remitente
+ * @param {string} to - Email del destinatario
+ * @param {string} subject - Asunto del correo
+ * @returns {boolean} - true si coincide con alguno de los últimos 20
+ */
+function isDuplicateInRecent20(from, to, subject) {
+  if (!from || !to || !subject) return false;
+  
+  // Normalizar valores
+  const normalizedFrom = String(from).trim().toLowerCase();
+  const normalizedTo = String(to).trim().toLowerCase();
+  const normalizedSubject = String(subject).trim().toLowerCase();
+  
+  // Verificar si coincide con alguno de los últimos 20
+  for (const recentEmail of recentProcessedEmails) {
+    if (
+      recentEmail.from === normalizedFrom &&
+      recentEmail.to === normalizedTo &&
+      recentEmail.subject === normalizedSubject
+    ) {
+      console.log(`[mfs] 🔍 Duplicado detectado en últimos 20: from=${normalizedFrom}, to=${normalizedTo}, subject=${normalizedSubject.substring(0, 50)}`);
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Registra un correo procesado en la lista de los últimos 20
+ * @param {string} from - Email del remitente
+ * @param {string} to - Email del destinatario
+ * @param {string} subject - Asunto del correo
+ */
+function registerRecentProcessedEmail(from, to, subject) {
+  if (!from || !to || !subject) return;
+  
+  // Normalizar valores
+  const normalizedFrom = String(from).trim().toLowerCase();
+  const normalizedTo = String(to).trim().toLowerCase();
+  const normalizedSubject = String(subject).trim().toLowerCase();
+  
+  // Agregar al inicio del array
+  recentProcessedEmails.unshift({
+    from: normalizedFrom,
+    to: normalizedTo,
+    subject: normalizedSubject,
+    processedAt: Date.now(),
+  });
+  
+  // Mantener solo los últimos 20
+  if (recentProcessedEmails.length > MAX_RECENT_EMAILS) {
+    recentProcessedEmails.pop();
+  }
+}
+
 function acquireProcessingLock(messageId) {
   if (processingLocks.has(messageId)) {
     return false; // Ya está siendo procesado
@@ -495,6 +625,27 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
       }
         const timestamp = msg.data.internalDate ? new Date(parseInt(msg.data.internalDate, 10)).toISOString() : new Date().toISOString();
 
+        // VERIFICACIÓN DE DUPLICADOS: Verificar duplicado basado en from, to, timestamp
+        if (isDuplicateByFromToTimestamp(from, to, timestamp)) {
+          console.log(`[mfs] 🔍 Duplicado detectado por from/to/timestamp para ${id} - From: ${from}, To: ${to}, Timestamp: ${timestamp}`);
+          // Aplicar etiqueta processed para evitar reprocesar
+          try {
+            await applyProcessedLabel(gmail, id);
+          } catch (labelError) {
+            console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
+          }
+          results.push({
+            id,
+            airtableId: null,
+            intent: null,
+            confidence: null,
+            skipped: true,
+            reason: "duplicate_from_to_timestamp",
+          });
+          releaseProcessingLock(id);
+          continue;
+        }
+
         // Verificar si es reply (simplificado)
         const isReply = subject.toLowerCase().startsWith("re:") || subject.toLowerCase().startsWith("fwd:") || (msg.data.threadId && msg.data.threadId !== msg.data.id);
 
@@ -614,8 +765,15 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         console.log(`[mfs] DEBUG - Verificando si crear lead en Salesforce - normalizedFinalIntent: "${normalizedFinalIntent}"`);
         
         if (normalizedFinalIntent === "Medium" || normalizedFinalIntent === "High" || normalizedFinalIntent === "Very High") {
-          console.log(`[mfs] DEBUG - Condición cumplida, creando lead en Salesforce para intent: "${normalizedFinalIntent}"`);
-          try {
+          // VERIFICACIÓN DE DUPLICADOS: Verificar si coincide con alguno de los últimos 20 correos procesados (from, to, subject)
+          if (isDuplicateInRecent20(from, to, subject)) {
+            console.log(`[mfs] 🔍 Duplicado detectado en últimos 20 correos (from/to/subject) para ${id} - NO se creará lead en Salesforce`);
+            console.log(`[mfs] From: ${from}, To: ${to}, Subject: ${subject?.substring(0, 50)}`);
+            // NO crear lead en Salesforce, pero continuar con el procesamiento normal (crear registro en Airtable)
+            salesforceLeadId = null;
+          } else {
+            console.log(`[mfs] DEBUG - Condición cumplida, creando lead en Salesforce para intent: "${normalizedFinalIntent}"`);
+            try {
             // Construir MEDDIC Analysis string igual que en Airtable
             const meddicParts = [];
             if (meddicMetrics) meddicParts.push(`M: ${meddicMetrics}`);
@@ -663,6 +821,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           } catch (salesforceError) {
             // No bloquear el procesamiento si falla Salesforce
             console.error(`[mfs] ✗ Error creando lead en Salesforce para ${id}:`, salesforceError?.message || salesforceError);
+          }
           }
         }
 
@@ -814,6 +973,12 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
               console.error(`[mfs] ✗ ERROR aplicando etiqueta processed a correo TO secretmedia@feverup.com - ID: ${id}, Error: ${labelError?.message}`);
             }
           }
+          
+          // REGISTRAR CORREO PROCESADO EN LOS SISTEMAS DE DEDUPLICACIÓN
+          // Registrar en cache de from/to/timestamp
+          registerProcessedEmailByFromToTimestamp(from, to, timestamp, id);
+          // Registrar en lista de últimos 20 (from/to/subject)
+          registerRecentProcessedEmail(from, to, subject);
           
           // Incrementar contador de ejecuciones (cada mensaje procesado = 1 ejecución)
           await incrementRateLimit();
