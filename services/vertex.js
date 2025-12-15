@@ -196,6 +196,15 @@ function quickDiscardCheck({ subject, from, to, body }) {
     return { isDiscard: true, reason: "Contact change email" };
   }
   
+  // 8. E-commerce newsletters/marketing emails (verificación rápida)
+  // Si tiene unsubscribe Y contenido de e-commerce (shop now, productos, ofertas), es newsletter
+  const hasUnsubscribe = /(unsubscribe|opt[-\s]?out|darse de baja|cancelar suscripci[oó]n)/i.test(mailText);
+  const hasEcommerceContent = /(shop now|buy now|add to cart|view collection|shop our|our products|product catalog|cat[áa]logo|ofertas|offers|deals|discount|descuento|promo|promotion|promoci[oó]n|christmas gift|regalo|gift guide|gu[íi]a de regalos|new arrivals|nuevos productos|limited time|tiempo limitado)/i.test(mailText);
+  const hasShopifyTracking = /(shopify-email|_t\/c\/v3|_t\/open)/i.test(mailText);
+  if (hasUnsubscribe && (hasEcommerceContent || hasShopifyTracking)) {
+    return { isDiscard: true, reason: "E-commerce newsletter/marketing email" };
+  }
+  
   return { isDiscard: false };
 }
 
@@ -1114,9 +1123,13 @@ async function classifyIntentHeuristic({
   // Detección de newsletters/emails de marketing que deben ser Discard
   // Características: unsubscribe links, tracking links, "updates & insights", contenido promocional sin solicitud directa
   const newsletterKeywordsRegex = /(unsubscribe|unsubscribe preferences|manage your preferences|update your preferences|email preferences|subscription preferences|you're receiving this because|you received this email|update email preferences|change email preferences|stop receiving|opt[-\s]?out|darse de baja|cancelar suscripci[oó]n)/i;
-  const trackingLinkPattern = /(links\.|tracking|utm_source|utm_medium|utm_campaign|click tracking|email tracking)/i;
+  const trackingLinkPattern = /(links\.|tracking|utm_source|utm_medium|utm_campaign|click tracking|email tracking|shopify-email|_t\/c\/v3|_t\/open)/i;
   const newsletterSubjectPattern = /(new activity|updates & insights|weekly update|monthly update|newsletter|news digest|roundup|summary|insights|updates)/i;
   const promotionalContentPattern = /(new buyers|businesses similar|valuation|indicative valuation|sell now|list your business|schedule a call|business advisor)/i;
+  
+  // Detectar contenido de e-commerce/newsletters: "Shop now", productos, ofertas, catálogos
+  const ecommercePattern = /(shop now|buy now|add to cart|view collection|view product|check out|shop our|our products|product catalog|cat[áa]logo|ofertas|offers|deals|discount|descuento|promo|promotion|promoci[oó]n|christmas gift|regalo|gift guide|gu[íi]a de regalos|new arrivals|nuevos productos|limited time|tiempo limitado)/i;
+  const hasEcommerceContent = ecommercePattern.test(mailText);
   
   // Detectar si es newsletter/marketing: tiene unsubscribe Y (tracking links O subject/newsletter pattern O contenido promocional sin solicitud directa)
   const hasUnsubscribeLink = newsletterKeywordsRegex.test(mailText);
@@ -1124,9 +1137,10 @@ async function classifyIntentHeuristic({
   const hasNewsletterSubject = newsletterSubjectPattern.test(subjectLc);
   const hasPromotionalContent = promotionalContentPattern.test(mailText);
   
-  // Es newsletter si tiene unsubscribe Y además tiene características de newsletter (tracking, subject pattern, o contenido promocional sin partnership/pricing request)
+  // Es newsletter si tiene unsubscribe Y además tiene características de newsletter (tracking, subject pattern, contenido e-commerce, o contenido promocional sin partnership/pricing request)
+  // IMPORTANTE: Si tiene unsubscribe + contenido de e-commerce, es definitivamente un newsletter de marketing, incluso si menciona partnership
   const isNewsletterOrMarketing = hasUnsubscribeLink && 
-    (hasTrackingLinks || hasNewsletterSubject || (hasPromotionalContent && !hasPartnershipCollabAsk && !isPricing && !isCoverageRequest));
+    (hasTrackingLinks || hasNewsletterSubject || hasEcommerceContent || (hasPromotionalContent && !hasPartnershipCollabAsk && !isPricing && !isCoverageRequest));
 
   console.log("[mfs] [classify] Flags básicos:", {
     modelIntentRaw,
