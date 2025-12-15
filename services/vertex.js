@@ -627,11 +627,21 @@ async function classifyIntentHeuristic({
 
   // Detecciones
   // Detección mejorada de press release - múltiples indicadores
+  // También detecta contenido informativo compartido (restaurantes, lugares, eventos) sin solicitud comercial
+  const hasPrApprovedImages = /(pr-approved|pp-approved|pr approved|press approved|media approved)\s+(images?|photos?|assets?|materials?)/i.test(mailText);
+  const hasInformationalContent = /(drive\.google\.com|google\.com\/drive|photo credit|image credit|pr-approved|pp-approved|full details.*attached|images.*attached|view everything|you'll find|details below|you'll find full details)/i.test(mailText);
+  const hasRestaurantVenueInfo = /(address:|website:|instagram:|facebook:|tiktok:|location:|served from|open from|menu|brunch|breakfast|dinner|lunch|start.*at|ring in|kicking off)/i.test(mailText) && 
+    !hasPartnershipCollabAsk && 
+    !isPricing &&
+    !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboraci[oó]n|rate|pricing|budget|fee)/i.test(mailText);
+  
   const isPressStyle =
     pressReleaseRegex.test(mailText) ||
     prAssetsRegex.test(mailText) ||
     aboutBrandRegex.test(mailText) ||
     prFooterRegex.test(mailText) ||
+    hasPrApprovedImages ||
+    (hasInformationalContent && hasRestaurantVenueInfo) ||
     // Patrones adicionales comunes en press releases
     /(communiqu[ée] de presse|communiqu[ée] de presse)/i.test(mailText) ||
     // Si el subject o inicio del body contiene "Press Release" o equivalente
@@ -711,8 +721,12 @@ async function classifyIntentHeuristic({
     !isPricing && 
     !/(partnership|collaboration|advertising|sponsorship|paid|budget|fee|rate|pricing)/i.test(mailText);
   
+  // Free Coverage Request: Incluye press releases, contenido informativo compartido sin solicitud comercial
+  // También: contenido informativo sobre restaurantes/lugares/eventos sin solicitud comercial
   const isFreeCoverageRequest = 
-    (isPressStyle || isCoverageRequest || isEventPrInfo || isGuestArticleRequest) && !isBarterRequest;
+    (isPressStyle || isCoverageRequest || isEventPrInfo || isGuestArticleRequest) && !isBarterRequest ||
+    // Contenido informativo sobre restaurantes/lugares/eventos sin solicitud comercial
+    (hasInformationalContent && hasRestaurantVenueInfo && !hasPartnershipCollabAsk && !isPricing);
   
   // IMPORTANTE: Si es un press release/media release sin pedir pricing explícitamente, NO es pricing request
   // También excluir si están ofreciendo una historia/estudio/datos sin pedir pricing
