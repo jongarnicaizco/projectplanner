@@ -878,6 +878,24 @@ async function classifyIntentHeuristic({
   // Si tiene keywords de cierre Y es informativo, es un correo de cierre de organización
   const isOrganizationClosureEmail = isClosureInformational;
 
+  // Detección de correos out-of-office / auto-reply
+  // Estos correos son respuestas automáticas sin intención comercial real
+  const outOfOfficePatterns = [
+    /(out of office|out-of-office|away from (the|my) office|away from office|currently away|currently out|i am away|i'm away|i will be away|will be away|i am out|i'm out|i will be out|will be out)/i,
+    /(responses may be delayed|response may be delayed|delayed response|delayed responses|i will respond|will respond when|respond when i return|respond when back)/i,
+    /(back (on|online|at work|in the office)|will be back|returning|i will return|i'll be back|back tomorrow|back next week|back on)/i,
+    /(in meetings|team meetings|in a meeting|all day meetings|meetings all day)/i,
+    /(if (your|this) (email|message) is urgent|if urgent|urgent.*flag|flag.*urgent|urgent.*subject)/i,
+    /(auto.reply|automatic reply|auto response|automatic response|vacation reply|holiday reply)/i,
+    /(i am currently|i'm currently|currently (unavailable|away|out|offline|not available))/i,
+  ];
+  
+  // Verificar si es out-of-office/auto-reply
+  // Debe tener al menos 2 patrones para evitar falsos positivos
+  const outOfOfficeMatches = outOfOfficePatterns.filter(regex => regex.test(mailText)).length;
+  const isOutOfOfficeEmail = outOfOfficeMatches >= 2 && 
+    !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboraci[oó]n|partenariat|partenariado|media kit|rate card|pricing|budget|fee|tarif|proposal|proposta|offer|oferta|interested|interessado|quotation|quote)/i.test(mailText);
+
   // Detección de respuestas de cuentas internas en el hilo del correo
   // Si hay una respuesta de alguna de estas cuentas o de @feverup.com en el cuerpo, descartar automáticamente
   const internalSecretMediaAccounts = [
