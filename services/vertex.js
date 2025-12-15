@@ -212,6 +212,29 @@ function quickDiscardCheck({ subject, from, to, body }) {
     return { isDiscard: true, reason: "Flippa marketing newsletter" };
   }
   
+  // 10. Out-of-office / Auto-reply emails (verificación rápida)
+  // Estos correos son respuestas automáticas sin intención comercial real
+  const outOfOfficePatterns = [
+    /(out of office|out-of-office|away from (the|my) office|away from office|currently away|currently out|i am away|i'm away|i will be away|will be away|i am out|i'm out|i will be out|will be out)/i,
+    /(responses may be delayed|response may be delayed|delayed response|delayed responses|i will respond|will respond when|respond when i return|respond when back)/i,
+    /(back (on|online|at work|in the office)|will be back|returning|i will return|i'll be back|back tomorrow|back next week|back on)/i,
+    /(in meetings|team meetings|in a meeting|all day meetings|meetings all day)/i,
+    /(if (your|this) (email|message) is urgent|if urgent|urgent.*flag|flag.*urgent|urgent.*subject)/i,
+    /(auto.reply|automatic reply|auto response|automatic response|vacation reply|holiday reply)/i,
+    /(i am currently|i'm currently|currently (unavailable|away|out|offline|not available))/i,
+  ];
+  
+  // Verificar si es out-of-office/auto-reply
+  // Debe tener al menos 2 patrones para evitar falsos positivos
+  const outOfOfficeMatches = outOfOfficePatterns.filter(regex => regex.test(mailText)).length;
+  if (outOfOfficeMatches >= 2) {
+    // Si tiene múltiples patrones de out-of-office Y no tiene solicitud comercial clara, es Discard
+    const hasCommercialRequest = /(partnership|collaboration|advertising|sponsorship|publicidad|colaboraci[oó]n|partenariat|partenariado|media kit|rate card|pricing|budget|fee|tarif|proposal|proposta|offer|oferta|interested|interessado|quotation|quote)/i.test(mailText);
+    if (!hasCommercialRequest) {
+      return { isDiscard: true, reason: "Out-of-office / Auto-reply email" };
+    }
+  }
+  
   return { isDiscard: false };
 }
 
@@ -1261,6 +1284,12 @@ async function classifyIntentHeuristic({
     intent = "Discard";
     confidence = 0.99;
     reasoning = "Email is an informational message about an organization/program closing, redirecting inquiries to a new contact. No commercial intent, so it is discarded.";
+  }
+  // REGLA DURA: Out-of-office / Auto-reply emails SIEMPRE Discard (verificación temprana, máxima prioridad)
+  else if (isOutOfOfficeEmail) {
+    intent = "Discard";
+    confidence = 0.99;
+    reasoning = "Email is an out-of-office or auto-reply message indicating the sender is away or unavailable. These are automatic responses with no commercial intent, so they are discarded.";
   } else if (isBarterRequest) {
     intent = "Low";
     confidence = 0.8;
