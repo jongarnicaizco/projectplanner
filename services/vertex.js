@@ -205,6 +205,13 @@ function quickDiscardCheck({ subject, from, to, body }) {
     return { isDiscard: true, reason: "E-commerce newsletter/marketing email" };
   }
   
+  // 8b. Newsletters con tracking links específicos de email marketing (click.email., view.email., etc.)
+  // Si tiene unsubscribe Y tracking links de email marketing, es newsletter
+  const hasEmailTrackingLinks = /(click\.email\.|view\.email\.|email\.[a-z0-9]+\.org|email\.[a-z0-9]+\.com|links\.[a-z0-9]+\.(com|org|net))/i.test(mailText);
+  if (hasUnsubscribe && hasEmailTrackingLinks) {
+    return { isDiscard: true, reason: "Newsletter with email tracking links" };
+  }
+  
   // 9. Flippa - plataforma de venta de negocios (newsletters de marketing)
   // Estos correos son newsletters promocionales sin intención comercial real
   if (/flippa\.com/i.test(fromLc) || /flippa\.com/i.test(mailText) || 
@@ -1171,7 +1178,7 @@ async function classifyIntentHeuristic({
   // Detección de newsletters/emails de marketing que deben ser Discard
   // Características: unsubscribe links, tracking links, "updates & insights", contenido promocional sin solicitud directa
   const newsletterKeywordsRegex = /(unsubscribe|unsubscribe preferences|manage your preferences|update your preferences|email preferences|subscription preferences|you're receiving this because|you received this email|update email preferences|change email preferences|stop receiving|opt[-\s]?out|darse de baja|cancelar suscripci[oó]n)/i;
-  const trackingLinkPattern = /(links\.|tracking|utm_source|utm_medium|utm_campaign|click tracking|email tracking|shopify-email|_t\/c\/v3|_t\/open|links\.flippa\.com)/i;
+  const trackingLinkPattern = /(links\.|tracking|utm_source|utm_medium|utm_campaign|click tracking|email tracking|shopify-email|_t\/c\/v3|_t\/open|links\.flippa\.com|click\.email\.|view\.email\.|email\.[a-z0-9]+\.org)/i;
   const newsletterSubjectPattern = /(new activity|updates & insights|weekly update|monthly update|newsletter|news digest|roundup|summary|insights|updates)/i;
   const promotionalContentPattern = /(new buyers|businesses similar|valuation|indicative valuation|sell now|list your business|schedule a call|business advisor)/i;
   
