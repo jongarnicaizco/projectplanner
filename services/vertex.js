@@ -156,7 +156,12 @@ function quickDiscardCheck({ subject, from, to, body }) {
     return { isDiscard: true, reason: "Test email" };
   }
   
-  // 2. SEO agencies (verificación rápida por dominio)
+  // 2. Kaboozt - agencia de SEO específica que no nos interesa
+  if (/kaboozt/i.test(fromLc) || /kaboozt/i.test(mailText)) {
+    return { isDiscard: true, reason: "Kaboozt SEO agency" };
+  }
+  
+  // 3. SEO agencies (verificación rápida por dominio)
   if (/seo|search engine optimization|search engine marketing|sem\b/i.test(fromLc) ||
       /seo agency|seo company|seo services/i.test(mailText)) {
     return { isDiscard: true, reason: "SEO agency" };
@@ -373,6 +378,10 @@ async function classifyIntentHeuristic({
   const subjectLc = (subject || "").toLowerCase();
   const normalizedBody = (body || "").toLowerCase().replace(/\s+/g, " ").trim();
   let reasoningLc = (reasoning || "").toLowerCase();
+
+  // REGLA DURA: Kaboozt - agencia de SEO específica que no nos interesa
+  // Debe ejecutarse ANTES de cualquier otra verificación para forzar Discard inmediatamente
+  const isKabooztEmail = /kaboozt/i.test(fromLc) || /kaboozt/i.test(subjectLc) || /kaboozt/i.test(normalizedBody);
 
   // Detección de agencias de SEO - debe ejecutarse temprano para forzar Discard
   const seoAgencyKeywords = [
@@ -1160,6 +1169,12 @@ async function classifyIntentHeuristic({
     confidence = 0.99;
     reasoning = "Email contains primarily an automatic email client signature (Outlook, Gmail, etc.) with no meaningful business content, so it is discarded.";
   } 
+  // REGLA DURA: Kaboozt - agencia de SEO específica SIEMPRE Discard (verificación temprana, máxima prioridad)
+  else if (isKabooztEmail) {
+    intent = "Discard";
+    confidence = 0.99;
+    reasoning = "Email is from Kaboozt, an SEO agency that we have reviewed and determined is not of interest. All emails from Kaboozt are automatically discarded.";
+  }
   // REGLA DURA: Agencias de SEO SIEMPRE Discard (verificación temprana, máxima prioridad)
   else if (isSeoAgencyEmail) {
     intent = "Discard";
