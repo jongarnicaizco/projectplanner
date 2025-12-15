@@ -205,6 +205,13 @@ function quickDiscardCheck({ subject, from, to, body }) {
     return { isDiscard: true, reason: "E-commerce newsletter/marketing email" };
   }
   
+  // 9. Flippa - plataforma de venta de negocios (newsletters de marketing)
+  // Estos correos son newsletters promocionales sin intención comercial real
+  if (/flippa\.com/i.test(fromLc) || /flippa\.com/i.test(mailText) || 
+      /(new activity.*updates.*insights|new buyers.*interested.*business|list your business|sell now|schedule a call.*business advisor|indicative valuation|business owners.*exited)/i.test(mailText)) {
+    return { isDiscard: true, reason: "Flippa marketing newsletter" };
+  }
+  
   return { isDiscard: false };
 }
 
@@ -262,10 +269,10 @@ ${bodyToAnalyze}${bodyNote}`.trim();
     // No llamamos a la API, usamos solo heurísticas
   } else {
     // Solo llamamos a la API si no es un caso obvio de Discard
-    try {
-      raw = await callModelText(CFG.VERTEX_INTENT_MODEL, prompt);
-    } catch {
-      raw = "";
+  try {
+    raw = await callModelText(CFG.VERTEX_INTENT_MODEL, prompt);
+  } catch {
+    raw = "";
     }
   }
 
@@ -307,11 +314,11 @@ ${bodyToAnalyze}${bodyNote}`.trim();
       meddicDecisionProcess = parsed.meddic_decision_process ? String(parsed.meddic_decision_process).trim() : (shouldExtractMeddic ? "" : "no info");
       meddicIdentifyPain = parsed.meddic_identify_pain ? String(parsed.meddic_identify_pain).trim() : (shouldExtractMeddic ? "" : "no info");
       meddicChampion = parsed.meddic_champion ? String(parsed.meddic_champion).trim() : (shouldExtractMeddic ? "" : "no info");
-      
-      // Legacy support: if old meddic_pain_hypothesis exists, use it for Identify Pain
-      if (!meddicIdentifyPain && parsed.meddic_pain_hypothesis) {
-        meddicIdentifyPain = String(parsed.meddic_pain_hypothesis).trim();
-      }
+        
+        // Legacy support: if old meddic_pain_hypothesis exists, use it for Identify Pain
+        if (!meddicIdentifyPain && parsed.meddic_pain_hypothesis) {
+          meddicIdentifyPain = String(parsed.meddic_pain_hypothesis).trim();
+        }
       
       // Ensure all MEDDIC fields have a value (use "no info" if empty)
       if (!meddicMetrics) meddicMetrics = "no info";
@@ -1123,9 +1130,14 @@ async function classifyIntentHeuristic({
   // Detección de newsletters/emails de marketing que deben ser Discard
   // Características: unsubscribe links, tracking links, "updates & insights", contenido promocional sin solicitud directa
   const newsletterKeywordsRegex = /(unsubscribe|unsubscribe preferences|manage your preferences|update your preferences|email preferences|subscription preferences|you're receiving this because|you received this email|update email preferences|change email preferences|stop receiving|opt[-\s]?out|darse de baja|cancelar suscripci[oó]n)/i;
-  const trackingLinkPattern = /(links\.|tracking|utm_source|utm_medium|utm_campaign|click tracking|email tracking|shopify-email|_t\/c\/v3|_t\/open)/i;
+  const trackingLinkPattern = /(links\.|tracking|utm_source|utm_medium|utm_campaign|click tracking|email tracking|shopify-email|_t\/c\/v3|_t\/open|links\.flippa\.com)/i;
   const newsletterSubjectPattern = /(new activity|updates & insights|weekly update|monthly update|newsletter|news digest|roundup|summary|insights|updates)/i;
   const promotionalContentPattern = /(new buyers|businesses similar|valuation|indicative valuation|sell now|list your business|schedule a call|business advisor)/i;
+  
+  // Detección específica de Flippa (plataforma de venta de negocios)
+  // Estos correos son newsletters promocionales sin intención comercial real
+  const isFlippaEmail = /flippa\.com/i.test(fromLc) || 
+    /(new activity.*updates.*insights|new buyers.*interested.*business|list your business|sell now|schedule a call.*business advisor|indicative valuation|business owners.*exited|flippa university|seller.*bootcamp)/i.test(mailText);
   
   // Detectar contenido de e-commerce/newsletters: "Shop now", productos, ofertas, catálogos
   const ecommercePattern = /(shop now|buy now|add to cart|view collection|view product|check out|shop our|our products|product catalog|cat[áa]logo|ofertas|offers|deals|discount|descuento|promo|promotion|promoci[oó]n|christmas gift|regalo|gift guide|gu[íi]a de regalos|new arrivals|nuevos productos|limited time|tiempo limitado)/i;
@@ -1139,8 +1151,9 @@ async function classifyIntentHeuristic({
   
   // Es newsletter si tiene unsubscribe Y además tiene características de newsletter (tracking, subject pattern, contenido e-commerce, o contenido promocional sin partnership/pricing request)
   // IMPORTANTE: Si tiene unsubscribe + contenido de e-commerce, es definitivamente un newsletter de marketing, incluso si menciona partnership
-  const isNewsletterOrMarketing = hasUnsubscribeLink && 
-    (hasTrackingLinks || hasNewsletterSubject || hasEcommerceContent || (hasPromotionalContent && !hasPartnershipCollabAsk && !isPricing && !isCoverageRequest));
+  // REGLA DURA: Flippa siempre es newsletter de marketing (sin intención comercial real)
+  const isNewsletterOrMarketing = isFlippaEmail || (hasUnsubscribeLink && 
+    (hasTrackingLinks || hasNewsletterSubject || hasEcommerceContent || (hasPromotionalContent && !hasPartnershipCollabAsk && !isPricing && !isCoverageRequest)));
 
   console.log("[mfs] [classify] Flags básicos:", {
     modelIntentRaw,
@@ -1657,20 +1670,20 @@ async function classifyIntentHeuristic({
       // Generate fallback for Identify Pain if not provided
       if (isBarterRequest) {
         finalMeddicIdentifyPain = "Limited cash marketing budget is pushing them to trade invitations or experiences for exposure and coverage.";
-      } else if (isFreeCoverageRequest) {
+    } else if (isFreeCoverageRequest) {
         finalMeddicIdentifyPain = "They rely on earned media and editorial exposure to boost awareness and attendance without strong paid media investment.";
-      } else if (isMediaKitPricingRequest) {
+    } else if (isMediaKitPricingRequest) {
         finalMeddicIdentifyPain = "Unclear media costs are blocking planning of campaigns, creating risk of delayed or suboptimal investment.";
-      } else if (hasPartnershipCollabAsk) {
+    } else if (hasPartnershipCollabAsk) {
         finalMeddicIdentifyPain = "They lack a strong media or distribution partner to scale reach and engagement for their events, artists or experiences.";
-      } else if (mailText.includes("ticket") || mailText.includes("event")) {
+    } else if (mailText.includes("ticket") || mailText.includes("event")) {
         finalMeddicIdentifyPain = "Insufficient reach is limiting event attendance and ticket revenue, prompting the search for stronger promotional partners.";
-      } else if (mailText.includes("sponsor")) {
+    } else if (mailText.includes("sponsor")) {
         finalMeddicIdentifyPain = "Brand visibility is lagging in key markets, prompting them to explore sponsorships and high-impact placements.";
-      } else {
+    } else {
         finalMeddicIdentifyPain = "They are seeking partners to improve reach, engagement and efficiency of their marketing and commercial efforts.";
-      }
     }
+  }
     if (!finalMeddicChampion || finalMeddicChampion.trim() === "" || finalMeddicChampion === "no info") {
       finalMeddicChampion = "no info";
     }
@@ -1689,12 +1702,12 @@ async function classifyIntentHeuristic({
     
     if (meddicFieldsWithContent.length > 0) {
       const allMeddicText = meddicFieldsWithContent.join(" ");
-      const maxTotalChars = 1200; // ~200 words
-      if (allMeddicText.length > maxTotalChars) {
-        // Trim proportionally - keep Identify Pain (I) as priority, then others
-        const ratio = maxTotalChars / allMeddicText.length;
-        const trimLength = (text) => Math.floor((text || "").length * ratio);
-        
+    const maxTotalChars = 1200; // ~200 words
+    if (allMeddicText.length > maxTotalChars) {
+      // Trim proportionally - keep Identify Pain (I) as priority, then others
+      const ratio = maxTotalChars / allMeddicText.length;
+      const trimLength = (text) => Math.floor((text || "").length * ratio);
+      
         if (finalMeddicMetrics !== "no info") {
           finalMeddicMetrics = finalMeddicMetrics.slice(0, trimLength(finalMeddicMetrics));
         }

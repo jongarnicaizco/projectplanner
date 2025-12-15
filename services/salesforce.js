@@ -96,6 +96,14 @@ export async function createSalesforceLead({
     // Normalizar businessOppt (trim y asegurar formato correcto)
     const normalizedBusinessOppt = businessOppt ? String(businessOppt).trim() : null;
     console.log("[mfs] Salesforce: DEBUG - businessOppt recibido:", businessOppt, "normalized:", normalizedBusinessOppt);
+    
+    // VALIDACIÓN CRÍTICA: Solo crear leads para Medium, High, Very High
+    // NUNCA crear leads para Low o Discard - esto asegura consistencia con Airtable
+    const validIntents = ["Medium", "High", "Very High"];
+    if (!normalizedBusinessOppt || !validIntents.includes(normalizedBusinessOppt)) {
+      console.log(`[mfs] Salesforce: ⚠️ Lead NO creado - Intent "${normalizedBusinessOppt}" no es válido para crear lead. Solo se crean leads para: ${validIntents.join(", ")}`);
+      return { id: null, skipped: true, reason: `invalid_intent_${normalizedBusinessOppt || "null"}` };
+    }
 
     // Mapeo de campos según especificación
     const leadFields = {

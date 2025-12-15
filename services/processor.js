@@ -682,7 +682,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           isBarter = false;
           isPricing = false;
         }
-
+      
       let finalIntent = intent;
       let finalConfidence = confidence;
       let finalReasoning = reasoning;
@@ -701,11 +701,11 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         console.log(`[mfs] DEBUG secretmedia@feverup.com - Intent original: "${intent}", finalIntent: "${finalIntent}", currentIndex: ${currentIntentIndex}, mediumIndex: ${mediumIndex}`);
         
         if (currentIntentIndex < mediumIndex) {
-          finalIntent = "Medium";
-          finalConfidence = Math.max(finalConfidence || 0.75, 0.75);
-          if (!finalReasoning || finalReasoning.length === 0) {
+        finalIntent = "Medium";
+        finalConfidence = Math.max(finalConfidence || 0.75, 0.75);
+        if (!finalReasoning || finalReasoning.length === 0) {
             finalReasoning = "Email comes from secretmedia@feverup.com, automatically classified as Medium intent (minimum).";
-          } else {
+        } else {
             finalReasoning = finalReasoning + " Email comes from secretmedia@feverup.com, automatically classified as Medium intent (minimum).";
           }
           console.log(`[mfs] Intent actualizado a Medium (mínimo) para correo de secretmedia@feverup.com - Intent original: ${intent}`);
@@ -759,12 +759,16 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         }
 
         // CREAR LEAD EN SALESFORCE ANTES DE AIRTABLE (solo para Medium, High, Very High)
+        // CRÍTICO: Validación estricta - NUNCA crear leads para Low o Discard
         let salesforceLeadId = null;
         // Normalizar finalIntent para comparación (trim y asegurar formato correcto)
         const normalizedFinalIntent = String(finalIntent || "").trim();
         console.log(`[mfs] DEBUG - Verificando si crear lead en Salesforce - normalizedFinalIntent: "${normalizedFinalIntent}"`);
         
-        if (normalizedFinalIntent === "Medium" || normalizedFinalIntent === "High" || normalizedFinalIntent === "Very High") {
+        // VALIDACIÓN ESTRICTA: Solo crear leads para Medium, High, Very High
+        // Esta validación es CRÍTICA para mantener consistencia entre Airtable y Salesforce
+        const validIntentsForSalesforce = ["Medium", "High", "Very High"];
+        if (validIntentsForSalesforce.includes(normalizedFinalIntent)) {
           // VERIFICACIÓN DE DUPLICADOS: Verificar si coincide con alguno de los últimos 20 correos procesados (from, to, subject)
           if (isDuplicateInRecent20(from, to, subject)) {
             console.log(`[mfs] 🔍 Duplicado detectado en últimos 20 correos (from/to/subject) para ${id} - NO se creará lead en Salesforce`);
@@ -1017,7 +1021,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         intent: finalIntent,
         confidence: finalConfidence,
       });
-      } catch (e) {
+    } catch (e) {
         // En caso de error, loguear y NO aplicar etiqueta processed para permitir reintento
         console.error(`[mfs] ✗ Error procesando mensaje ${id}:`, e?.message || e);
         console.error(`[mfs] Stack trace:`, e?.stack);
