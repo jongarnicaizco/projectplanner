@@ -662,7 +662,7 @@ app.get("/control", async (_req, res) => {
     res.send(html);
   } catch (e) {
     console.error("control error:", e);
-    res.status(500).send("Error loading control panel.");
+    res.status(500).send("Error loading control panel: " + e.message + "\n" + e.stack);
   }
 });
 
