@@ -489,6 +489,8 @@ app.get("/control", async (_req, res) => {
       console.warn("Error reading cost state:", e.message);
     }
 
+    const avgYesterday = yesterdayCost / 24;
+
     const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
