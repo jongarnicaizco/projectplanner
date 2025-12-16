@@ -185,17 +185,17 @@ export const CITY_ID_MAP = {
  */
 export function getCityId(cityName) {
   if (!cityName) return null;
-  
+
   // Normalizar el nombre de la ciudad (trim, lowercase para comparación)
   const normalizedCityName = String(cityName).trim();
-  
+
   // Buscar coincidencia exacta (case-insensitive)
   for (const [city, id] of Object.entries(CITY_ID_MAP)) {
     if (city.toLowerCase() === normalizedCityName.toLowerCase()) {
       return id;
     }
   }
-  
+
   // Si no hay coincidencia exacta, retornar null
   return null;
 }
@@ -213,7 +213,7 @@ export const FIDS = {
 
 // Prompt de intent (optimizado)
 export const INTENT_PROMPT = `
-Analyze inbound leads for partnerships, sponsorships, and media collaborations. Follow steps in order:
+: Analyze inbound leads for partnerships, sponsorships, and media collaborations. Follow steps in order:
 
 DISCARD CHECKS (execute first, skip rest if match):
 - Auto signatures: "Sent from Outlook/Gmail", "aka.ms" links, email client signatures → "Discard"
@@ -231,7 +231,7 @@ NON-PARTNERSHIP (if no partnership):
 - Barter: event invites, press passes, services in exchange → "Low", barter_request=true (mutually exclusive with free coverage)
 - Pricing Only: asking rates without partnership context → follow partnership rules (Coca-Cola=Very High, with scope=High, generic=Medium), pricing_request=true
 
-MEDDIC (Medium/High/Very High only, use "no info" for Low/Discard, max 200 words total):
+MEDDIC (Medium/High/Very High ONLY - OMIT these fields if intent is Low/Discard):
 M-Metrics: Economic outcomes (revenue, costs, risk)
 E-Economic Buyer: Final P&L decision-maker with budget authority
 D-Decision Criteria: Factors for judging solutions
@@ -247,12 +247,12 @@ OUTPUT: JSON only, no extra text:
   "free_coverage_request": boolean,
   "barter_request": boolean,
   "pricing_request": boolean,
-  "meddic_metrics": "description or 'no info'",
-  "meddic_economic_buyer": "description or 'no info'",
-  "meddic_decision_criteria": "description or 'no info'",
-  "meddic_decision_process": "description or 'no info'",
-  "meddic_identify_pain": "description or 'no info'",
-  "meddic_champion": "description or 'no info'"
+  "meddic_metrics": "description or 'no info' (omit if Low/Discard)",
+  "meddic_economic_buyer": "description or 'no info' (omit if Low/Discard)",
+  "meddic_decision_criteria": "description or 'no info' (omit if Low/Discard)",
+  "meddic_decision_process": "description or 'no info' (omit if Low/Discard)",
+  "meddic_identify_pain": "description or 'no info' (omit if Low/Discard)",
+  "meddic_champion": "description or 'no info' (omit if Low/Discard)"
 }
 
 `.trim();

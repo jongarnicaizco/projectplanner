@@ -56,7 +56,7 @@ async function getProcessedLabelId(gmail) {
   if (processedLabelIdCache.has(gmail)) {
     return processedLabelIdCache.get(gmail);
   }
-  
+
   try {
     const labelsResponse = await gmail.users.labels.list({ userId: "me" });
     const labels = labelsResponse.data.labels || [];
@@ -67,7 +67,7 @@ async function getProcessedLabelId(gmail) {
       console.log(`[mfs] Label "processed" encontrado con ID: ${labelId}`);
       return labelId;
     }
-    
+
     // Si no se encuentra, CREAR el label automáticamente
     console.warn(`[mfs] ⚠️ Label "processed" no encontrado. Creando label automáticamente...`);
     try {
@@ -112,7 +112,7 @@ async function applyProcessedLabel(gmail, messageId) {
   try {
     const labelId = await getProcessedLabelId(gmail);
     console.log(`[mfs] Aplicando etiqueta "processed" (ID: ${labelId}) al mensaje ${messageId}`);
-    
+
     // Verificar que el mensaje existe antes de aplicar la etiqueta
     try {
       const msgCheck = await gmail.users.messages.get({ userId: "me", id: messageId, format: "metadata" });
@@ -129,7 +129,7 @@ async function applyProcessedLabel(gmail, messageId) {
       // Para otros errores, continuar e intentar aplicar la etiqueta
       console.warn(`[mfs] Error verificando mensaje ${messageId} antes de aplicar etiqueta:`, checkError?.message);
     }
-    
+
     await gmail.users.messages.modify({
       userId: "me",
       id: messageId,
@@ -147,14 +147,14 @@ async function applyProcessedLabel(gmail, messageId) {
       fullError: error?.response?.data || error?.data,
     };
     console.error(`[mfs] ✗ Error aplicando etiqueta processed a ${messageId}:`, JSON.stringify(errorDetails, null, 2));
-    
+
     // Si es un error de permisos (403), loggear específicamente
     if (String(errorDetails.code) === "403" || String(errorDetails.status) === "403") {
       console.error(`[mfs] ⚠️ ERROR DE PERMISOS (403) al aplicar etiqueta processed a ${messageId}`);
       console.error(`[mfs] ⚠️ Verifica que el refresh token tenga permisos de Gmail API (gmail.modify)`);
       console.error(`[mfs] ⚠️ Verifica que el OAuth Client tenga los scopes correctos`);
     }
-    
+
     // No relanzar el error - continuar procesamiento
   }
 }
@@ -187,23 +187,23 @@ const processedEmailsCache = new Map(); // Key: `${from}|${to}|${timestamp}`, Va
  */
 function isDuplicateByFromToTimestamp(from, to, timestamp) {
   if (!from || !to || !timestamp) return false;
-  
+
   // Normalizar emails (lowercase, trim)
   const normalizedFrom = String(from).trim().toLowerCase();
   const normalizedTo = String(to).trim().toLowerCase();
-  
+
   // Crear key única basada en from, to y timestamp (redondeado a segundo para tolerar pequeñas diferencias)
   const timestampDate = new Date(timestamp);
   const timestampSeconds = Math.floor(timestampDate.getTime() / 1000);
   const cacheKey = `${normalizedFrom}|${normalizedTo}|${timestampSeconds}`;
-  
+
   // Verificar si ya existe en el cache
   if (processedEmailsCache.has(cacheKey)) {
     const cached = processedEmailsCache.get(cacheKey);
     console.log(`[mfs] 🔍 Duplicado detectado por from/to/timestamp: ${cacheKey} (procesado anteriormente en ${cached.messageId})`);
     return true;
   }
-  
+
   return false;
 }
 
@@ -216,22 +216,22 @@ function isDuplicateByFromToTimestamp(from, to, timestamp) {
  */
 function registerProcessedEmailByFromToTimestamp(from, to, timestamp, messageId) {
   if (!from || !to || !timestamp) return;
-  
+
   // Normalizar emails (lowercase, trim)
   const normalizedFrom = String(from).trim().toLowerCase();
   const normalizedTo = String(to).trim().toLowerCase();
-  
+
   // Crear key única basada en from, to y timestamp (redondeado a segundo)
   const timestampDate = new Date(timestamp);
   const timestampSeconds = Math.floor(timestampDate.getTime() / 1000);
   const cacheKey = `${normalizedFrom}|${normalizedTo}|${timestampSeconds}`;
-  
+
   // Registrar en el cache
   processedEmailsCache.set(cacheKey, {
     messageId,
     processedAt: Date.now(),
   });
-  
+
   // Limpiar cache antiguo (más de 24 horas)
   const now = Date.now();
   const maxAge = 24 * 60 * 60 * 1000; // 24 horas
@@ -251,12 +251,12 @@ function registerProcessedEmailByFromToTimestamp(from, to, timestamp, messageId)
  */
 function isDuplicateInRecent20(from, to, subject) {
   if (!from || !to || !subject) return false;
-  
+
   // Normalizar valores
   const normalizedFrom = String(from).trim().toLowerCase();
   const normalizedTo = String(to).trim().toLowerCase();
   const normalizedSubject = String(subject).trim().toLowerCase();
-  
+
   // Verificar si coincide con alguno de los últimos 20
   for (const recentEmail of recentProcessedEmails) {
     if (
@@ -264,11 +264,12 @@ function isDuplicateInRecent20(from, to, subject) {
       recentEmail.to === normalizedTo &&
       recentEmail.subject === normalizedSubject
     ) {
-      console.log(`[mfs] 🔍 Duplicado detectado en últimos 20: from=${normalizedFrom}, to=${normalizedTo}, subject=${normalizedSubject.substring(0, 50)}`);
+      // LOG REMOVED FOR COST OPTIMIZATION
+      // console.log(`[mfs] 🔍 Duplicado detectado en últimos 20: from=${normalizedFrom}, to=${normalizedTo}, subject=${normalizedSubject.substring(0, 50)}`);
       return true;
     }
   }
-  
+
   return false;
 }
 
@@ -280,12 +281,12 @@ function isDuplicateInRecent20(from, to, subject) {
  */
 function registerRecentProcessedEmail(from, to, subject) {
   if (!from || !to || !subject) return;
-  
+
   // Normalizar valores
   const normalizedFrom = String(from).trim().toLowerCase();
   const normalizedTo = String(to).trim().toLowerCase();
   const normalizedSubject = String(subject).trim().toLowerCase();
-  
+
   // Agregar al inicio del array
   recentProcessedEmails.unshift({
     from: normalizedFrom,
@@ -293,7 +294,7 @@ function registerRecentProcessedEmail(from, to, subject) {
     subject: normalizedSubject,
     processedAt: Date.now(),
   });
-  
+
   // Mantener solo los últimos 20
   if (recentProcessedEmails.length > MAX_RECENT_EMAILS) {
     recentProcessedEmails.pop();
@@ -319,17 +320,17 @@ function releaseProcessingLock(messageId) {
 async function checkRateLimit() {
   const now = Date.now();
   const windowAge = now - rateLimitWindowStart;
-  
+
   // Resetear contador cada minuto
   if (windowAge >= RATE_LIMIT_WINDOW_MS) {
     rateLimitCount = 0;
     rateLimitWindowStart = now;
   }
-  
+
   // Si superamos el límite, detener servicio automáticamente
   if (rateLimitCount >= RATE_LIMIT_MAX) {
     console.error(`[mfs] ⚠️ LÍMITE DE SEGURIDAD ALCANZADO: ${rateLimitCount} ejecuciones en el último minuto. Límite: ${RATE_LIMIT_MAX}. DETENIENDO SERVICIO AUTOMÁTICAMENTE.`);
-    
+
     // Detener servicio automáticamente (como si se hubiera presionado STOP)
     try {
       const { writeServiceStatus } = await import("./storage.js");
@@ -338,29 +339,29 @@ async function checkRateLimit() {
     } catch (stopError) {
       console.error(`[mfs] ✗ Error deteniendo servicio automáticamente:`, stopError?.message);
     }
-    
+
     return false;
   }
-  
+
   return true;
 }
 
 async function incrementRateLimit() {
   const now = Date.now();
   const windowAge = now - rateLimitWindowStart;
-  
+
   // Resetear contador cada minuto
   if (windowAge >= RATE_LIMIT_WINDOW_MS) {
     rateLimitCount = 0;
     rateLimitWindowStart = now;
   }
-  
+
   rateLimitCount++;
-  
+
   // Si superamos el límite después de incrementar, detener servicio automáticamente
   if (rateLimitCount >= RATE_LIMIT_MAX) {
     console.error(`[mfs] ⚠️ LÍMITE DE SEGURIDAD SUPERADO: ${rateLimitCount} ejecuciones en el último minuto. Límite: ${RATE_LIMIT_MAX}. DETENIENDO SERVICIO AUTOMÁTICAMENTE.`);
-    
+
     // Detener servicio automáticamente (como si se hubiera presionado STOP)
     try {
       const { writeServiceStatus } = await import("./storage.js");
@@ -370,7 +371,7 @@ async function incrementRateLimit() {
       console.error(`[mfs] ✗ Error deteniendo servicio automáticamente:`, stopError?.message);
     }
   }
-  
+
   return rateLimitCount <= RATE_LIMIT_MAX;
 }
 
@@ -389,7 +390,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
       resultados: ids.map(id => ({ id, skipped: true, reason: `service_stopped` })),
     };
   }
-  
+
   // Verificar límite de ejecuciones por minuto ANTES de procesar
   if (!(await checkRateLimit())) {
     console.error(`[mfs] ⚠️ PROCESAMIENTO DETENIDO: Límite de ${RATE_LIMIT_MAX} ejecuciones por minuto alcanzado. Servicio detenido automáticamente.`);
@@ -401,7 +402,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
       resultados: ids.map(id => ({ id, skipped: true, reason: `rate_limit_exceeded_${RATE_LIMIT_MAX}_per_minute` })),
     };
   }
-  
+
   // Sistema de cola: procesar todos los mensajes que llegan sin verificar Airtable antes
   // createAirtableRecord manejará duplicados (si ya existe, fallará y no se duplicará)
   const results = [];
@@ -421,7 +422,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         // Esto permite que cuando se reactive, se procesen los mensajes que quedaron pendientes
         break; // Salir del loop completamente
       }
-      
+
       // Lock en memoria ANTES de obtener mensaje (sistema de cola)
       if (!acquireProcessingLock(id)) {
         results.push({ id, airtableId: null, intent: null, confidence: null, skipped: true, reason: "concurrent_processing" });
@@ -449,7 +450,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
       }
 
       const msgLabelIds = msg.data.labelIds || [];
-      
+
       // NUNCA procesar mensajes con etiqueta "processed" - bajo ningún concepto
       // Verificar ANTES de hacer cualquier procesamiento para evitar bucles
       if (msgLabelIds.includes("processed")) {
@@ -461,7 +462,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         // Si no está en INBOX, aplicar etiqueta processed para evitar reprocesar
         try {
           await applyProcessedLabel(gmail, id);
-      } catch (labelError) {
+        } catch (labelError) {
           console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
         }
         releaseProcessingLock(id);
@@ -470,31 +471,31 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
 
       try {
         // Simplificado: usar headers básicos directamente (más rápido)
-      const basicHeaders = msg.data.payload?.headers || [];
-      const findHeader = (name) => {
+        const basicHeaders = msg.data.payload?.headers || [];
+        const findHeader = (name) => {
           const h = basicHeaders.find(header => header.name?.toLowerCase() === name.toLowerCase());
-        return h ? h.value : "";
-      };
+          return h ? h.value : "";
+        };
 
-      const fromHeader = findHeader("From");
-      const toHeader = findHeader("To");
-      const cc = findHeader("Cc");
-      const bcc = findHeader("Bcc");
-      const replyTo = findHeader("Reply-To");
-      const subject = findHeader("Subject") || "";
-      const body = bodyFromMessage(msg.data);
+        const fromHeader = findHeader("From");
+        const toHeader = findHeader("To");
+        const cc = findHeader("Cc");
+        const bcc = findHeader("Bcc");
+        const replyTo = findHeader("Reply-To");
+        const subject = findHeader("Subject") || "";
+        const body = bodyFromMessage(msg.data);
 
         // Extraer emails (sin logs para reducir carga operacional)
         const from = String(extractFromEmail(fromHeader, cc, bcc, replyTo) || "").trim().toLowerCase();
         let to = String(extractToEmail(toHeader || "", cc || "", bcc || "", replyTo || "", "") || "").trim().toLowerCase();
-        
+
         // Log específico para correos a secretmedia@feverup.com para debugging
         const isToSecretMedia = (to || "").toLowerCase().includes("secretmedia@feverup.com");
         if (isToSecretMedia) {
           console.log(`[mfs] 📧 Correo detectado TO secretmedia@feverup.com - ID: ${id}, From: ${from}, To: ${to}`);
           console.log(`[mfs] 🚀 INICIANDO PROCESAMIENTO de correo TO secretmedia@feverup.com - ID: ${id}`);
         }
-        
+
         // FILTROS RÁPIDOS: saltar correos FROM secretmedia@feverup.com SOLO si NO van TO secretmedia@feverup.com
         // Esto permite procesar correos que LLEGAN a secretmedia@feverup.com (TO secretmedia@feverup.com)
         // pero salta correos ENVIADOS desde secretmedia@feverup.com a otros (FROM secretmedia@feverup.com, TO != secretmedia@feverup.com)
@@ -510,8 +511,8 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
               console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
             }
             releaseProcessingLock(id);
-        continue;
-      }
+            continue;
+          }
           // Si el correo SÍ va TO secretmedia@feverup.com, procesarlo (es un correo que llega a esa cuenta)
           console.log(`[mfs] ✓ Procesando correo FROM secretmedia@feverup.com TO secretmedia@feverup.com (reply/forward) - ID: ${id}`);
         }
@@ -557,21 +558,20 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           releaseProcessingLock(id);
           continue;
         }
-        
+
         // Si llegamos aquí, el correo pasó todos los filtros
-        if (isToSecretMedia) {
-          console.log(`[mfs] ✓ Correo TO secretmedia@feverup.com pasó todos los filtros - ID: ${id}, continuando con procesamiento`);
-        }
-        
+        // LOG REMOVED
+
         // Log específico para correos a secretmedia@feverup.com antes de procesar
-        if (isToSecretMedia) {
-          console.log(`[mfs] 🚀 Iniciando procesamiento de correo TO secretmedia@feverup.com - ID: ${id}, Subject: ${subject?.slice(0, 50)}`);
-        }
+        // LOG REMOVED FOR COST OPTIMIZATION
+        // if (isToSecretMedia) {
+        //   console.log(`[mfs] 🚀 Iniciando procesamiento de correo TO secretmedia@feverup.com - ID: ${id}, Subject: ${subject?.slice(0, 50)}`);
+        // }
 
         // Extraer nombre: primero del header, luego de la firma del body, finalmente usar email
         let senderName = extractSenderName(fromHeader)?.replace(/["'`]/g, "").trim().slice(0, 100) || "";
         let senderFirstName = senderName.split(/\s+/)[0] || "";
-        
+
         // Si no se encontró nombre en el header, buscar en la firma del body
         if (!senderName || senderName.length < 2) {
           const signatureName = extractNameFromSignature(body);
@@ -581,14 +581,14 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
             console.log(`[mfs] ✓ Nombre extraído de firma del email: "${senderName}" (firstName: "${senderFirstName}")`);
           }
         }
-        
+
         // Si aún no se encontró nombre, usar el email del from como fallback
         if (!senderName || senderName.length < 2) {
           senderName = from || "";
           senderFirstName = from?.split("@")[0] || "";
           console.log(`[mfs] ⚠️ No se encontró nombre, usando email como fallback: "${senderName}" (firstName: "${senderFirstName}")`);
         }
-        
+
         // Asegurar que siempre haya algo en ambos campos
         if (!senderName || senderName.trim().length === 0) {
           senderName = from || "Unknown";
@@ -598,36 +598,37 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         }
 
         // Datos básicos (simplificado)
-      const language = detectLanguage(subject + " " + body);
-      
-      // Detectar ubicación: si el correo viene de secretmedia@feverup.com, buscar en el cuerpo del mensaje
-      // en lugar de usar el To (que siempre será secretmedia@feverup.com)
-      // También actualizar el campo 'to' con el email encontrado en el body
-      let location;
-      if (isToSecretMedia) {
-        // Buscar emails de ciudades en el cuerpo del mensaje
-        const { getLocationFromEmailInBody } = await import("../utils/helpers.js");
-        const bodyResult = getLocationFromEmailInBody(body);
-        
-        if (bodyResult && bodyResult.location && bodyResult.email) {
-          // Se encontró un email de ciudad en el body - usar ese email para 'to' y su ubicación
-          location = bodyResult.location;
-          to = bodyResult.email;
-          console.log(`[mfs] ✓ Email de ciudad encontrado en body para correo TO secretmedia@feverup.com - Actualizando 'to' a: ${to}`);
+        const language = detectLanguage(subject + " " + body);
+
+        // Detectar ubicación: si el correo viene de secretmedia@feverup.com, buscar en el cuerpo del mensaje
+        // en lugar de usar el To (que siempre será secretmedia@feverup.com)
+        // También actualizar el campo 'to' con el email encontrado en el body
+        let location;
+        if (isToSecretMedia) {
+          // Buscar emails de ciudades en el cuerpo del mensaje
+          const { getLocationFromEmailInBody } = await import("../utils/helpers.js");
+          const bodyResult = getLocationFromEmailInBody(body);
+
+          if (bodyResult && bodyResult.location && bodyResult.email) {
+            // Se encontró un email de ciudad en el body - usar ese email para 'to' y su ubicación
+            location = bodyResult.location;
+            to = bodyResult.email;
+            console.log(`[mfs] ✓ Email de ciudad encontrado en body para correo TO secretmedia@feverup.com - Actualizando 'to' a: ${to}`);
+          } else {
+            // Si no se encuentra en el cuerpo, intentar con el To como fallback
+            location = getLocationFromEmail(toHeader);
+            console.log(`[mfs] ⚠️ No se encontró email de ciudad en body, usando To original: ${to}`);
+          }
         } else {
-          // Si no se encuentra en el cuerpo, intentar con el To como fallback
+          // Para correos normales, usar el To como siempre
           location = getLocationFromEmail(toHeader);
-          console.log(`[mfs] ⚠️ No se encontró email de ciudad en body, usando To original: ${to}`);
         }
-      } else {
-        // Para correos normales, usar el To como siempre
-        location = getLocationFromEmail(toHeader);
-      }
         const timestamp = msg.data.internalDate ? new Date(parseInt(msg.data.internalDate, 10)).toISOString() : new Date().toISOString();
 
         // VERIFICACIÓN DE DUPLICADOS: Verificar duplicado basado en from, to, timestamp
         if (isDuplicateByFromToTimestamp(from, to, timestamp)) {
-          console.log(`[mfs] 🔍 Duplicado detectado por from/to/timestamp para ${id} - From: ${from}, To: ${to}, Timestamp: ${timestamp}`);
+          // LOG REMOVED FOR COST OPTIMIZATION
+          // console.log(`[mfs] 🔍 Duplicado detectado por from/to/timestamp para ${id} - From: ${from}, To: ${to}, Timestamp: ${timestamp}`);
           // Aplicar etiqueta processed para evitar reprocesar
           try {
             await applyProcessedLabel(gmail, id);
@@ -649,9 +650,9 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         // Verificar si es reply (simplificado)
         const isReply = subject.toLowerCase().startsWith("re:") || subject.toLowerCase().startsWith("fwd:") || (msg.data.threadId && msg.data.threadId !== msg.data.id);
 
-      // ÚNICA LLAMADA A GEMINI: classifyIntent
+        // ÚNICA LLAMADA A GEMINI: classifyIntent
         let intent, confidence, reasoning, meddicMetrics, meddicEconomicBuyer, meddicDecisionCriteria, meddicDecisionProcess, meddicIdentifyPain, meddicChampion, isFreeCoverage, isBarter, isPricing;
-        
+
         try {
           const classificationResult = await classifyIntent({ subject, from, to, body });
           intent = classificationResult.intent;
@@ -682,58 +683,57 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           isBarter = false;
           isPricing = false;
         }
-      
-      let finalIntent = intent;
-      let finalConfidence = confidence;
-      let finalReasoning = reasoning;
-      
-      // Normalizar el intent (trim y asegurar formato correcto)
-      if (finalIntent) {
-        finalIntent = String(finalIntent).trim();
-      }
-      
-      // Si el correo viene de secretmedia@feverup.com, el intent debe ser como mínimo "Medium"
-      if (isToSecretMedia) {
-        const intentHierarchy = ["Discard", "Low", "Medium", "High", "Very High"];
-        const currentIntentIndex = intentHierarchy.indexOf(finalIntent || "Discard");
-        const mediumIndex = intentHierarchy.indexOf("Medium");
-        
-        console.log(`[mfs] DEBUG secretmedia@feverup.com - Intent original: "${intent}", finalIntent: "${finalIntent}", currentIndex: ${currentIntentIndex}, mediumIndex: ${mediumIndex}`);
-        
-        if (currentIntentIndex < mediumIndex) {
-        finalIntent = "Medium";
-        finalConfidence = Math.max(finalConfidence || 0.75, 0.75);
-        if (!finalReasoning || finalReasoning.length === 0) {
-            finalReasoning = "Email comes from secretmedia@feverup.com, automatically classified as Medium intent (minimum).";
-        } else {
-            finalReasoning = finalReasoning + " Email comes from secretmedia@feverup.com, automatically classified as Medium intent (minimum).";
-          }
-          console.log(`[mfs] Intent actualizado a Medium (mínimo) para correo de secretmedia@feverup.com - Intent original: ${intent}`);
+
+        let finalIntent = intent;
+        let finalConfidence = confidence;
+        let finalReasoning = reasoning;
+
+        // Normalizar el intent (trim y asegurar formato correcto)
+        if (finalIntent) {
+          finalIntent = String(finalIntent).trim();
         }
-      }
-      
-      // Log final del intent antes de crear lead en Salesforce
-      console.log(`[mfs] DEBUG - finalIntent antes de crear lead: "${finalIntent}" (tipo: ${typeof finalIntent})`);
 
-      // NO generar bodySummary para ahorrar llamadas a Gemini
-      const bodySummary = "";
+        // Si el correo viene de secretmedia@feverup.com, el intent debe ser como mínimo "Medium"
+        if (isToSecretMedia) {
+          const intentHierarchy = ["Discard", "Low", "Medium", "High", "Very High"];
+          const currentIntentIndex = intentHierarchy.indexOf(finalIntent || "Discard");
+          const mediumIndex = intentHierarchy.indexOf("Medium");
 
-      const brandName = senderName || from.split("@")[0] || subject.split(" ")[0] || "Client";
-      
+          console.log(`[mfs] DEBUG secretmedia@feverup.com - Intent original: "${intent}", finalIntent: "${finalIntent}", currentIndex: ${currentIntentIndex}, mediumIndex: ${mediumIndex}`);
+
+          if (currentIntentIndex < mediumIndex) {
+            finalIntent = "Medium";
+            finalConfidence = Math.max(finalConfidence || 0.75, 0.75);
+            if (!finalReasoning || finalReasoning.length === 0) {
+              finalReasoning = "Email comes from secretmedia@feverup.com, automatically classified as Medium intent (minimum).";
+            } else {
+              finalReasoning = finalReasoning + " Email comes from secretmedia@feverup.com, automatically classified as Medium intent (minimum).";
+            }
+            console.log(`[mfs] Intent actualizado a Medium (mínimo) para correo de secretmedia@feverup.com - Intent original: ${intent}`);
+          }
+        }
+
+        // Log final del intent antes de crear lead en Salesforce
+        console.log(`[mfs] DEBUG - finalIntent antes de crear lead: "${finalIntent}" (tipo: ${typeof finalIntent})`);
+
+        // NO generar bodySummary para ahorrar llamadas a Gemini
+        const bodySummary = "";
+
+        const brandName = senderName || from.split("@")[0] || subject.split(" ")[0] || "Client";
+
         // VERIFICACIÓN DE DUPLICADOS: Verificar ANTES de crear para evitar duplicados
         // Procesamiento SECUENCIAL: un mensaje a la vez, completamente procesado antes del siguiente
-        if (isToSecretMedia) {
-          console.log(`[mfs] 🔍 Verificando duplicados en Airtable para ${id}...`);
-        }
+        // LOG REMOVED FOR COST OPTIMIZATION
+        // if (isToSecretMedia) {
+        //   console.log(`[mfs] 🔍 Verificando duplicados en Airtable para ${id}...`);
+        // }
         let existingRecord = null;
         try {
           existingRecord = await airtableFindByEmailId(id);
         } catch (checkError) {
           // Si falla la verificación, continuar (mejor intentar crear que perder el mensaje)
           console.warn(`[mfs] No se pudo verificar duplicado para ${id}, continuando:`, checkError?.message);
-          if (isToSecretMedia) {
-            console.log(`[mfs] ⚠️ Error verificando duplicado para secretmedia@feverup.com - ID: ${id}, continuando...`);
-          }
+          // LOG REMOVED FOR COST OPTIMIZATION
         }
 
         // Si ya existe, saltar y aplicar etiqueta processed
@@ -764,7 +764,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         // Normalizar finalIntent para comparación (trim y asegurar formato correcto)
         const normalizedFinalIntent = String(finalIntent || "").trim();
         console.log(`[mfs] DEBUG - Verificando si crear lead en Salesforce - normalizedFinalIntent: "${normalizedFinalIntent}"`);
-        
+
         // VALIDACIÓN ESTRICTA: Solo crear leads para Medium, High, Very High
         // Esta validación es CRÍTICA para mantener consistencia entre Airtable y Salesforce
         const validIntentsForSalesforce = ["Medium", "High", "Very High"];
@@ -778,54 +778,54 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           } else {
             console.log(`[mfs] DEBUG - Condición cumplida, creando lead en Salesforce para intent: "${normalizedFinalIntent}"`);
             try {
-            // Construir MEDDIC Analysis string igual que en Airtable
-            const meddicParts = [];
-            if (meddicMetrics) meddicParts.push(`M: ${meddicMetrics}`);
-            if (meddicEconomicBuyer) meddicParts.push(`E: ${meddicEconomicBuyer}`);
-            if (meddicDecisionCriteria) meddicParts.push(`D: ${meddicDecisionCriteria}`);
-            if (meddicDecisionProcess) meddicParts.push(`D: ${meddicDecisionProcess}`);
-            if (meddicIdentifyPain) meddicParts.push(`I: ${meddicIdentifyPain}`);
-            if (meddicChampion) meddicParts.push(`C: ${meddicChampion}`);
-            const meddicAnalysis = meddicParts.join("\n\n").slice(0, 1000);
+              // Construir MEDDIC Analysis string igual que en Airtable
+              const meddicParts = [];
+              if (meddicMetrics) meddicParts.push(`M: ${meddicMetrics}`);
+              if (meddicEconomicBuyer) meddicParts.push(`E: ${meddicEconomicBuyer}`);
+              if (meddicDecisionCriteria) meddicParts.push(`D: ${meddicDecisionCriteria}`);
+              if (meddicDecisionProcess) meddicParts.push(`D: ${meddicDecisionProcess}`);
+              if (meddicIdentifyPain) meddicParts.push(`I: ${meddicIdentifyPain}`);
+              if (meddicChampion) meddicParts.push(`C: ${meddicChampion}`);
+              const meddicAnalysis = meddicParts.join("\n\n").slice(0, 1000);
 
-            // Obtener City ID basándose en el nombre de la ciudad
-            const cityId = location?.city ? getCityId(location.city) : null;
-            
-            // Mapeo de campos según especificación:
-            // LastName/Company --> Client Name (senderName)
-            // Email --> From
-            // Country__c --> Country Code (location?.countryCode)
-            // City__c --> City (location?.city)
-            // City_ID__c --> City ID (cityId)
-            // Lead_AI_Scoring__c --> Business Oppt (finalIntent)
-            // MEDDIC_Analysis__c --> MEDDIC Analysis (meddicAnalysis)
-            const salesforceResult = await createSalesforceLead({
-              lastName: senderName || from.split("@")[0] || "Unknown",
-              company: senderName || from.split("@")[0] || "Unknown",
-              email: from,
-              countryCode: location?.countryCode || null,
-              city: location?.city || null,
-              cityId: cityId,
-              subject: subject || "",
-              body: body || "",
-              businessOppt: finalIntent,
-              meddicAnalysis: meddicAnalysis || null,
-            });
+              // Obtener City ID basándose en el nombre de la ciudad
+              const cityId = location?.city ? getCityId(location.city) : null;
 
-            if (salesforceResult?.id) {
-              salesforceLeadId = salesforceResult.id;
-              console.log(`[mfs] ✓ Lead creado en Salesforce para ${id} - Lead ID: ${salesforceLeadId}`);
-            } else if (salesforceResult?.skipped) {
-              console.log(`[mfs] Salesforce: Lead no creado (integración detenida) para ${id}`);
-            } else if (salesforceResult?.duplicate) {
-              console.log(`[mfs] Salesforce: Lead duplicado detectado para ${id}`);
-            } else {
-              console.warn(`[mfs] Salesforce: No se pudo crear lead para ${id}:`, salesforceResult?.error);
+              // Mapeo de campos según especificación:
+              // LastName/Company --> Client Name (senderName)
+              // Email --> From
+              // Country__c --> Country Code (location?.countryCode)
+              // City__c --> City (location?.city)
+              // City_ID__c --> City ID (cityId)
+              // Lead_AI_Scoring__c --> Business Oppt (finalIntent)
+              // MEDDIC_Analysis__c --> MEDDIC Analysis (meddicAnalysis)
+              const salesforceResult = await createSalesforceLead({
+                lastName: senderName || from.split("@")[0] || "Unknown",
+                company: senderName || from.split("@")[0] || "Unknown",
+                email: from,
+                countryCode: location?.countryCode || null,
+                city: location?.city || null,
+                cityId: cityId,
+                subject: subject || "",
+                body: body || "",
+                businessOppt: finalIntent,
+                meddicAnalysis: meddicAnalysis || null,
+              });
+
+              if (salesforceResult?.id) {
+                salesforceLeadId = salesforceResult.id;
+                console.log(`[mfs] ✓ Lead creado en Salesforce para ${id} - Lead ID: ${salesforceLeadId}`);
+              } else if (salesforceResult?.skipped) {
+                console.log(`[mfs] Salesforce: Lead no creado (integración detenida) para ${id}`);
+              } else if (salesforceResult?.duplicate) {
+                console.log(`[mfs] Salesforce: Lead duplicado detectado para ${id}`);
+              } else {
+                console.warn(`[mfs] Salesforce: No se pudo crear lead para ${id}:`, salesforceResult?.error);
+              }
+            } catch (salesforceError) {
+              // No bloquear el procesamiento si falla Salesforce
+              console.error(`[mfs] ✗ Error creando lead en Salesforce para ${id}:`, salesforceError?.message || salesforceError);
             }
-          } catch (salesforceError) {
-            // No bloquear el procesamiento si falla Salesforce
-            console.error(`[mfs] ✗ Error creando lead en Salesforce para ${id}:`, salesforceError?.message || salesforceError);
-          }
           }
         }
 
@@ -836,15 +836,15 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         let airtableRecord;
         try {
           airtableRecord = await createAirtableRecord({
-        id, from, to, cc, subject, body, bodySummary, timestamp,
-        intent: finalIntent, confidence: finalConfidence, reasoning: finalReasoning,
-        meddicMetrics, meddicEconomicBuyer, meddicDecisionCriteria, meddicDecisionProcess,
-        meddicIdentifyPain, meddicChampion, isFreeCoverage, isBarter, isPricing,
-        senderName, senderFirstName, language, location,
-        isFromSecretMedia: isToSecretMedia,
-        salesforceLeadId: salesforceLeadId || null,
-      });
-          
+            id, from, to, cc, subject, body, bodySummary, timestamp,
+            intent: finalIntent, confidence: finalConfidence, reasoning: finalReasoning,
+            meddicMetrics, meddicEconomicBuyer, meddicDecisionCriteria, meddicDecisionProcess,
+            meddicIdentifyPain, meddicChampion, isFreeCoverage, isBarter, isPricing,
+            senderName, senderFirstName, language, location,
+            isFromSecretMedia: isToSecretMedia,
+            salesforceLeadId: salesforceLeadId || null,
+          });
+
           // Log detallado del resultado de createAirtableRecord
           if (isToSecretMedia) {
             console.log(`[mfs] 🔍 DEBUG secretmedia@feverup.com - Resultado de createAirtableRecord:`, {
@@ -859,7 +859,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           // Si falla Airtable, verificar si es porque ya existe (duplicado)
           const errorData = airtableError?.response?.data;
           const errorStatus = airtableError?.response?.status;
-          
+
           if (errorStatus === 422 || (errorData?.error?.message && errorData.error.message.includes("duplicate"))) {
             // Es un duplicado - aplicar etiqueta processed y continuar
             console.log(`[mfs] Registro duplicado detectado para ${id} (error 422), aplicando etiqueta processed`);
@@ -878,7 +878,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
             });
             continue; // Continuar con el siguiente mensaje (SECUENCIAL)
           }
-          
+
           // Si falla Airtable por otro motivo, loguear y NO aplicar etiqueta processed para permitir reintento
           console.error(`[mfs] ✗ Error creando registro en Airtable para ${id}:`, airtableError?.message || airtableError);
           console.error(`[mfs] ⚠️ NO se aplicará etiqueta processed a ${id} para permitir reintento en próxima ejecución`);
@@ -914,7 +914,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
             airtableRecordDuplicate: airtableRecord?.duplicate,
           });
         }
-        
+
         if (airtableRecord?.id || airtableRecord?.duplicate) {
           if (isToSecretMedia) {
             console.log(`[mfs] ✓ Condición cumplida - Registro creado o duplicado para secretmedia@feverup.com - ID: ${id}, Airtable ID: ${airtableRecord?.id || "duplicado"}`);
@@ -936,25 +936,25 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           if (airtableRecord?.id && !airtableRecord?.duplicate) {
             const { readEmailSendingStatus } = await import("./storage.js");
             const emailStatus = await readEmailSendingStatus();
-            
+
             if (emailStatus.status === "active") {
               // Procesamiento secuencial: esperar a que se envíe antes de continuar
-        if (isBarter) {
-          try {
-            const emailResult = await sendBarterEmail(id, senderFirstName || "Client", brandName, subject, language || "en", body, from);
-            if (emailResult?.skipped) {
-              console.log(`[mfs] ⏸️ Email barter saltado para ${id}: ${emailResult.message}`);
-            }
+              if (isBarter) {
+                try {
+                  const emailResult = await sendBarterEmail(id, senderFirstName || "Client", brandName, subject, language || "en", body, from);
+                  if (emailResult?.skipped) {
+                    console.log(`[mfs] ⏸️ Email barter saltado para ${id}: ${emailResult.message}`);
+                  }
                 } catch (emailError) {
                   console.warn(`[mfs] Error enviando email barter para ${id}:`, emailError?.message);
-          }
-        }
-        if (isFreeCoverage) {
-          try {
-            const emailResult = await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject, language || "en", body, from);
-            if (emailResult?.skipped) {
-              console.log(`[mfs] ⏸️ Email free coverage saltado para ${id}: ${emailResult.message}`);
-            }
+                }
+              }
+              if (isFreeCoverage) {
+                try {
+                  const emailResult = await sendFreeCoverageEmail(id, senderFirstName || "Client", brandName, subject, language || "en", body, from);
+                  if (emailResult?.skipped) {
+                    console.log(`[mfs] ⏸️ Email free coverage saltado para ${id}: ${emailResult.message}`);
+                  }
                 } catch (emailError) {
                   console.warn(`[mfs] Error enviando email free coverage para ${id}:`, emailError?.message);
                 }
@@ -977,13 +977,13 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
               console.error(`[mfs] ✗ ERROR aplicando etiqueta processed a correo TO secretmedia@feverup.com - ID: ${id}, Error: ${labelError?.message}`);
             }
           }
-          
+
           // REGISTRAR CORREO PROCESADO EN LOS SISTEMAS DE DEDUPLICACIÓN
           // Registrar en cache de from/to/timestamp
           registerProcessedEmailByFromToTimestamp(from, to, timestamp, id);
           // Registrar en lista de últimos 20 (from/to/subject)
           registerRecentProcessedEmail(from, to, subject);
-          
+
           // Incrementar contador de ejecuciones (cada mensaje procesado = 1 ejecución)
           await incrementRateLimit();
         } else {
@@ -1013,20 +1013,20 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
           });
           releaseProcessingLock(id);
           continue; // Continuar con el siguiente mensaje SIN aplicar etiqueta processed
-      }
+        }
 
-      results.push({
-        id,
-        airtableId: airtableRecord?.id || null,
-        intent: finalIntent,
-        confidence: finalConfidence,
-      });
-    } catch (e) {
+        results.push({
+          id,
+          airtableId: airtableRecord?.id || null,
+          intent: finalIntent,
+          confidence: finalConfidence,
+        });
+      } catch (e) {
         // En caso de error, loguear y NO aplicar etiqueta processed para permitir reintento
         console.error(`[mfs] ✗ Error procesando mensaje ${id}:`, e?.message || e);
         console.error(`[mfs] Stack trace:`, e?.stack);
         console.error(`[mfs] ⚠️ NO se aplicará etiqueta processed a ${id} para permitir reintento en próxima ejecución`);
-        
+
         // Log detallado para debugging
         if (isToSecretMedia) {
           console.error(`[mfs] ✗ ERROR CRÍTICO procesando correo TO secretmedia@feverup.com - ID: ${id}`, {
@@ -1039,7 +1039,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
             errorData: e?.response?.data || e?.data,
           });
         }
-        
+
         // NO aplicar etiqueta processed - permitir que se reintente en la próxima ejecución
         // Solo aplicar etiqueta si es un error crítico que no permite procesamiento (ej: mensaje no existe)
         const isCriticalError = String(e?.response?.status || e?.code || e?.status) === "404";
@@ -1052,7 +1052,7 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
             console.warn(`[mfs] No se pudo aplicar etiqueta processed a ${id}:`, labelError?.message);
           }
         }
-        
+
         results.push({
           id,
           airtableId: null,

@@ -63,12 +63,12 @@ export async function callModelText(modelName, prompt) {
         }
       } catch (e) {
         // Detectar errores 404 o "not found" de diferentes formas
-        const is404 = isNotFound(e) || 
+        const is404 = isNotFound(e) ||
           String(e?.message || "").includes("not found") ||
           String(e?.message || "").includes("NOT_FOUND") ||
           String(e?.code || "") === "404" ||
           String(e?.status || "") === "404";
-        
+
         if (is404) {
           console.warn("[mfs] Vertex NOT_FOUND → pruebo siguiente combinación", {
             location: loc,
@@ -106,7 +106,7 @@ export async function generateBodySummary(body) {
 
   // Limitar el body a 100000 caracteres para evitar tokens excesivos
   const bodyToSummarize = body.slice(0, 100000);
-  
+
   const summaryPrompt = `Summarize the following email in a concise and clear way. The summary must:
 - Capture the main points and the sender's intention
 - Be useful to quickly understand what the email is about
@@ -122,7 +122,7 @@ Summary:`;
     const modelToUse = CFG.VERTEX_MODEL || CFG.VERTEX_INTENT_MODEL;
     console.log("[mfs] Generando resumen del body con Gemini usando modelo:", modelToUse);
     const summary = await callModelText(modelToUse, summaryPrompt);
-    
+
     if (summary && summary.trim()) {
       // Limitar a 1500 caracteres para mantener el resumen conciso (~150 palabras)
       const trimmedSummary = summary.trim().slice(0, 1500);
@@ -132,7 +132,7 @@ Summary:`;
       });
       return trimmedSummary;
     }
-    
+
     return "";
   } catch (e) {
     console.error("[mfs] Error generando resumen del body:", e);
@@ -149,53 +149,53 @@ function quickDiscardCheck({ subject, from, to, body }) {
   const subjectLc = (subject || "").toLowerCase();
   const bodyLc = (body || "").toLowerCase();
   const mailText = `${subjectLc}\n${bodyLc}`;
-  
+
   // Verificaciones rápidas de casos obvios de Discard
   // 1. Test emails
   if (subjectLc === "test" || /test\s+email|email\s+test/i.test(subjectLc)) {
     return { isDiscard: true, reason: "Test email" };
   }
-  
+
   // 2. Kaboozt - agencia de SEO específica que no nos interesa
   if (/kaboozt/i.test(fromLc) || /kaboozt/i.test(mailText)) {
     return { isDiscard: true, reason: "Kaboozt SEO agency" };
   }
-  
+
   // 3. SEO agencies (verificación rápida por dominio)
   if (/seo|search engine optimization|search engine marketing|sem\b/i.test(fromLc) ||
-      /seo agency|seo company|seo services/i.test(mailText)) {
+    /seo agency|seo company|seo services/i.test(mailText)) {
     return { isDiscard: true, reason: "SEO agency" };
   }
-  
+
   // 3. Affiliate programs (verificación rápida)
   if (/affiliate|influator|noxinfluencermgmt|influencermgmt/i.test(fromLc) ||
-      /affiliate program|influencer program|brand ambassador/i.test(mailText)) {
+    /affiliate program|influencer program|brand ambassador/i.test(mailText)) {
     return { isDiscard: true, reason: "Affiliate program" };
   }
-  
+
   // 4. Gambling/Betting
   if (/(apuestas|betting|casino|sports betting|bookmaker|gambling)/i.test(mailText)) {
     return { isDiscard: true, reason: "Gambling related" };
   }
-  
+
   // 5. Instagram/Facebook notifications
   if (/instagram\.com|facebookmail\.com/.test(fromLc) &&
-      /(new login|security alert|password reset|verification code)/i.test(mailText)) {
+    /(new login|security alert|password reset|verification code)/i.test(mailText)) {
     return { isDiscard: true, reason: "Social media notification" };
   }
-  
+
   // 6. User support requests (verificación rápida)
   if (/(ticket|billet|entrée|admission|horaires|opening hours|adresse|address|location)/i.test(mailText) &&
-      !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboración)/i.test(mailText)) {
+    !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboración)/i.test(mailText)) {
     return { isDiscard: true, reason: "User support request" };
   }
-  
+
   // 7. Contact change emails (verificación rápida)
   if (/(left the company|no longer with|deixei de fazer parte|please contact|contact instead)/i.test(mailText) &&
-      !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboración)/i.test(mailText)) {
+    !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboración)/i.test(mailText)) {
     return { isDiscard: true, reason: "Contact change email" };
   }
-  
+
   // 8. E-commerce newsletters/marketing emails (verificación rápida)
   // Si tiene unsubscribe Y contenido de e-commerce (shop now, productos, ofertas), es newsletter
   const hasUnsubscribe = /(unsubscribe|opt[-\s]?out|darse de baja|cancelar suscripci[oó]n)/i.test(mailText);
@@ -204,14 +204,14 @@ function quickDiscardCheck({ subject, from, to, body }) {
   if (hasUnsubscribe && (hasEcommerceContent || hasShopifyTracking)) {
     return { isDiscard: true, reason: "E-commerce newsletter/marketing email" };
   }
-  
+
   // 8b. Newsletters con tracking links específicos de email marketing (click.email., view.email., Mailchimp, Partiful, etc.)
   // Si tiene unsubscribe Y tracking links de email marketing, es newsletter
   const hasEmailTrackingLinks = /(click\.email\.|view\.email\.|email\.[a-z0-9]+\.org|email\.[a-z0-9]+\.com|links\.[a-z0-9]+\.(com|org|net)|mailchi\.mp|mailchimp\.com|partiful\.com|list-manage\.com)/i.test(mailText);
   if (hasUnsubscribe && hasEmailTrackingLinks) {
     return { isDiscard: true, reason: "Newsletter with email tracking links" };
   }
-  
+
   // 8c. Invitaciones promocionales a eventos con unsubscribe (Mailchimp, Partiful, etc.)
   // Si tiene unsubscribe Y es invitación a evento promocional, es newsletter
   const isEventPromoInvite = /(you're invited|you are invited|get your tickets|buy tickets|event invitation|invitation to)/i.test(mailText) &&
@@ -220,14 +220,14 @@ function quickDiscardCheck({ subject, from, to, body }) {
   if (isEventPromoInvite && !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboraci[oó]n|rate|pricing|budget|fee)/i.test(mailText)) {
     return { isDiscard: true, reason: "Promotional event invitation newsletter" };
   }
-  
+
   // 9. Flippa - plataforma de venta de negocios (newsletters de marketing)
   // Estos correos son newsletters promocionales sin intención comercial real
-  if (/flippa\.com/i.test(fromLc) || /flippa\.com/i.test(mailText) || 
-      /(new activity.*updates.*insights|new buyers.*interested.*business|list your business|sell now|schedule a call.*business advisor|indicative valuation|business owners.*exited)/i.test(mailText)) {
+  if (/flippa\.com/i.test(fromLc) || /flippa\.com/i.test(mailText) ||
+    /(new activity.*updates.*insights|new buyers.*interested.*business|list your business|sell now|schedule a call.*business advisor|indicative valuation|business owners.*exited)/i.test(mailText)) {
     return { isDiscard: true, reason: "Flippa marketing newsletter" };
   }
-  
+
   // 10. Out-of-office / Auto-reply emails (verificación rápida)
   // Estos correos son respuestas automáticas sin intención comercial real
   const outOfOfficePatterns = [
@@ -239,7 +239,7 @@ function quickDiscardCheck({ subject, from, to, body }) {
     /(auto.reply|automatic reply|auto response|automatic response|vacation reply|holiday reply)/i,
     /(i am currently|i'm currently|currently (unavailable|away|out|offline|not available))/i,
   ];
-  
+
   // Verificar si es out-of-office/auto-reply
   // Debe tener al menos 2 patrones para evitar falsos positivos
   const outOfOfficeMatches = outOfOfficePatterns.filter(regex => regex.test(mailText)).length;
@@ -250,7 +250,7 @@ function quickDiscardCheck({ subject, from, to, body }) {
       return { isDiscard: true, reason: "Out-of-office / Auto-reply email" };
     }
   }
-  
+
   return { isDiscard: false };
 }
 
@@ -259,18 +259,15 @@ function quickDiscardCheck({ subject, from, to, body }) {
  */
 export async function classifyIntent({ subject, from, to, body }) {
   const subjectLog = (subject || "").slice(0, 120);
-  console.log("[mfs] [classify] Empiezo clasificación de correo:", {
-    from,
-    to,
-    subject: subjectLog,
-  });
+  // LOG REMOVED FOR COST OPTIMIZATION
+  // console.log("[mfs] [classify] Empiezo clasificación de correo:", { from, to, subject: subjectLog });
 
-  // OPTIMIZACIÓN: Limitar el body a 8000 caracteres para reducir tokens
+  // OPTIMIZACIÓN: Limitar el body a 4000 caracteres para reducir tokens (coste)
   // Las primeras líneas suelen contener la información más relevante
-  const bodyToAnalyze = body ? body.slice(0, 8000) : "";
-  
+  const bodyToAnalyze = body ? body.slice(0, 4000) : "";
+
   // Si el body es muy largo, añadir nota al final
-  const bodyTruncated = body && body.length > 8000;
+  const bodyTruncated = body && body.length > 4000;
   const bodyNote = bodyTruncated ? "\n\n[Email body truncated for analysis]" : "";
 
   const prompt = `${INTENT_PROMPT}
@@ -308,10 +305,10 @@ ${bodyToAnalyze}${bodyNote}`.trim();
     // No llamamos a la API, usamos solo heurísticas
   } else {
     // Solo llamamos a la API si no es un caso obvio de Discard
-  try {
-    raw = await callModelText(CFG.VERTEX_INTENT_MODEL, prompt);
-  } catch {
-    raw = "";
+    try {
+      raw = await callModelText(CFG.VERTEX_INTENT_MODEL, prompt);
+    } catch {
+      raw = "";
     }
   }
 
@@ -329,7 +326,7 @@ ${bodyToAnalyze}${bodyNote}`.trim();
       if (parsed.intent) {
         modelIntentRaw = String(parsed.intent).trim();
       }
-      
+
       // Extract checkbox flags
       if (parsed.free_coverage_request !== undefined) {
         modelFreeCoverage = Boolean(parsed.free_coverage_request);
@@ -340,12 +337,12 @@ ${bodyToAnalyze}${bodyNote}`.trim();
       if (parsed.pricing_request !== undefined) {
         modelPricing = Boolean(parsed.pricing_request);
       }
-      
+
       // Extract MEDDIC fields (only for Medium, High, or Very High - not for Low or Discard)
       // IMPORTANT: All MEDDIC fields must always have a value (use "no info" if not available)
       const validMeddicIntents = ["Medium", "High", "Very High"];
       const shouldExtractMeddic = modelIntentRaw && validMeddicIntents.includes(modelIntentRaw);
-      
+
       // Always extract MEDDIC fields, but use "no info" if intent is Low or Discard
       meddicMetrics = parsed.meddic_metrics ? String(parsed.meddic_metrics).trim() : (shouldExtractMeddic ? "" : "no info");
       meddicEconomicBuyer = parsed.meddic_economic_buyer ? String(parsed.meddic_economic_buyer).trim() : (shouldExtractMeddic ? "" : "no info");
@@ -353,12 +350,12 @@ ${bodyToAnalyze}${bodyNote}`.trim();
       meddicDecisionProcess = parsed.meddic_decision_process ? String(parsed.meddic_decision_process).trim() : (shouldExtractMeddic ? "" : "no info");
       meddicIdentifyPain = parsed.meddic_identify_pain ? String(parsed.meddic_identify_pain).trim() : (shouldExtractMeddic ? "" : "no info");
       meddicChampion = parsed.meddic_champion ? String(parsed.meddic_champion).trim() : (shouldExtractMeddic ? "" : "no info");
-        
-        // Legacy support: if old meddic_pain_hypothesis exists, use it for Identify Pain
-        if (!meddicIdentifyPain && parsed.meddic_pain_hypothesis) {
-          meddicIdentifyPain = String(parsed.meddic_pain_hypothesis).trim();
-        }
-      
+
+      // Legacy support: if old meddic_pain_hypothesis exists, use it for Identify Pain
+      if (!meddicIdentifyPain && parsed.meddic_pain_hypothesis) {
+        meddicIdentifyPain = String(parsed.meddic_pain_hypothesis).trim();
+      }
+
       // Ensure all MEDDIC fields have a value (use "no info" if empty)
       if (!meddicMetrics) meddicMetrics = "no info";
       if (!meddicEconomicBuyer) meddicEconomicBuyer = "no info";
@@ -449,15 +446,15 @@ async function classifyIntentHeuristic({
     // Términos en otros idiomas
     /(agence seo|agence de seo|soci[ée]t[ée] seo|services seo|consultant seo|expert seo|sp[ée]cialiste seo)/i,
   ];
-  
+
   // Verificar si el email viene de una agencia de SEO
   // Buscar en: dominio del email, nombre del remitente (si está disponible), subject, y body
-  const isSeoAgency = seoAgencyKeywords.some(regex => 
-    regex.test(fromLc) || 
-    regex.test(subjectLc) || 
+  const isSeoAgency = seoAgencyKeywords.some(regex =>
+    regex.test(fromLc) ||
+    regex.test(subjectLc) ||
     regex.test(normalizedBody)
   );
-  
+
   // También verificar patrones específicos de agencias SEO en el cuerpo
   const seoAgencyPatterns = [
     /(we are (an|a) (seo|search engine) (agency|company|firm|specialist))/i,
@@ -468,9 +465,9 @@ async function classifyIntentHeuristic({
     /(we help (businesses|companies|clients) (with|improve) (seo|search engine|ranking))/i,
     /(ayudamos (a empresas|empresas|clientes) (con|a mejorar) (seo|posicionamiento|ranking))/i,
   ];
-  
+
   const hasSeoAgencyPattern = seoAgencyPatterns.some(regex => regex.test(mailText));
-  
+
   const isSeoAgencyEmail = isSeoAgency || hasSeoAgencyPattern;
 
   // Detección de programas de afiliados/influencer marketing - debe ejecutarse temprano para forzar Discard
@@ -482,22 +479,22 @@ async function classifyIntentHeuristic({
     // Términos en español
     /(programa de afiliados|afiliados|influencer|embajador de marca|programa de creadores|colaboraci[oó]n con creadores)/i,
   ];
-  
+
   // Verificar si el email viene de un programa de afiliados/influencer
-  const isAffiliateProgram = affiliateKeywords.some(regex => 
-    regex.test(fromLc) || 
-    regex.test(subjectLc) || 
+  const isAffiliateProgram = affiliateKeywords.some(regex =>
+    regex.test(fromLc) ||
+    regex.test(subjectLc) ||
     regex.test(normalizedBody)
   );
-  
+
   // Detectar tracking links de programas de afiliados/influencer
   const affiliateTrackingLinks = [
     /(url\d+\.app\.influeator\.com|track\.noxinfluencermgmt\.com|influeator\.com|influencermgmt\.com)/i,
     /(affiliate.*tracking|influencer.*tracking|commission.*tracking)/i,
   ];
-  
+
   const hasAffiliateTrackingLinks = affiliateTrackingLinks.some(regex => regex.test(mailText));
-  
+
   // Patrones específicos de programas de afiliados/influencer en el cuerpo
   const affiliatePatterns = [
     /(we'd love to invite you to join (in|our) (campaign|program|partnership))/i,
@@ -513,9 +510,9 @@ async function classifyIntentHeuristic({
     /(colaboraci[oó]n (pagada|remunerada|con pago))/i,
     /(comisi[oó]n (por|de|del))/i,
   ];
-  
+
   const hasAffiliatePattern = affiliatePatterns.some(regex => regex.test(mailText));
-  
+
   const isAffiliateEmail = isAffiliateProgram || hasAffiliateTrackingLinks || hasAffiliatePattern;
 
   // Detección de ofertas donde NOSOTROS seríamos los creadores/influencers (deben descartarse)
@@ -547,9 +544,9 @@ async function classifyIntentHeuristic({
     /(sus visualizaciones son m[aá]s altas cuando publican para|their views are higher when they post for)/i,
     /(si te gustar[ií]a.*colaborar.*env[ií]anos.*tarifas|if you'd like.*collaborate.*send us.*rates)/i,
   ];
-  
+
   const isOfferingUsToBeInfluencer = offeringUsToBeInfluencerPatterns.some(regex => regex.test(mailText));
-  
+
   // También detectar cuando el contexto general es "queremos que seas nuestro influencer" vs "queremos que promociones algo"
   // Si mencionan "influencer", "creator", "colaboraciones pagadas" Y "trabajar contigo" pero NO piden que promocionemos algo específico
   const hasInfluencerOfferContext = (
@@ -557,7 +554,7 @@ async function classifyIntentHeuristic({
     /(trabajar contigo|work with you|colaborar contigo|collaborate with you)/i.test(mailText) &&
     !/(promocionar|promote|anunciar|advertise|publicitar|publicize) (nuestro|nuestra|our|my) (producto|product|servicio|service|marca|brand|evento|event)/i.test(mailText)
   );
-  
+
   const isOfferingUsSomething = isOfferingUsToBeInfluencer || hasInfluencerOfferContext;
 
   // Regex patterns
@@ -619,7 +616,7 @@ async function classifyIntentHeuristic({
     /(presupuesto|budget|or[çc]amento)\s+(de|di|do|du|der|for|por|para|per|pour)\s+(publicidad|advertising|publicit[ée]|werbung|pubblicit[àa])/i,
     /(discutir|discuss|discutere|discuter|diskutieren)\s+(precio|price|prezzo|preço|prix|preis|tarifa|tariffa|tarifa|tarif|rate|pricing)/i,
   ];
-  
+
   // Check if pricing is being REQUESTED (not just mentioned)
   const isPricing = pricingRequestPhrases.some(regex => regex.test(mailText)) &&
     // Exclude if it's clearly a press release or content sharing
@@ -639,11 +636,11 @@ async function classifyIntentHeuristic({
   // También detecta contenido informativo compartido (restaurantes, lugares, eventos) sin solicitud comercial
   const hasPrApprovedImages = /(pr-approved|pp-approved|pr approved|press approved|media approved)\s+(images?|photos?|assets?|materials?)/i.test(mailText);
   const hasInformationalContent = /(drive\.google\.com|google\.com\/drive|photo credit|image credit|pr-approved|pp-approved|full details.*attached|images.*attached|view everything|you'll find|details below|you'll find full details)/i.test(mailText);
-  const hasRestaurantVenueInfo = /(address:|website:|instagram:|facebook:|tiktok:|location:|served from|open from|menu|brunch|breakfast|dinner|lunch|start.*at|ring in|kicking off)/i.test(mailText) && 
-    !hasPartnershipCollabAsk && 
+  const hasRestaurantVenueInfo = /(address:|website:|instagram:|facebook:|tiktok:|location:|served from|open from|menu|brunch|breakfast|dinner|lunch|start.*at|ring in|kicking off)/i.test(mailText) &&
+    !hasPartnershipCollabAsk &&
     !isPricing &&
     !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboraci[oó]n|rate|pricing|budget|fee)/i.test(mailText);
-  
+
   const isPressStyle =
     pressReleaseRegex.test(mailText) ||
     prAssetsRegex.test(mailText) ||
@@ -656,7 +653,7 @@ async function classifyIntentHeuristic({
     // Si el subject o inicio del body contiene "Press Release" o equivalente
     /^(press release|communiqu[ée] de presse|nota de prensa|comunicado de prensa)/i.test(subjectLc) ||
     /^(press release|communiqu[ée] de presse|nota de prensa|comunicado de prensa)/i.test(bodyTextForSearch.slice(0, 200));
-  
+
   // Log para debugging
   if (isPressStyle) {
     console.log("[mfs] [classify] Press release detectado:", {
@@ -695,22 +692,22 @@ async function classifyIntentHeuristic({
   // Detecta: "media invite", "press invite", "press passes", "press accreditation", "media are invited"
   const hasPressPassOrAccreditation = /(press pass|press accreditation|media pass|media accreditation|press credential|media credential)/i.test(mailText);
   const hasMediaInviteLanguage = /(media (are )?invited|press (are )?invited|reporters.*invited|photographers.*invited|broadcast media.*invited|media invite|press invite|media\/press invite)/i.test(mailText);
-  
+
   // Detectar ofertas de comida/comida gratis o servicios junto con solicitudes de compartir
   const hasComplimentaryOffer = /(complimentary|free (lunch|dinner|meal|food|drink|drinks|tasting|experience|event|visit|stay|accommodation|ticket|tickets|pass|passes)|gratis|gratuito|invitaci[oó]n (a|para)|invited to|welcome you to|we'?d love to (welcome|host|invite))/i.test(mailText);
   const hasSocialMediaShareRequest = /(share (your|the) (experience|visit|thoughts|review|photos?|videos?|content)|post (about|on)|tag (us|the venue|@)|instagram (stories?|posts?|reels?|carousel)|tiktok|social media|share with (your|the) (audience|followers|readers)|in return|in exchange)/i.test(mailText);
   const hasInReturnLanguage = /(in return|in exchange|a cambio|en cambio|en retorno|en agradecimiento|as thanks|como agradecimiento)/i.test(mailText);
-  
+
   // Detectar invitaciones a eventos con comida/comida gratis
   const hasEventWithComplimentary = hasEventInvite && hasComplimentaryOffer;
-  
+
   // Detectar ofertas de comida/comida gratis junto con solicitudes de compartir en redes sociales
   const hasComplimentaryWithShare = hasComplimentaryOffer && hasSocialMediaShareRequest;
-  
+
   // Detectar "Best of" awards/rankings (ofrecen reconocimiento a cambio de publicidad) - BARTER REQUEST
   const hasBestOfAward = /(best of|readers'? choice|readers choice|award|certificate|recognition|recognized as|be recognized|nominated|nomination)/i.test(mailText);
   const hasAwardWithAdvertising = hasBestOfAward && /(advertising|advertise|publicidad|anunciar|promote|promocionar|sponsor|sponsorship|patrocinio)/i.test(mailText);
-  
+
   const isBarterRequest =
     (isCoverageRequest && hasEventInvite) ||
     (hasEventInvite && (isPressStyle || isCoverageRequest || mentionsEvent)) ||
@@ -725,22 +722,22 @@ async function classifyIntentHeuristic({
   // Free Coverage Request: Incluye press releases, noticias compartidas, guest articles/posts, y peticiones directas de cobertura gratis
   // Si hay algo a cambio (invitación, servicio), NO es Free Coverage, es Barter
   // IMPORTANTE: Guest articles/posts sin mencionar partnership/comercial son Free Coverage Request
-  const isGuestArticleRequest = /(guest (post|article|content)|write a guest (post|article)|contribute a guest (post|article)|we'?d love to contribute|we'?d love to write|high-quality.*guest|original guest)/i.test(mailText) && 
-    !hasPartnershipCollabAsk && 
-    !isPricing && 
+  const isGuestArticleRequest = /(guest (post|article|content)|write a guest (post|article)|contribute a guest (post|article)|we'?d love to contribute|we'?d love to write|high-quality.*guest|original guest)/i.test(mailText) &&
+    !hasPartnershipCollabAsk &&
+    !isPricing &&
     !/(partnership|collaboration|advertising|sponsorship|paid|budget|fee|rate|pricing)/i.test(mailText);
-  
+
   // Free Coverage Request: Incluye press releases, contenido informativo compartido sin solicitud comercial
   // También: contenido informativo sobre restaurantes/lugares/eventos sin solicitud comercial
-  const isFreeCoverageRequest = 
+  const isFreeCoverageRequest =
     (isPressStyle || isCoverageRequest || isEventPrInfo || isGuestArticleRequest) && !isBarterRequest ||
     // Contenido informativo sobre restaurantes/lugares/eventos sin solicitud comercial
     (hasInformationalContent && hasRestaurantVenueInfo && !hasPartnershipCollabAsk && !isPricing);
-  
+
   // IMPORTANTE: Si es un press release/media release sin pedir pricing explícitamente, NO es pricing request
   // También excluir si están ofreciendo una historia/estudio/datos sin pedir pricing
-  const isExplicitPricingRequest = isPricing && 
-    !isPressStyle && 
+  const isExplicitPricingRequest = isPricing &&
+    !isPressStyle &&
     !/(media release|press release|nota de prensa|comunicado de prensa|story for|data study|report|offering.*story|sharing.*story|of interest for|would be of interest)/i.test(mailText);
   const isMediaKitPricingRequest = isExplicitPricingRequest;
 
@@ -796,14 +793,14 @@ async function classifyIntentHeuristic({
     /^(thank you|thanks|gracias|merci|danke|obrigado)[\s.,!]*\s*(very much|so much|a lot|muchas|mucho|muito)[\s.,!]*$/i,
     /^(thank you|thanks|gracias|merci|danke|obrigado)[\s.,!]*\s*(for|por|pour|f[üu]r)[\s.,!]*$/i,
   ];
-  
+
   // Verificar si es una respuesta genérica de agradecimiento
-  const isGenericThankYou = genericThankYouPatterns.some(regex => regex.test(normalizedBody.trim())) && 
+  const isGenericThankYou = genericThankYouPatterns.some(regex => regex.test(normalizedBody.trim())) &&
     normalizedBody.trim().length < 100; // Solo si es muy corto
-  
+
   // Detectar si el email es una respuesta (Re:, Fwd:, etc.) con solo agradecimiento
   const isReplyWithOnlyThanks = (
-    /^(re|fwd?|fw):/i.test(subjectLc) && 
+    /^(re|fwd?|fw):/i.test(subjectLc) &&
     isGenericThankYou
   );
 
@@ -825,7 +822,7 @@ async function classifyIntentHeuristic({
     // Preguntas sobre información básica
     /(information|informaci[oó]n|info|renseignements?|contact.*info)/i,
   ];
-  
+
   // Patrones de preguntas de soporte al usuario
   const userSupportQuestionPatterns = [
     // Preguntas que empiezan con "Existe-t-il", "Do you have", "Can I", etc.
@@ -837,21 +834,21 @@ async function classifyIntentHeuristic({
     // Preguntas sobre regalar/comprar para otros
     /(offrir.*[àa]|give.*to|gift.*to|buy.*for|acheter.*pour|regalar.*a)/i,
   ];
-  
+
   // Verificar si es una solicitud de soporte al usuario
-  const hasUserSupportKeywords = userSupportKeywords.some(regex => 
-    regex.test(subjectLc) || 
+  const hasUserSupportKeywords = userSupportKeywords.some(regex =>
+    regex.test(subjectLc) ||
     regex.test(normalizedBody)
   );
-  
-  const hasUserSupportQuestionPattern = userSupportQuestionPatterns.some(regex => 
+
+  const hasUserSupportQuestionPattern = userSupportQuestionPatterns.some(regex =>
     regex.test(normalizedBody)
   );
-  
+
   // Si tiene keywords de soporte Y pregunta sobre tickets/horarios/ubicación, es user support
   // PERO excluir si menciona partnership, collaboration, advertising, sponsorship (esas son solicitudes de negocio)
   const hasBusinessContext = /(partnership|collaboration|advertising|advertise|sponsorship|sponsor|publicidad|colaboraci[oó]n|partenariat|partenariado|media kit|rate card|pricing|budget|fee|tarif)/i.test(mailText);
-  
+
   const isUserSupportRequest = (hasUserSupportKeywords || hasUserSupportQuestionPattern) && !hasBusinessContext;
 
   // Detección de correos informativos sobre cambios de contacto o personas que dejaron la empresa
@@ -866,18 +863,18 @@ async function classifyIntentHeuristic({
     // Frases comunes en estos correos
     /(for any matters|para qualquer assunto|for ongoing|para projectos|ongoing projects|projectos em curso|partnerships in course|parcerias em curso)/i,
   ];
-  
+
   // Verificar si el correo contiene indicadores de cambio de contacto
   const hasContactChangeKeywords = contactChangeKeywords.some(regex => regex.test(mailText));
-  
+
   // Verificar si menciona redirigir a otra persona con email/teléfono
   const hasContactRedirect = /(contact|contacte|reach|ligar|telefonar)\s+([a-z]+(?:\s+[a-z]+)*)\s+(at|através|through|via|por|pelo|pela)\s+([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}|\+\d+[\d\s]+)/i.test(mailText);
-  
+
   // Verificar si es principalmente informativo (no tiene solicitud comercial)
-  const isInformationalOnly = hasContactChangeKeywords && 
-    !hasBusinessContext && 
+  const isInformationalOnly = hasContactChangeKeywords &&
+    !hasBusinessContext &&
     !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboraci[oó]n|partenariat|partenariado|media kit|rate card|pricing|budget|fee|tarif|proposal|proposta|offer|oferta|interested|interessado)/i.test(mailText);
-  
+
   // Si tiene keywords de cambio de contacto Y redirección Y es informativo, es un correo de cambio de contacto
   const isContactChangeEmail = (hasContactChangeKeywords || hasContactRedirect) && isInformationalOnly;
 
@@ -896,15 +893,15 @@ async function classifyIntentHeuristic({
     // Redirección a otra organización después del cierre
     /(please contact|por favor contacte|reach out to|contactar a|if you need|si necesita)/i,
   ];
-  
+
   // Verificar si el correo contiene indicadores de cierre de organización
   const hasClosureKeywords = organizationClosureKeywords.some(regex => regex.test(mailText));
-  
+
   // Verificar si es principalmente informativo (no tiene solicitud comercial)
-  const isClosureInformational = hasClosureKeywords && 
-    !hasBusinessContext && 
+  const isClosureInformational = hasClosureKeywords &&
+    !hasBusinessContext &&
     !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboraci[oó]n|partenariat|partenariado|media kit|rate card|pricing|budget|fee|tarif|proposal|proposta|offer|oferta|interested|interessado)/i.test(mailText);
-  
+
   // Si tiene keywords de cierre Y es informativo, es un correo de cierre de organización
   const isOrganizationClosureEmail = isClosureInformational;
 
@@ -919,11 +916,11 @@ async function classifyIntentHeuristic({
     /(auto.reply|automatic reply|auto response|automatic response|vacation reply|holiday reply)/i,
     /(i am currently|i'm currently|currently (unavailable|away|out|offline|not available))/i,
   ];
-  
+
   // Verificar si es out-of-office/auto-reply
   // Debe tener al menos 2 patrones para evitar falsos positivos
   const outOfOfficeMatches = outOfOfficePatterns.filter(regex => regex.test(mailText)).length;
-  const isOutOfOfficeEmail = outOfOfficeMatches >= 2 && 
+  const isOutOfOfficeEmail = outOfOfficeMatches >= 2 &&
     !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboraci[oó]n|partenariat|partenariado|media kit|rate card|pricing|budget|fee|tarif|proposal|proposta|offer|oferta|interested|interessado|quotation|quote)/i.test(mailText);
 
   // Detección de respuestas de cuentas internas en el hilo del correo
@@ -1084,7 +1081,7 @@ async function classifyIntentHeuristic({
     'quebec@secretmedianetwork.com',
     'stuttgart@secretmedianetwork.com',
   ];
-  
+
   // Patrones para detectar respuestas en hilos de correo
   // Buscar patrones típicos de respuestas: "From:", "De:", "On [date] wrote:", etc.
   const replyPatterns = [
@@ -1101,15 +1098,15 @@ async function classifyIntentHeuristic({
     // Patrón de bloque de respuesta con email en líneas separadas
     /(from|de|von|da|van)\s*:\s*[^\n]*\n\s*([a-zA-Z0-9._%+-]+@(?:secretmedianetwork\.com|feverup\.com|secretldn\.com|barcelonasecreta\.com|valenciasecreta\.com|secretnyc\.co))/i,
   ];
-  
+
   // Verificar si hay una respuesta de alguna cuenta interna en el cuerpo
   // Buscar bloques de respuesta de email que contengan estas direcciones
   let hasInternalReply = false;
-  
+
   // Crear un regex que busque cualquier email de los dominios internos
   // Incluir caracteres especiales como + para capturar variantes como "abudhabi+managers@..."
   const internalEmailRegex = /([a-zA-Z0-9._%+\-]+@(?:secretmedianetwork\.com|feverup\.com|secretldn\.com|barcelonasecreta\.com|valenciasecreta\.com|secretnyc\.co))/gi;
-  
+
   // Buscar todos los emails internos en el cuerpo
   const internalEmailsInBody = [];
   let match;
@@ -1119,19 +1116,19 @@ async function classifyIntentHeuristic({
       internalEmailsInBody.push(foundEmail);
     }
   }
-  
+
   // Si hay emails internos, verificar si están en un contexto de respuesta
   if (internalEmailsInBody.length > 0) {
     // Verificar si alguno de estos emails está en un contexto de respuesta
     // Buscar patrones típicos de respuestas de email alrededor de estos emails
-    
+
     for (const email of internalEmailsInBody) {
       // Verificar si es una de las cuentas específicas de la lista (comparación exacta, case-insensitive)
       // O si es cualquier cuenta de @feverup.com
       const normalizedEmail = email.toLowerCase().trim();
-      const isInternalAccount = internalSecretMediaAccounts.some(acc => acc.toLowerCase().trim() === normalizedEmail) || 
-                                 normalizedEmail.includes('@feverup.com');
-      
+      const isInternalAccount = internalSecretMediaAccounts.some(acc => acc.toLowerCase().trim() === normalizedEmail) ||
+        normalizedEmail.includes('@feverup.com');
+
       if (isInternalAccount) {
         // Buscar contexto de respuesta alrededor de este email
         // Buscar en un rango de 200 caracteres antes y después del email
@@ -1140,7 +1137,7 @@ async function classifyIntentHeuristic({
           const contextStart = Math.max(0, emailIndex - 200);
           const contextEnd = Math.min(body.length, emailIndex + email.length + 200);
           const context = body.substring(contextStart, contextEnd).toLowerCase();
-          
+
           // Verificar si hay indicadores de respuesta en el contexto
           const hasReplyIndicators = [
             /from\s*:/i,
@@ -1164,7 +1161,7 @@ async function classifyIntentHeuristic({
             /^le\s+/m, // Líneas que empiezan con "Le" (típico de respuestas en francés)
             /^el\s+/m, // Líneas que empiezan con "El" (típico de respuestas en español)
           ].some(pattern => pattern.test(context));
-          
+
           if (hasReplyIndicators) {
             hasInternalReply = true;
             break;
@@ -1176,13 +1173,13 @@ async function classifyIntentHeuristic({
 
   // Detección de apuestas, casinos y temas relacionados de gambling
   const gamblingKeywordsRegex = /(apuestas|betting|casino|casinos|sports betting|sportsbook|bookmaker|bookmakers|poker|póker|gambling|juegos de azar|juego de azar|ruleta|blackjack|baccarat|slots|tragamonedas|máquinas tragaperras|bet|bets|apostar|apuesta|apostamos|apostar en|betting platform|betting site|casino online|online casino|casino en línea|casino virtual|promoción de casino|promoción de apuestas|promo de casino|promo de apuestas|publicidad de casino|publicidad de apuestas|anunciar casino|anunciar apuestas|promover casino|promover apuestas|colaboración casino|colaboración apuestas|partnership casino|partnership apuestas|sponsorship casino|sponsorship apuestas|patrocinio casino|patrocinio apuestas)/i;
-  
+
   const isGamblingRelated = gamblingKeywordsRegex.test(mailText);
 
   // Detección de firmas automáticas de email clients (Outlook, Gmail, etc.)
   // Estas firmas indican que el email es principalmente una firma automática sin contenido real
   const automaticEmailSignatureRegex = /(envoy[ée] (à partir de|depuis|from)|sent (from|via)|enviado (desde|desde)|enviado (a partir de|desde)|get outlook (for|para)|outlook (pour|for|para) (android|ios|iphone|ipad)|outlook (pour|for|para) (android|ios|iphone|ipad)|aka\.ms\/[a-zA-Z0-9]+|get (outlook|gmail) (for|para)|download (outlook|gmail)|obtener (outlook|gmail))/i;
-  
+
   // Verificar si el email es principalmente una firma automática
   // Si el body contiene principalmente la firma automática (más del 50% del contenido es la firma)
   const hasAutomaticSignature = automaticEmailSignatureRegex.test(mailText);
@@ -1204,37 +1201,37 @@ async function classifyIntentHeuristic({
   const trackingLinkPattern = /(links\.|tracking|utm_source|utm_medium|utm_campaign|click tracking|email tracking|shopify-email|_t\/c\/v3|_t\/open|links\.flippa\.com|click\.email\.|view\.email\.|email\.[a-z0-9]+\.org|mailchi\.mp|mailchimp\.com|partiful\.com|list-manage\.com)/i;
   const newsletterSubjectPattern = /(new activity|updates & insights|weekly update|monthly update|newsletter|news digest|roundup|summary|insights|updates|you're invited|you are invited)/i;
   const promotionalContentPattern = /(new buyers|businesses similar|valuation|indicative valuation|sell now|list your business|schedule a call|business advisor)/i;
-  
+
   // Detección específica de Mailchimp y Partiful (plataformas de email marketing y eventos)
   const isMailchimpEmail = /mailchi\.mp|mailchimp\.com|list-manage\.com/i.test(mailText);
   const isPartifulEmail = /partiful\.com/i.test(mailText);
-  
+
   // Detección específica de Flippa (plataforma de venta de negocios)
   // Estos correos son newsletters promocionales sin intención comercial real
-  const isFlippaEmail = /flippa\.com/i.test(fromLc) || 
+  const isFlippaEmail = /flippa\.com/i.test(fromLc) ||
     /(new activity.*updates.*insights|new buyers.*interested.*business|list your business|sell now|schedule a call.*business advisor|indicative valuation|business owners.*exited|flippa university|seller.*bootcamp)/i.test(mailText);
-  
+
   // Detectar contenido de e-commerce/newsletters: "Shop now", productos, ofertas, catálogos
   const ecommercePattern = /(shop now|buy now|add to cart|view collection|view product|check out|shop our|our products|product catalog|cat[áa]logo|ofertas|offers|deals|discount|descuento|promo|promotion|promoci[oó]n|christmas gift|regalo|gift guide|gu[íi]a de regalos|new arrivals|nuevos productos|limited time|tiempo limitado)/i;
   const hasEcommerceContent = ecommercePattern.test(mailText);
-  
+
   // Detectar si es newsletter/marketing: tiene unsubscribe Y (tracking links O subject/newsletter pattern O contenido promocional sin solicitud directa)
   const hasUnsubscribeLink = newsletterKeywordsRegex.test(mailText);
   const hasTrackingLinks = trackingLinkPattern.test(mailText);
   const hasNewsletterSubject = newsletterSubjectPattern.test(subjectLc);
   const hasPromotionalContent = promotionalContentPattern.test(mailText);
-  
+
   // Es newsletter si tiene unsubscribe Y además tiene características de newsletter (tracking, subject pattern, contenido e-commerce, o contenido promocional sin partnership/pricing request)
   // IMPORTANTE: Si tiene unsubscribe + contenido de e-commerce, es definitivamente un newsletter de marketing, incluso si menciona partnership
   // REGLA DURA: Flippa, Mailchimp, Partiful siempre son newsletters de marketing (sin intención comercial real)
   // También: Invitaciones promocionales a eventos con unsubscribe + tracking links son newsletters
-  const isEventPromotionalInvite = /(you're invited|you are invited|get your tickets|buy tickets|event invitation|invitation to)/i.test(mailText) && 
-    hasUnsubscribeLink && 
+  const isEventPromotionalInvite = /(you're invited|you are invited|get your tickets|buy tickets|event invitation|invitation to)/i.test(mailText) &&
+    hasUnsubscribeLink &&
     (hasTrackingLinks || isMailchimpEmail || isPartifulEmail) &&
-    !hasPartnershipCollabAsk && 
+    !hasPartnershipCollabAsk &&
     !isPricing;
-  
-  const isNewsletterOrMarketing = isFlippaEmail || isMailchimpEmail || isPartifulEmail || isEventPromotionalInvite || (hasUnsubscribeLink && 
+
+  const isNewsletterOrMarketing = isFlippaEmail || isMailchimpEmail || isPartifulEmail || isEventPromotionalInvite || (hasUnsubscribeLink &&
     (hasTrackingLinks || hasNewsletterSubject || hasEcommerceContent || (hasPromotionalContent && !hasPartnershipCollabAsk && !isPricing && !isCoverageRequest)));
 
   console.log("[mfs] [classify] Flags básicos:", {
@@ -1263,21 +1260,21 @@ async function classifyIntentHeuristic({
   // REGLA: Solo descartar si NO tiene intención comercial (partnership/publicidad) Y además NO es barter, free coverage o pricing request
   // Email sin sentido o muy corto (solo saludo, sin contenido)
   const meaningfulContent = normalizedBody.replace(/^(bonjour|hello|hi|hola|buenos d[ií]as|buenas tardes|saludos|greetings|ciao|salut)[\s.,!]*$/i, "").trim();
-  const isMeaninglessEmail = meaningfulContent.length < 20 && 
-    !hasPartnershipCollabAsk && 
-    !isPricing && 
-    !isCoverageRequest && 
+  const isMeaninglessEmail = meaningfulContent.length < 20 &&
+    !hasPartnershipCollabAsk &&
+    !isPricing &&
+    !isCoverageRequest &&
     !isPressStyle &&
     !hasEventInvite &&
     !isBarterRequest &&
     !isFreeCoverageRequest;
-  
+
   // REGLA DURA: Firmas automáticas de email clients SIEMPRE Discard (verificación temprana, máxima prioridad)
   if (isOnlyAutomaticSignature || (hasAutomaticSignature && bodyLength < 150)) {
     intent = "Discard";
     confidence = 0.99;
     reasoning = "Email contains primarily an automatic email client signature (Outlook, Gmail, etc.) with no meaningful business content, so it is discarded.";
-  } 
+  }
   // REGLA DURA: Kaboozt - agencia de SEO específica SIEMPRE Discard (verificación temprana, máxima prioridad)
   else if (isKabooztEmail) {
     intent = "Discard";
@@ -1307,7 +1304,7 @@ async function classifyIntentHeuristic({
     intent = "Discard";
     confidence = 0.99;
     reasoning = "Email is requesting promotions, partnerships, or advertising related to gambling, betting, or casinos. These requests are always categorized as Discard, regardless of pricing or partnership mentions.";
-  } 
+  }
   // REGLA DURA: Newsletters/emails de marketing SIEMPRE Discard (verificación temprana, máxima prioridad)
   else if (isNewsletterOrMarketing) {
     intent = "Discard";
@@ -1404,14 +1401,14 @@ async function classifyIntentHeuristic({
       ) {
         intent = "Very High";
         confidence = 0.86;
-      } 
+      }
       // 2.b. High: clear partnership proposal with defined elements (budget range, fees, commissions, OR concrete scope, OR asking for pricing)
       // Concrete scope: volume (e.g., "5 articles per month"), frequency, campaign duration, number of placements
       // IMPORTANT: Si están pidiendo pricing/rates/press kit Y hablando de partnership, es High
       else if (hasBudgetKeywords || isMediaKitPricingRequest || hasConcreteScope) {
         intent = "High";
         confidence = 0.8;
-      } 
+      }
       // 2.c. Medium: partnership intention but nothing clearly defined regarding final scope
       // REGLA DURA: Si es press release, free coverage request o barter request, NO puede ser Medium
       else {
@@ -1430,7 +1427,7 @@ async function classifyIntentHeuristic({
           confidence = 0.72;
         }
       }
-    } 
+    }
     // STEP 3: If NO Partnership Intent (standalone pricing request without partnership mention)
     else if (isExplicitPricingRequest && !hasPartnershipCollabAsk) {
       // Pricing request without partnership intent: categorize based on context
@@ -1467,8 +1464,8 @@ async function classifyIntentHeuristic({
       confidence = 0.65;
     } else if (hasAnyCommercialSignalForUs) {
       // Fallback for other commercial signals
-        intent = "Low";
-        confidence = 0.6;
+      intent = "Low";
+      confidence = 0.6;
     }
   }
 
@@ -1520,8 +1517,8 @@ async function classifyIntentHeuristic({
       confidence = 0.75;
     } else if (normalizedModelIntent === "Discard") {
       // Confiar más en Discard del modelo si no hay señales claras
-      if (!hasPartnershipCollabAsk && !isMediaKitPricingRequest && 
-          !isBarterRequest && !isFreeCoverageRequest && !hasCallOrMeetingInvite) {
+      if (!hasPartnershipCollabAsk && !isMediaKitPricingRequest &&
+        !isBarterRequest && !isFreeCoverageRequest && !hasCallOrMeetingInvite) {
         intent = "Discard";
         confidence = 0.85;
       } else {
@@ -1553,7 +1550,7 @@ async function classifyIntentHeuristic({
       intent = "Medium";
       confidence = 0.72;
     }
-    
+
     // REGLA DURA: Si el modelo dice High/Very High/Medium pero es press release, Free Coverage Request o Barter Request, forzar Low
     if ((isPressStyle || isFreeCoverageRequest || isBarterRequest) && (intent === "High" || intent === "Very High" || intent === "Medium")) {
       console.log("[mfs] [classify] FORZANDO Low para press release/Free Coverage Request/Barter Request (modelo dijo:", intent, ")");
@@ -1682,13 +1679,13 @@ async function classifyIntentHeuristic({
   // IMPORTANT: Free Coverage and Barter are MUTUALLY EXCLUSIVE
   let finalFreeCoverage = modelFreeCoverage || isFreeCoverageRequest;
   let finalBarter = modelBarter || isBarterRequest;
-  
+
   // Si ambos están marcados, priorizar Barter (si hay algo a cambio, no es "free")
   if (finalFreeCoverage && finalBarter) {
     finalFreeCoverage = false; // Si hay algo a cambio, no es free coverage
     console.log("[mfs] [classify] Free Coverage y Barter ambos detectados, priorizando Barter (hay algo a cambio)");
   }
-  
+
   // REGLA DURA: Si finalFreeCoverage es true (modelo o heurística), SIEMPRE Low
   // Esta verificación debe ejecutarse DESPUÉS de combinar modelo + heurística
   if (finalFreeCoverage && intent !== "Low" && intent !== "Discard") {
@@ -1697,7 +1694,7 @@ async function classifyIntentHeuristic({
     confidence = Math.max(confidence || 0.8, 0.8);
     reasoning = "Email is a free coverage request (press release or news shared), categorized as Low intent (not Medium, High, or Very High).";
   }
-  
+
   // REGLA DURA: Si finalBarter es true (modelo o heurística), SIEMPRE Low
   // Esta verificación debe ejecutarse DESPUÉS de combinar modelo + heurística
   if (finalBarter && intent !== "Low" && intent !== "Discard") {
@@ -1706,16 +1703,16 @@ async function classifyIntentHeuristic({
     confidence = Math.max(confidence || 0.8, 0.8);
     reasoning = "Email is a barter request (invitation or service in exchange for coverage), categorized as Low intent (not Medium, High, or Very High).";
   }
-  
+
   const finalPricing = modelPricing || isMediaKitPricingRequest;
-  
+
   // Regla dura: Pricing/Media Kit Request SIEMPRE debe ser como mínimo High
   // EXCEPCIÓN: Si es press release o Free Coverage Request, NO aplicar esta regla (siempre es Low)
   if (finalPricing && !isPressStyle && !isFreeCoverageRequest) {
     const intentLevels = { "Discard": 0, "Low": 1, "Medium": 2, "High": 3, "Very High": 4 };
     const currentLevel = intentLevels[intent] || 0;
     const minLevel = intentLevels["High"]; // 3
-    
+
     if (currentLevel < minLevel) {
       // Si el intent actual es menor que High, subirlo a High
       intent = "High";
@@ -1725,13 +1722,13 @@ async function classifyIntentHeuristic({
       }
     }
   }
-  
+
 
   // MEDDIC: Only for Medium, High, or Very High - use "no info" for Low or Discard
   // IMPORTANT: All MEDDIC fields must always have a value
   const validMeddicIntents = ["Medium", "High", "Very High"];
   const shouldHaveMeddic = validMeddicIntents.includes(intent);
-  
+
   let finalMeddicMetrics = shouldHaveMeddic ? meddicMetrics : "no info";
   let finalMeddicEconomicBuyer = shouldHaveMeddic ? meddicEconomicBuyer : "no info";
   let finalMeddicDecisionCriteria = shouldHaveMeddic ? meddicDecisionCriteria : "no info";
@@ -1758,20 +1755,20 @@ async function classifyIntentHeuristic({
       // Generate fallback for Identify Pain if not provided
       if (isBarterRequest) {
         finalMeddicIdentifyPain = "Limited cash marketing budget is pushing them to trade invitations or experiences for exposure and coverage.";
-    } else if (isFreeCoverageRequest) {
+      } else if (isFreeCoverageRequest) {
         finalMeddicIdentifyPain = "They rely on earned media and editorial exposure to boost awareness and attendance without strong paid media investment.";
-    } else if (isMediaKitPricingRequest) {
+      } else if (isMediaKitPricingRequest) {
         finalMeddicIdentifyPain = "Unclear media costs are blocking planning of campaigns, creating risk of delayed or suboptimal investment.";
-    } else if (hasPartnershipCollabAsk) {
+      } else if (hasPartnershipCollabAsk) {
         finalMeddicIdentifyPain = "They lack a strong media or distribution partner to scale reach and engagement for their events, artists or experiences.";
-    } else if (mailText.includes("ticket") || mailText.includes("event")) {
+      } else if (mailText.includes("ticket") || mailText.includes("event")) {
         finalMeddicIdentifyPain = "Insufficient reach is limiting event attendance and ticket revenue, prompting the search for stronger promotional partners.";
-    } else if (mailText.includes("sponsor")) {
+      } else if (mailText.includes("sponsor")) {
         finalMeddicIdentifyPain = "Brand visibility is lagging in key markets, prompting them to explore sponsorships and high-impact placements.";
-    } else {
+      } else {
         finalMeddicIdentifyPain = "They are seeking partners to improve reach, engagement and efficiency of their marketing and commercial efforts.";
+      }
     }
-  }
     if (!finalMeddicChampion || finalMeddicChampion.trim() === "" || finalMeddicChampion === "no info") {
       finalMeddicChampion = "no info";
     }
@@ -1787,15 +1784,15 @@ async function classifyIntentHeuristic({
       finalMeddicChampion
     ];
     const meddicFieldsWithContent = meddicFields.filter(f => f && f !== "no info" && f.trim() !== "");
-    
+
     if (meddicFieldsWithContent.length > 0) {
       const allMeddicText = meddicFieldsWithContent.join(" ");
-    const maxTotalChars = 1200; // ~200 words
-    if (allMeddicText.length > maxTotalChars) {
-      // Trim proportionally - keep Identify Pain (I) as priority, then others
-      const ratio = maxTotalChars / allMeddicText.length;
-      const trimLength = (text) => Math.floor((text || "").length * ratio);
-      
+      const maxTotalChars = 1200; // ~200 words
+      if (allMeddicText.length > maxTotalChars) {
+        // Trim proportionally - keep Identify Pain (I) as priority, then others
+        const ratio = maxTotalChars / allMeddicText.length;
+        const trimLength = (text) => Math.floor((text || "").length * ratio);
+
         if (finalMeddicMetrics !== "no info") {
           finalMeddicMetrics = finalMeddicMetrics.slice(0, trimLength(finalMeddicMetrics));
         }
@@ -1842,7 +1839,7 @@ async function classifyIntentHeuristic({
   // EXCEPCIÓN: Si el email es para secretmedia@feverup.com, NO aplicar esta regla (debe ser mínimo Medium)
   const toEmail = (to || "").toLowerCase().trim();
   const isSecretMediaEmail = toEmail.includes("secretmedia@feverup.com");
-  
+
   if (isPressStyle || isFreeCoverageRequest || finalFreeCoverage || isBarterRequest || finalBarter) {
     // Si es para secretmedia@feverup.com, NO forzar a Low (se aplicará la regla de mínimo Medium después)
     if (!isSecretMediaEmail) {
@@ -1870,7 +1867,7 @@ async function classifyIntentHeuristic({
     const intentLevels = { "Discard": 0, "Low": 1, "Medium": 2, "High": 3, "Very High": 4 };
     const currentLevel = intentLevels[intent] || 0;
     const minLevel = intentLevels["Medium"]; // 2
-    
+
     if (currentLevel < minLevel) {
       console.log("[mfs] [classify] FORZANDO Medium para email a secretmedia@feverup.com (intent actual era:", intent, ", nivel:", currentLevel, ")");
       intent = "Medium";
@@ -1904,7 +1901,7 @@ async function classifyIntentHeuristic({
       // Disponibilidad de espacios físicos para alquiler
       /(disponibilidad de (sala|local|espacio|venue)|available (room|space|venue|hall) (for rent|para alquiler)|(sala|local|espacio|venue) (disponible|available) (para|for) (alquiler|rent))/i,
     ];
-    
+
     // Servicios completamente no relacionados
     const unrelatedServiceKeywords = [
       /(catering|limpieza|cleaning|maintenance|mantenimiento|servicio de limpieza|cleaning service)/i,
@@ -1912,14 +1909,14 @@ async function classifyIntentHeuristic({
       /(transporte|transport|delivery|entrega|env[ií]o)/i,
       /(instalaci[oó]n|installation|montaje|assembly|setup f[ií]sico)/i,
     ];
-    
+
     // Términos que indican que SÍ es nuestro negocio (incluye invitaciones a eventos)
     const ourBusinessKeywords = /(contenido|content|marketing|publicidad|advertising|art[ií]culo|article|post|instagram|tiktok|blog|social media|redes sociales|cobertura|coverage|partnership|colaboraci[oó]n|partenariat|partenariado|media kit|rate card|pricing|budget|fee|tarif|sponsorship|sponsor|patrocinio|invitaci[oó]n (a|para) (evento|event)|invitamos|we invite|invite you|invitation (to|for) (event|evento))/i;
-    
+
     const hasPhysicalServiceRequest = physicalServiceKeywords.some(regex => regex.test(mailText));
     const hasUnrelatedServiceRequest = unrelatedServiceKeywords.some(regex => regex.test(mailText));
     const hasOurBusinessContext = ourBusinessKeywords.test(mailText);
-    
+
     // Si menciona servicios físicos o no relacionados Y NO menciona términos de nuestro negocio → Discard
     if ((hasPhysicalServiceRequest || hasUnrelatedServiceRequest) && !hasOurBusinessContext) {
       console.log("[mfs] [classify] ⚠️ Oportunidad de negocio detectada pero NO tiene sentido para nuestro negocio - Cambiando a Discard");
