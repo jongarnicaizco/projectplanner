@@ -1,0 +1,9 @@
+[build]
+  publish = "dist"
+  command = ""  # No build command needed as we commit the dist folder
+
+# Optional: Ensure clean URLs
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
