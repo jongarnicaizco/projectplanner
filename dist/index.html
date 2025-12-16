@@ -179,6 +179,15 @@
             return count;
         };
 
+        // Format duration to readable string
+        const formatDuration = (days) => {
+            if (days === 0) return '0d';
+            // Round to nearest 0.5 week
+            const weeks = Math.round((days / 7) * 2) / 2;
+            if (weeks >= 1) return `${weeks} week${weeks !== 1 ? 's' : ''} (${days}d)`;
+            return `${days} day${days !== 1 ? 's' : ''}`;
+        };
+
         // Format Date for Input (YYYY-MM-DD)
         const formatDateInput = (date) => {
             if (!date) return '';
@@ -713,7 +722,7 @@
                                                         {task.prio !== 'Done' && <span className="text-[9px] bg-stone-200 text-stone-600 px-1 rounded font-mono">P{task.prio}</span>}
                                                     </div>
                                                     <div className="flex justify-between items-center mt-1 text-[9px] text-stone-400">
-                                                        <span>{task.durationDays}d</span>
+                                                        <span>{formatDuration(task.durationDays)}</span>
                                                         <span className={checkDayOOO(task.startDayIndex) ? 'text-rose-500' : ''}>
                                                             {addDays(START_DATE, task.startDayIndex).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}
                                                         </span>
@@ -766,11 +775,12 @@
                                                 key={i}
                                                 className={`flex-shrink-0 flex flex-col items-center justify-end border-r border-stone-100 relative pb-1
                                                     ${ooo ? 'bg-rose-50' : ''}
+                                                    ${isMonthStart ? 'border-l-2 border-l-stone-300' : ''}
                                                 `}
                                                 style={{ width: cellWidth }}
                                             >
                                                 {(viewMode !== 'month' && isMonthStart) && (
-                                                    <div className="absolute top-1 left-1 text-[10px] font-bold text-stone-900 uppercase whitespace-nowrap z-20">
+                                                    <div className="absolute top-1 left-1.5 text-[10px] font-bold text-stone-900 uppercase whitespace-nowrap z-20 bg-cream-50/80 px-1 rounded backdrop-blur-sm">
                                                         {date.toLocaleString('default', { month: 'long' })}
                                                     </div>
                                                 )}

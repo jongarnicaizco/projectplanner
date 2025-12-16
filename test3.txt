@@ -1,0 +1,4 @@
+Este es el archivo test3 creado automáticamente desde Cursor AI.
+Fecha: 2024-12-19
+Probando el script de forzado para hacer push automático.
+
