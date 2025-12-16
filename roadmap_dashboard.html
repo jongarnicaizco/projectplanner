@@ -604,6 +604,19 @@
                                     });
                                 }
                             }
+                        } else if (dragState.mode === 'resize') {
+                            // RESIZE COMMIT: Calculate new duration and trigger auto-schedule
+                            const currentTasks = tasksRef.current;
+                            const task = currentTasks.find(t => t.id === dragState.id);
+                            if (task) {
+                                // Calculate new duration from the updated endDayIndex
+                                const startDate = addDays(START_DATE, task.startDayIndex);
+                                const endDate = addDays(START_DATE, task.endDayIndex);
+                                const newDuration = getWorkingDaysCount(startDate, endDate);
+
+                                // Update task with new duration and trigger auto-schedule
+                                handleTaskUpdate({ ...task, durationDays: newDuration });
+                            }
                         }
                         dragRef.current = null;
                         setActiveDragId(null);
