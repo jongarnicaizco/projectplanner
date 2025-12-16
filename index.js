@@ -466,6 +466,7 @@ app.get("/control", async (_req, res) => {
     let currentDayCost = 0.0;
     let yesterdayCost = 0.0;
     try {
+      const { Storage } = await import("@google-cloud/storage");
       const storage = new Storage();
       const bucket = storage.bucket(CFG.GCS_BUCKET);
       const file = bucket.file(CFG.COST_GUARD_STATE_FILE || "state/cost_guard.json");
