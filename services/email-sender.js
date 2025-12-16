@@ -35,17 +35,17 @@ function cleanOldRateLimitEntries() {
  */
 function canSendEmailToAddress(emailAddress) {
   if (!emailAddress) return true; // Si no hay dirección, permitir (no debería pasar)
-  
+
   const normalizedEmail = emailAddress.toLowerCase().trim();
   const now = Date.now();
-  
+
   // Limpiar entradas antiguas periódicamente
   if (emailRateLimitMap.size > 1000) {
     cleanOldRateLimitEntries();
   }
-  
+
   const lastSent = emailRateLimitMap.get(normalizedEmail);
-  
+
   if (lastSent) {
     const timeSinceLastSent = now - lastSent;
     if (timeSinceLastSent < EMAIL_RATE_LIMIT_INTERVAL_MS) {
@@ -54,7 +54,7 @@ function canSendEmailToAddress(emailAddress) {
       return false;
     }
   }
-  
+
   return true;
 }
 
@@ -64,10 +64,10 @@ function canSendEmailToAddress(emailAddress) {
  */
 function recordEmailSent(emailAddress) {
   if (!emailAddress) return;
-  
+
   const normalizedEmail = emailAddress.toLowerCase().trim();
   emailRateLimitMap.set(normalizedEmail, Date.now());
-  
+
   console.log(`[mfs] ✓ Email enviado a ${normalizedEmail} registrado en rate limit map`);
 }
 
@@ -77,33 +77,33 @@ function recordEmailSent(emailAddress) {
 async function getEmailSenderClient() {
   try {
     console.log("[mfs] Obteniendo credenciales OAuth desde Secret Manager para envío de emails...");
-    
+
     // Obtener credenciales específicas para envío de emails desde Secret Manager
     const clientId = await accessSecret("GMAIL_CLIENT_ID_SENDER");
     const clientSecret = await accessSecret("GMAIL_CLIENT_SECRET_SENDER");
     const refreshToken = await accessSecret("GMAIL_REFRESH_TOKEN_SENDER");
-    
+
     if (!clientId || !clientSecret || !refreshToken) {
       throw new Error("Faltan credenciales OAuth en Secret Manager. Verifica GMAIL_CLIENT_ID_SENDER, GMAIL_CLIENT_SECRET_SENDER y GMAIL_REFRESH_TOKEN_SENDER");
     }
-    
+
     console.log("[mfs] Credenciales OAuth obtenidas:", {
       clientIdLength: clientId?.length || 0,
       clientSecretLength: clientSecret?.length || 0,
       refreshTokenLength: refreshToken?.length || 0,
     });
-    
+
     // El redirect URI debe coincidir con el configurado en OAuth Client
     const redirectUri = process.env.GMAIL_REDIRECT_URI || "http://localhost:3000/oauth2callback";
-    
+
     const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
     oAuth2Client.setCredentials({ refresh_token: refreshToken });
-    
+
     // Intentar refrescar el token para verificar que funciona
     try {
       console.log("[mfs] Verificando y refrescando access token para envío de email...");
       const tokenResponse = await oAuth2Client.getAccessToken();
-      
+
       if (tokenResponse.token) {
         console.log("[mfs] ✓ Access token obtenido exitosamente");
         oAuth2Client.setCredentials({
@@ -121,7 +121,7 @@ async function getEmailSenderClient() {
       console.error("[mfs] ✗ Error verificando token OAuth:", JSON.stringify(errorDetails, null, 2));
       throw new Error(`Error de autenticación OAuth: ${errorDetails.error} - ${errorDetails.errorDescription}`);
     }
-    
+
     return google.gmail({ version: "v1", auth: oAuth2Client });
   } catch (secretError) {
     console.error("[mfs] ✗ Error obteniendo secrets de OAuth:", secretError?.message || secretError);
@@ -140,25 +140,25 @@ export async function sendTestEmail(emailId) {
     console.log("[mfs] Destinatario: jongarnicaizco@gmail.com");
     console.log("[mfs] Remitente: secretmedia@feverup.com");
     console.log("[mfs] Asunto: TEST");
-    
+
     const gmail = await getEmailSenderClient();
-    
+
     // Crear el mensaje en formato RFC 2822
     const from = "secretmedia@feverup.com";
     const to = "jongarnicaizco@gmail.com";
     const subject = "TEST";
     const body = "TEST";
-    
+
     const messageHeaders = [
       `To: ${to}`,
       `From: ${from}`,
       `Subject: ${subject}`,
       `Content-Type: text/plain; charset=utf-8`,
     ];
-    
+
     messageHeaders.push(""); // Línea vacía antes del body
     messageHeaders.push(body);
-    
+
     const message = messageHeaders.join("\n");
 
     console.log("[mfs] Mensaje creado, codificando en base64url...");
@@ -195,7 +195,7 @@ export async function sendTestEmail(emailId) {
   } catch (error) {
     console.error("[mfs] ===== ERROR ENVIANDO EMAIL TEST =====");
     console.error("[mfs] Email ID procesado:", emailId);
-    
+
     // Extraer información detallada del error
     const errorInfo = {
       message: error?.message || "Unknown error",
@@ -206,7 +206,7 @@ export async function sendTestEmail(emailId) {
       errorDescription: error?.response?.data?.error_description || error?.data?.error_description || error?.error_description || "unknown",
       details: error?.response?.data || error?.data || {},
     };
-    
+
     console.error("[mfs] Error code:", errorInfo.code);
     console.error("[mfs] Error status:", errorInfo.status);
     console.error("[mfs] Error message:", errorInfo.message);
@@ -214,7 +214,7 @@ export async function sendTestEmail(emailId) {
     console.error("[mfs] Error description:", errorInfo.errorDescription);
     console.error("[mfs] Error details:", JSON.stringify(errorInfo.details, null, 2));
     console.error("[mfs] Stack trace:", error?.stack);
-    
+
     return {
       success: false,
       error: errorInfo.message,
@@ -233,15 +233,15 @@ export async function sendTestEmail(emailId) {
  */
 function isPersonName(name) {
   if (!name || typeof name !== "string") return false;
-  
+
   const normalized = name.trim().toLowerCase();
-  
+
   // Si está vacío o muy corto, no es un nombre
   if (normalized.length < 2) return false;
-  
+
   // Si contiene @, es un email, no un nombre
   if (normalized.includes("@")) return false;
-  
+
   // Palabras que indican que NO es un nombre de persona (empresas, departamentos, genéricos)
   const nonPersonKeywords = [
     "team", "marketing", "sales", "support", "info", "contact", "hello", "noreply", "no-reply",
@@ -257,29 +257,29 @@ function isPersonName(name) {
     "squadra", "marketing", "vendite", "supporto", "informazioni", "contatto", "ciao",
     "comunicazione", "stampa", "relazioni pubbliche", "redazione", "editoriale"
   ];
-  
+
   // Si contiene alguna de estas palabras, probablemente no es un nombre de persona
   for (const keyword of nonPersonKeywords) {
     if (normalized.includes(keyword)) {
       return false;
     }
   }
-  
+
   // Si contiene números, probablemente no es un nombre de persona
   if (/\d/.test(normalized)) {
     return false;
   }
-  
+
   // Si es muy largo (más de 50 caracteres), probablemente no es un nombre
   if (normalized.length > 50) {
     return false;
   }
-  
+
   // Si contiene caracteres especiales raros (excepto espacios, guiones, apóstrofes, puntos)
   if (!/^[a-záéíóúàèìòùâêîôûãõçñäëïöüÿ\s\-'\.]+$/i.test(name)) {
     return false;
   }
-  
+
   // Si parece ser un nombre de empresa (contiene palabras como "inc", "ltd", "llc", "srl", etc.)
   const companySuffixes = ["inc", "ltd", "llc", "srl", "sl", "sa", "gmbh", "ag", "spa", "sas", "bv", "nv"];
   const words = normalized.split(/\s+/);
@@ -288,7 +288,7 @@ function isPersonName(name) {
       return false;
     }
   }
-  
+
   // Si pasa todas las verificaciones, probablemente es un nombre de persona
   return true;
 }
@@ -303,7 +303,7 @@ function encodeSubject(subject) {
   if (/^[\x00-\x7F]*$/.test(subject)) {
     return subject;
   }
-  
+
   // Codificar usando MIME (RFC 2047) con UTF-8 y Base64
   // Formato: =?charset?encoding?encoded-text?=
   const encoded = Buffer.from(subject, 'utf-8').toString('base64');
@@ -312,7 +312,7 @@ function encodeSubject(subject) {
   for (let i = 0; i < encoded.length; i += 75) {
     chunks.push(encoded.slice(i, i + 75));
   }
-  
+
   return `=?UTF-8?B?${chunks.join('?=\r\n =?UTF-8?B?')}?=`;
 }
 
@@ -336,7 +336,7 @@ export async function sendBarterEmail(emailId, firstName, brandName, originalSub
     console.log("[mfs] Idioma:", language);
     console.log("[mfs] Subject original:", originalSubject);
     console.log("[mfs] Email original (from):", originalFromEmail);
-    
+
     // Verificar rate limiting por dirección de correo (5 minutos)
     if (originalFromEmail && !canSendEmailToAddress(originalFromEmail)) {
       console.log(`[mfs] ⏸️ Email NO enviado: Ya se envió una respuesta a ${originalFromEmail} en los últimos 5 minutos. Saltando envío para evitar duplicados.`);
@@ -347,15 +347,15 @@ export async function sendBarterEmail(emailId, firstName, brandName, originalSub
         message: `Ya se envió un email a ${originalFromEmail} en los últimos 5 minutos`,
       };
     }
-    
+
     const gmail = await getEmailSenderClient();
-    
+
     const from = "secretmedia@feverup.com";
     const to = "jongarnicaizco@gmail.com"; // IMPORTANTE: Siempre a jongarnicaizco@gmail.com
-    
+
     // Obtener template según idioma
     let template = getEmailTemplate(language, "barter");
-    
+
     // Solo usar el nombre si es realmente un nombre de persona (no empresa, no genérico)
     if (firstName && isPersonName(firstName)) {
       // Reemplazar [First Name] con el firstName real
@@ -371,7 +371,7 @@ export async function sendBarterEmail(emailId, firstName, brandName, originalSub
       template = template.replace(/\[First Name\]/g, "");
       console.log(`[mfs] ⚠️ No se usa nombre en saludo barter (no es nombre de persona): "${firstName || "empty"}" - Usando solo saludo`);
     }
-    
+
     // Construir el body completo (template + body original si existe)
     let body = template;
     if (originalBody) {
@@ -379,44 +379,44 @@ export async function sendBarterEmail(emailId, firstName, brandName, originalSub
       body += "Original email body:\n\n";
       body += originalBody;
     }
-    
+
     // El subject debe ser "Re: " seguido del subject original, codificado correctamente
     const subjectText = originalSubject ? `Re: ${originalSubject}` : `Re: Barter Request Response for ${brandName || "Client"}`;
     const encodedSubject = encodeSubject(subjectText);
-    
+
     const messageHeaders = [
       `To: ${to}`,
       `From: ${from}`,
       `Subject: ${encodedSubject}`,
       `Content-Type: text/plain; charset=utf-8`,
     ];
-    
+
     messageHeaders.push("");
     messageHeaders.push(body);
-    
+
     const message = messageHeaders.join("\n");
     const encodedMessage = Buffer.from(message)
       .toString("base64")
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
       .replace(/=+$/, "");
-    
+
     const response = await gmail.users.messages.send({
       userId: "me",
       requestBody: {
         raw: encodedMessage,
       },
     });
-    
+
     console.log("[mfs] ===== EMAIL BARTER (TEST) ENVIADO EXITOSAMENTE =====");
     console.log("[mfs] Message ID:", response.data.id);
     console.log("[mfs] Thread ID:", response.data.threadId);
-    
+
     // Registrar que se envió el email (para rate limiting)
     if (originalFromEmail) {
       recordEmailSent(originalFromEmail);
     }
-    
+
     return {
       success: true,
       messageId: response.data.id,
@@ -444,9 +444,9 @@ export async function sendCriticalAlertEmail(count, limit, serviceSource) {
     console.log("[mfs] Count:", count);
     console.log("[mfs] Limit:", limit);
     console.log("[mfs] Service Source:", serviceSource);
-    
+
     const gmail = await getEmailSenderClient();
-    
+
     const from = "secretmedia@feverup.com";
     const to = "jon.garnica@feverup.com";
     const subject = `🚨 ALERTA: ${count} ejecuciones por minuto - Límite de 3k superado`;
@@ -482,28 +482,28 @@ Sistema de Automatización MFS`;
       `Subject: ${subject}`,
       `Content-Type: text/plain; charset=utf-8`,
     ];
-    
+
     messageHeaders.push("");
     messageHeaders.push(body);
-    
+
     const message = messageHeaders.join("\n");
     const encodedMessage = Buffer.from(message)
       .toString("base64")
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
       .replace(/=+$/, "");
-    
+
     const response = await gmail.users.messages.send({
       userId: "me",
       requestBody: {
         raw: encodedMessage,
       },
     });
-    
+
     console.log("[mfs] ===== EMAIL DE ALERTA CRÍTICA ENVIADO EXITOSAMENTE =====");
     console.log("[mfs] Message ID:", response.data.id);
     console.log("[mfs] Thread ID:", response.data.threadId);
-    
+
     return {
       success: true,
       messageId: response.data.id,
@@ -513,7 +513,7 @@ Sistema de Automatización MFS`;
     console.error("[mfs] ===== ERROR ENVIANDO EMAIL DE ALERTA CRÍTICA =====");
     console.error("[mfs] Error message:", error?.message || error);
     console.error("[mfs] Error code:", error?.code || error?.response?.status || "unknown");
-    
+
     return {
       success: false,
       error: error?.message || "Unknown error",
@@ -534,9 +534,9 @@ export async function sendRateLimitNotificationEmail(count, limit, windowMinutes
     console.log("[mfs] Count:", count);
     console.log("[mfs] Limit:", limit);
     console.log("[mfs] Window (minutes):", windowMinutes);
-    
+
     const gmail = await getEmailSenderClient();
-    
+
     const from = "secretmedia@feverup.com";
     const to = "jon.garnica@feverup.com";
     const subject = `⚠️ ALERTA: Servicio detenido automáticamente - Límite de ejecuciones excedido`;
@@ -568,28 +568,28 @@ Sistema de Automatización MFS`;
       `Subject: ${subject}`,
       `Content-Type: text/plain; charset=utf-8`,
     ];
-    
+
     messageHeaders.push("");
     messageHeaders.push(body);
-    
+
     const message = messageHeaders.join("\n");
     const encodedMessage = Buffer.from(message)
       .toString("base64")
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
       .replace(/=+$/, "");
-    
+
     const response = await gmail.users.messages.send({
       userId: "me",
       requestBody: {
         raw: encodedMessage,
       },
     });
-    
+
     console.log("[mfs] ===== EMAIL DE NOTIFICACIÓN ENVIADO EXITOSAMENTE =====");
     console.log("[mfs] Message ID:", response.data.id);
     console.log("[mfs] Thread ID:", response.data.threadId);
-    
+
     return {
       success: true,
       messageId: response.data.id,
@@ -598,21 +598,64 @@ Sistema de Automatización MFS`;
   } catch (error) {
     console.error("[mfs] ===== ERROR ENVIANDO EMAIL DE NOTIFICACIÓN =====");
     console.error("[mfs] Error message:", error?.message || error);
-    console.error("[mfs] Error code:", error?.code || error?.response?.status || "unknown");
-    console.error("[mfs] Error details:", JSON.stringify({
-      error: error?.response?.data?.error || error?.error || "unknown",
-      errorDescription: error?.response?.data?.error_description || error?.error_description || "unknown",
-      status: error?.response?.status || error?.status || "unknown",
-    }, null, 2));
-    
+
     return {
       success: false,
       error: error?.message || "Unknown error",
-      code: error?.code || error?.response?.status || "unknown",
-      status: error?.response?.status || error?.status || "unknown",
-      errorType: error?.response?.data?.error || error?.error || "unknown",
-      errorDescription: error?.response?.data?.error_description || error?.error_description || "unknown",
     };
+  }
+}
+
+/**
+ * Envía alerta de Cost Guard (Tier 1 o Tier 2)
+ */
+export async function sendCostGuardAlert(tier, cost, limit) {
+  try {
+    const tierName = tier === 1 ? "TIER 1 ($2.00)" : "TIER 2 ($8.00)";
+    const actions = tier === 1
+      ? "- Salesforce Lead Gen: DISABLED\n- Email Sending: DISABLED"
+      : "- Low Power Mode: ACTIVATED (Reduced AI Tokens)";
+
+    const subject = `🚨 COST GUARD ${tierName} DETECTED ($${cost.toFixed(2)})`;
+    const body = `Hola Jon,
+
+CAST GUARD ALERT: El sistema ha superado el límite de costos del ${tierName}.
+
+Current Hourly Cost: $${cost.toFixed(4)} USD
+Threshold: $${limit.toFixed(2)} USD
+
+ACTIONS TAKEN AUTOMATICALLY:
+${actions}
+
+Por favor revisa el dashboard y el cloud console.
+Para resetear el sistema, usa el botón "RESET NORMAL FLOW" en el panel de control.
+
+Saludos,
+Cost Guard System`;
+
+    const gmail = await getEmailSenderClient();
+    const message = [
+      `To: jon.garnica@feverup.com`,
+      `From: secretmedia@feverup.com`,
+      `Subject: ${subject}`,
+      `Content-Type: text/plain; charset=utf-8`,
+      "",
+      body
+    ].join("\n");
+
+    const encodedMessage = Buffer.from(message)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+
+    await gmail.users.messages.send({
+      userId: "me",
+      requestBody: { raw: encodedMessage },
+    });
+    console.log(`[mfs] Cost Guard Alert Email Sent (${tierName})`);
+  } catch (e) {
+    console.error("[mfs] Error sending Cost Guard alert:", e);
   }
 }
 
@@ -636,7 +679,7 @@ export async function sendFreeCoverageEmail(emailId, firstName, brandName, origi
     console.log("[mfs] Idioma:", language);
     console.log("[mfs] Subject original:", originalSubject);
     console.log("[mfs] Email original (from):", originalFromEmail);
-    
+
     // Verificar rate limiting por dirección de correo (5 minutos)
     if (originalFromEmail && !canSendEmailToAddress(originalFromEmail)) {
       console.log(`[mfs] ⏸️ Email NO enviado: Ya se envió una respuesta a ${originalFromEmail} en los últimos 5 minutos. Saltando envío para evitar duplicados.`);
@@ -647,15 +690,15 @@ export async function sendFreeCoverageEmail(emailId, firstName, brandName, origi
         message: `Ya se envió un email a ${originalFromEmail} en los últimos 5 minutos`,
       };
     }
-    
+
     const gmail = await getEmailSenderClient();
-    
+
     const from = "secretmedia@feverup.com";
     const to = "jongarnicaizco@gmail.com"; // IMPORTANTE: Siempre a jongarnicaizco@gmail.com
-    
+
     // Obtener template según idioma
     let template = getEmailTemplate(language, "free coverage request");
-    
+
     // Solo usar el nombre si es realmente un nombre de persona (no empresa, no genérico)
     if (firstName && isPersonName(firstName)) {
       // Reemplazar [First Name] con el firstName real
@@ -671,7 +714,7 @@ export async function sendFreeCoverageEmail(emailId, firstName, brandName, origi
       template = template.replace(/\[First Name\]/g, "");
       console.log(`[mfs] ⚠️ No se usa nombre en saludo free coverage (no es nombre de persona): "${firstName || "empty"}" - Usando solo saludo`);
     }
-    
+
     // Construir el body completo (template + body original si existe)
     let body = template;
     if (originalBody) {
@@ -679,44 +722,44 @@ export async function sendFreeCoverageEmail(emailId, firstName, brandName, origi
       body += "Original email body:\n\n";
       body += originalBody;
     }
-    
+
     // El subject debe ser "Re: " seguido del subject original, codificado correctamente
     const subjectText = originalSubject ? `Re: ${originalSubject}` : `Re: Free Coverage Request Response for ${brandName || "Client"}`;
     const encodedSubject = encodeSubject(subjectText);
-    
+
     const messageHeaders = [
       `To: ${to}`,
       `From: ${from}`,
       `Subject: ${encodedSubject}`,
       `Content-Type: text/plain; charset=utf-8`,
     ];
-    
+
     messageHeaders.push("");
     messageHeaders.push(body);
-    
+
     const message = messageHeaders.join("\n");
     const encodedMessage = Buffer.from(message)
       .toString("base64")
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
       .replace(/=+$/, "");
-    
+
     const response = await gmail.users.messages.send({
       userId: "me",
       requestBody: {
         raw: encodedMessage,
       },
     });
-    
+
     console.log("[mfs] ===== EMAIL FREE COVERAGE (TEST) ENVIADO EXITOSAMENTE =====");
     console.log("[mfs] Message ID:", response.data.id);
     console.log("[mfs] Thread ID:", response.data.threadId);
-    
+
     // Registrar que se envió el email (para rate limiting)
     if (originalFromEmail) {
       recordEmailSent(originalFromEmail);
     }
-    
+
     return {
       success: true,
       messageId: response.data.id,

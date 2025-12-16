@@ -258,158 +258,106 @@ export async function resetRateLimitState() {
 }
 
 /**
- * Lee el estado del servicio (START/STOP)
- * Retorna { status: "active" | "stopped", updatedAt: string } o { status: "active", updatedAt: null } si no existe
+ * Obtiene el estado consolidado del sistema (service, salesforce, email, tiers)
  */
-export async function readServiceStatus() {
-  if (!CFG.GCS_BUCKET) return { status: "active", updatedAt: null };
-
-  try {
-    const [buf] = await storage
-      .bucket(CFG.GCS_BUCKET)
-      .file("state/service_status.json")
-      .download();
-    const j = JSON.parse(buf.toString("utf8"));
-    return {
-      status: j.status || "active",
-      updatedAt: j.updatedAt || null,
-    };
-  } catch {
-    // Si no existe, el servicio está activo por defecto
-    return { status: "active", updatedAt: null };
-  }
-}
-
-/**
- * Escribe el estado del servicio (START/STOP)
- */
-export async function writeServiceStatus(status) {
+export async function readSystemState() {
   if (!CFG.GCS_BUCKET) {
-    console.error("[mfs] [service] ✗ ERROR: GCS_BUCKET no está configurado. No se puede guardar el estado del servicio.");
-    throw new Error("GCS_BUCKET no está configurado. No se puede guardar el estado del servicio.");
+    return {
+      service_status: "active",
+      salesforce_status: "active",
+      email_sending_status: "active",
+      low_power_mode: false,
+      tier1_triggered: false,
+      tier2_triggered: false,
+      updatedAt: new Date().toISOString()
+    };
   }
 
-  if (status !== "active" && status !== "stopped") {
-    throw new Error("Status debe ser 'active' o 'stopped'");
-  }
-
-  const statusData = {
-    status,
-    updatedAt: new Date().toISOString(),
-  };
-
-  await saveToGCS(
-    "state/service_status.json",
-    JSON.stringify(statusData, null, 2),
-    "application/json"
-  );
-  
-  console.log(`[mfs] [service] ✓ Estado del servicio actualizado a: ${status} (timestamp: ${statusData.updatedAt})`);
-  
-  // Verificar que se guardó correctamente (lectura inmediata)
   try {
-    const [buf] = await storage
-      .bucket(CFG.GCS_BUCKET)
-      .file("state/service_status.json")
-      .download();
-    const savedData = JSON.parse(buf.toString("utf8"));
-    if (savedData.status !== status) {
-      console.error(`[mfs] [service] ✗ ERROR: El estado guardado no coincide. Esperado: '${status}', Guardado: '${savedData.status}'`);
-      throw new Error(`El estado guardado no coincide. Esperado: '${status}', Guardado: '${savedData.status}'`);
+    const file = storage.bucket(CFG.GCS_BUCKET).file(CFG.STATE_OBJECT.replace("gmail_history.json", "system_state.json"));
+    const [exists] = await file.exists();
+    if (!exists) {
+      return {
+        service_status: "active",
+        salesforce_status: "active",
+        email_sending_status: "active",
+        low_power_mode: false,
+        tier1_triggered: false,
+        tier2_triggered: false,
+        updatedAt: new Date().toISOString()
+      };
     }
-    console.log(`[mfs] [service] ✓ Verificación exitosa: Estado guardado correctamente como '${status}'`);
-  } catch (verifyError) {
-    console.error(`[mfs] [service] ✗ ERROR verificando estado guardado:`, verifyError?.message || verifyError);
-    throw new Error(`No se pudo verificar que el estado se guardó correctamente: ${verifyError?.message || verifyError}`);
+    const [content] = await file.download();
+    const data = JSON.parse(content.toString());
+    return {
+      service_status: data.service_status || "active",
+      salesforce_status: data.salesforce_status || "active",
+      email_sending_status: data.email_sending_status || "active",
+      low_power_mode: !!data.low_power_mode,
+      tier1_triggered: !!data.tier1_triggered,
+      tier2_triggered: !!data.tier2_triggered,
+      updatedAt: data.updatedAt
+    };
+  } catch (e) {
+    console.warn("[mfs] Error reading system state, returning default:", e.message);
+    return {
+      service_status: "active",
+      salesforce_status: "active",
+      email_sending_status: "active",
+      low_power_mode: false,
+      tier1_triggered: false,
+      tier2_triggered: false
+    };
   }
 }
 
 /**
- * Lee el estado de la integración con Salesforce
- * Retorna { status: "active" | "stopped", updatedAt: string } o { status: "active", updatedAt: null } si no existe
+ * Guarda el estado consolidado del sistema
  */
+export async function writeSystemState(newState) {
+  if (!CFG.GCS_BUCKET) return;
+
+  const currentState = await readSystemState();
+  const updatedState = { ...currentState, ...newState, updatedAt: new Date().toISOString() };
+
+  const file = storage.bucket(CFG.GCS_BUCKET).file(CFG.STATE_OBJECT.replace("gmail_history.json", "system_state.json"));
+  await file.save(JSON.stringify(updatedState), {
+    contentType: "application/json",
+    metadata: { cacheControl: "no-cache" },
+  });
+  console.log("[mfs] System State updated:", JSON.stringify(newState));
+  return updatedState;
+}
+
+// WRAPPERS PARA COMPATIBILIDAD CON CÓDIGO EXISTENTE
+export async function readServiceStatus() {
+  const state = await readSystemState();
+  return { status: state.service_status, updatedAt: state.updatedAt };
+}
+
+export async function writeServiceStatus(status) {
+  await writeSystemState({ service_status: status });
+  return { status, updatedAt: new Date().toISOString() };
+}
+
 export async function readSalesforceStatus() {
-  if (!CFG.GCS_BUCKET) return { status: "active", updatedAt: null };
-
-  try {
-    const [buf] = await storage
-      .bucket(CFG.GCS_BUCKET)
-      .file("state/salesforce_status.json")
-      .download();
-    const j = JSON.parse(buf.toString("utf8"));
-    return {
-      status: j.status || "active",
-      updatedAt: j.updatedAt || null,
-    };
-  } catch {
-    // Si no existe, la integración está activa por defecto
-    return { status: "active", updatedAt: null };
-  }
+  const state = await readSystemState();
+  return { status: state.salesforce_status };
 }
 
-/**
- * Escribe el estado de la integración con Salesforce
- */
 export async function writeSalesforceStatus(status) {
-  if (!CFG.GCS_BUCKET) return;
-
-  if (status !== "active" && status !== "stopped") {
-    throw new Error("Status debe ser 'active' o 'stopped'");
-  }
-
-  await saveToGCS(
-    "state/salesforce_status.json",
-    JSON.stringify({
-      status,
-      updatedAt: new Date().toISOString(),
-    }, null, 2),
-    "application/json"
-  );
-  console.log(`[mfs] [salesforce] ✓ Estado de Salesforce actualizado a: ${status}`);
+  await writeSystemState({ salesforce_status: status });
+  return { status };
 }
 
-/**
- * Lee el estado del envío de emails automáticos
- * Retorna { status: "active" | "stopped", updatedAt: string } o { status: "active", updatedAt: null } si no existe
- */
 export async function readEmailSendingStatus() {
-  if (!CFG.GCS_BUCKET) return { status: "active", updatedAt: null };
-
-  try {
-    const [buf] = await storage
-      .bucket(CFG.GCS_BUCKET)
-      .file("state/email_sending_status.json")
-      .download();
-    const j = JSON.parse(buf.toString("utf8"));
-    return {
-      status: j.status || "active",
-      updatedAt: j.updatedAt || null,
-    };
-  } catch {
-    // Si no existe, el envío está activo por defecto
-    return { status: "active", updatedAt: null };
-  }
+  const state = await readSystemState();
+  return { status: state.email_sending_status };
 }
 
-/**
- * Escribe el estado del envío de emails automáticos
- */
 export async function writeEmailSendingStatus(status) {
-  if (!CFG.GCS_BUCKET) return;
-
-  if (status !== "active" && status !== "stopped") {
-    throw new Error("Status debe ser 'active' o 'stopped'");
-  }
-
-  await saveToGCS(
-    "state/email_sending_status.json",
-    JSON.stringify({
-      status,
-      updatedAt: new Date().toISOString(),
-    }, null, 2),
-    "application/json"
-  );
-  console.log(`[mfs] [email] ✓ Estado de envío de emails actualizado a: ${status}`);
+  await writeSystemState({ email_sending_status: status });
+  return { status };
 }
 
 

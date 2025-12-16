@@ -34,11 +34,13 @@ function extractAllEmails(headerValue) {
 }
 
 // Eliminadas todas las operaciones de storage para minimizar costes
-import { classifyIntent } from "./vertex.js";
+import { classifyIntent, classifyIntentLowPower } from "./vertex.js";
+import { checkCostGuard, trackUsage } from "./cost-guard.js";
 import { createAirtableRecord, airtableFindByEmailId } from "./airtable.js";
 import { sendBarterEmail, sendFreeCoverageEmail } from "./email-sender.js";
 import { createSalesforceLead } from "./salesforce.js";
-import { getCityId } from "../config.js";
+import { getCityId, CFG } from "../config.js";
+import { readSalesforceStatus } from "./storage.js";
 
 // Función para resetear el contador de rate limit (llamada desde index.js cuando se activa el servicio)
 export function resetRateLimitCounter() {
@@ -653,8 +655,33 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         // ÚNICA LLAMADA A GEMINI: classifyIntent
         let intent, confidence, reasoning, meddicMetrics, meddicEconomicBuyer, meddicDecisionCriteria, meddicDecisionProcess, meddicIdentifyPain, meddicChampion, isFreeCoverage, isBarter, isPricing;
 
+        // COST GUARD: Verificar presupuesto horario antes de llamar a la IA
+        // Estimamos caracteres de entrada (body truncado + prompt)
+        const estimatedInputChars = (body?.length || 0) + 2000; // body + aprox prompt overhead
+        const costGuard = await checkCostGuard(CFG.VERTEX_INTENT_MODEL, estimatedInputChars);
+
+        if (!costGuard.allowed) {
+          console.error(`[mfs] 🛑 SKIP: Cost Guard limit exceeded ($${costGuard.currentCost.toFixed(4)} USD). Skipping email ${id}.`);
+          results.push({ id, skipped: true, reason: "cost_guard_limit_exceeded" });
+          releaseProcessingLock(id);
+          continue;
+        }
+
         try {
-          const classificationResult = await classifyIntent({ subject, from, to, body });
+          // LOW POWER MODE SELECTION
+          let classificationResult;
+          if (costGuard.lowPowerMode) {
+            classificationResult = await classifyIntentLowPower({ subject, from, to, body });
+            console.log(`[mfs] ⚠️ Using Low Power Mode for email ${id}`);
+          } else {
+            classificationResult = await classifyIntent({ subject, from, to, body });
+          }
+
+          // COST GUARD: Registrar consumo real (estimado)
+          // Asumimos output chars basado en la respuesta (aprox)
+          const estimatedOutputChars = JSON.stringify(classificationResult).length;
+          await trackUsage(CFG.VERTEX_INTENT_MODEL, estimatedInputChars, estimatedOutputChars);
+
           intent = classificationResult.intent;
           confidence = classificationResult.confidence;
           reasoning = classificationResult.reasoning;
@@ -765,10 +792,18 @@ export async function processMessageIds(gmail, ids, serviceSource = null) {
         const normalizedFinalIntent = String(finalIntent || "").trim();
         console.log(`[mfs] DEBUG - Verificando si crear lead en Salesforce - normalizedFinalIntent: "${normalizedFinalIntent}"`);
 
-        // VALIDACIÓN ESTRICTA: Solo crear leads para Medium, High, Very High
-        // Esta validación es CRÍTICA para mantener consistencia entre Airtable y Salesforce
+        // VALIDACIÓN DE ESTADO: Verificar si Salesforce integration está activa (Tier 1 Check)
+        const { status: currentSalesforceStatus } = await readSalesforceStatus();
+        const isSalesforceActive = currentSalesforceStatus === "active";
+
+        if (!isSalesforceActive) {
+          console.log(`[mfs] ⏸️ Salesforce Lead Creation DISABLED due to Cost Guard or Manual Stop (Status: ${currentSalesforceStatus})`);
+        }
+
+        // VALIDACIÓN ESTRICTA: Solo crear leads para Medium, High, Very High y si el servicio está activo
         const validIntentsForSalesforce = ["Medium", "High", "Very High"];
-        if (validIntentsForSalesforce.includes(normalizedFinalIntent)) {
+
+        if (isSalesforceActive && validIntentsForSalesforce.includes(normalizedFinalIntent)) {
           // VERIFICACIÓN DE DUPLICADOS: Verificar si coincide con alguno de los últimos 20 correos procesados (from, to, subject)
           if (isDuplicateInRecent20(from, to, subject)) {
             console.log(`[mfs] 🔍 Duplicado detectado en últimos 20 correos (from/to/subject) para ${id} - NO se creará lead en Salesforce`);

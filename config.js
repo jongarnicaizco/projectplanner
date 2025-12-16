@@ -27,10 +27,24 @@ export const CFG = {
     .toLowerCase()
     .includes("true"),
 
+  // Cost Guard
+  COST_GUARD_MAX_HOURLY_COST_USD: parseFloat(process.env.COST_GUARD_MAX_HOURLY_COST_USD || "2.00"), // Legacy support
+  COST_GUARD_TIER1_LIMIT: parseFloat(process.env.COST_GUARD_TIER1_LIMIT || "2.00"), // 2€/h -> Disable SF + Personal Emails
+  COST_GUARD_TIER2_LIMIT: parseFloat(process.env.COST_GUARD_TIER2_LIMIT || "8.00"), // 8€/h -> Low Power Mode
+  COST_GUARD_STATE_FILE: process.env.COST_GUARD_STATE_FILE || "state/cost_guard.json",
+  ADMIN_EMAIL: process.env.ADMIN_EMAIL || "jon.garnica@feverup.com",
+
   // Airtable
   AIRTABLE_BASE_ID: process.env.AIRTABLE_BASE_ID,
   AIRTABLE_TABLE: process.env.AIRTABLE_TABLE,
   AIRTABLE_TOKEN_SECRET: process.env.AIRTABLE_TOKEN_SECRET || "AIRTABLE_TOKEN",
+};
+
+export const MODEL_PRICING = {
+  // Precios estimados por 1 millón de caracteres (aprox. tokens)
+  // Basado en precios standard de modelos Flash (~$0.10 input / ~$0.40 output per 1M tokens)
+  "gemini-2.5-flash": { input: 0.10, output: 0.40 },
+  "default": { input: 0.10, output: 0.40 }
 };
 
 export const FLAGS = {
@@ -255,6 +269,24 @@ OUTPUT: JSON only, no extra text:
   "meddic_champion": "description or 'no info' (omit if Low/Discard)"
 }
 
+`.trim();
+
+// Prompt de bajo consumo (Tier 2 - >8€/h)
+// Objetivo: Reducir tokens al máximo. Solo clasificar High/Medium vs Low. Sin MEDDIC, sin reasoning largo.
+export const INTENT_PROMPT_LOW_POWER = `
+ANALYZE LEAD. JSON ONLY.
+PARTNERSHIP: Brand/Agency/Product wanting to pay/partner?
+- YES (Coca-Cola, big budget) -> "Very High"
+- YES (Clear proposal) -> "High"
+- YES (Vague) -> "Medium"
+- NO (Press release, discount, barter, hiring) -> "Low"
+
+OUTPUT JSON:
+{
+  "intent": "Very High|High|Medium|Low",
+  "confidence": 0.0-1.0,
+  "reasoning": "max 5 words"
+}
 `.trim();
 
 

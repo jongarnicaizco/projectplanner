@@ -44,7 +44,7 @@ app.get("/control/status", async (_req, res) => {
     const serviceStatus = await readServiceStatus();
     const salesforceStatus = await readSalesforceStatus();
     const emailStatus = await readEmailSendingStatus();
-    
+
     res.json({
       ok: true,
       status: serviceStatus.status,
@@ -65,7 +65,7 @@ app.get("/control/status", async (_req, res) => {
 app.post("/control/start", async (_req, res) => {
   try {
     console.log("[mfs] /control/start → Activando servicio - DESCARTANDO TODO LO PENDIENTE");
-    
+
     // CRÍTICO: Actualizar historyId de ambas cuentas al MÁS RECIENTE para solo procesar mensajes nuevos
     // Esto descarta cualquier mensaje pendiente y empieza desde 0
     try {
@@ -79,7 +79,7 @@ app.post("/control/start", async (_req, res) => {
     } catch (e) {
       console.warn("[mfs] /control/start → No se pudo actualizar historyId principal:", e.message);
     }
-    
+
     try {
       const gmailSender = await getGmailSenderClient();
       const profSender = await gmailSender.users.getProfile({ userId: "me" });
@@ -91,7 +91,7 @@ app.post("/control/start", async (_req, res) => {
     } catch (e) {
       console.warn("[mfs] /control/start → No se pudo actualizar historyId SENDER:", e.message);
     }
-    
+
     // Resetear contador de rate limit antes de activar
     try {
       const { resetRateLimitCounter } = await import("./services/processor.js");
@@ -100,10 +100,10 @@ app.post("/control/start", async (_req, res) => {
     } catch (resetError) {
       console.warn("[mfs] /control/start → No se pudo resetear contador de rate limit:", resetError?.message);
     }
-    
+
     // Activar servicio
     await writeServiceStatus("active");
-    
+
     res.json({
       ok: true,
       message: "Servicio activado. TODO LO PENDIENTE DEScartado. Solo se procesarán mensajes NUEVOS a partir de ahora.",
@@ -122,7 +122,7 @@ app.post("/control/stop", async (_req, res) => {
   try {
     console.log("[mfs] /control/stop → Deteniendo servicio");
     await writeServiceStatus("stopped");
-    
+
     res.json({
       ok: true,
       message: "Servicio detenido. No se procesarán mensajes hasta que se reactive.",
@@ -143,7 +143,7 @@ app.get("/control/status", async (_req, res) => {
     const serviceStatus = await readServiceStatus();
     const salesforceStatus = await readSalesforceStatus();
     const emailStatus = await readEmailSendingStatus();
-    
+
     res.json({
       ok: true,
       status: serviceStatus.status,
@@ -164,7 +164,7 @@ app.post("/control/salesforce", async (req, res) => {
   try {
     const { action } = req.body;
     const { writeSalesforceStatus } = await import("./services/storage.js");
-    
+
     if (action === "start") {
       await writeSalesforceStatus("active");
       res.json({
@@ -195,7 +195,7 @@ app.post("/control/email-sending", async (req, res) => {
   try {
     const { action } = req.body;
     const { writeEmailSendingStatus } = await import("./services/storage.js");
-    
+
     if (action === "start") {
       await writeEmailSendingStatus("active");
       res.json({
@@ -227,28 +227,28 @@ app.post("/control/email-sending", async (req, res) => {
 app.post("/control/process-unprocessed", async (_req, res) => {
   try {
     console.log(`[mfs] /control/process-unprocessed → Procesando correos sin etiqueta "processed" (fallback automático - últimos 60 minutos)`);
-    
+
     const MAX_MESSAGES_TO_CHECK = 100; // Aumentado para capturar más correos perdidos
     const sixtyMinutesAgo = Math.floor(Date.now() / 1000) - (60 * 60); // Últimos 60 minutos (aumentado de 30)
     const sixtyMinutesAgoMs = Date.now() - (60 * 60 * 1000); // Para comparar internalDate
-    
+
     let totalProcesados = 0;
     let totalFallidos = 0;
     let totalSaltados = 0;
     let totalEncontrados = 0;
-    
+
     // Función auxiliar para obtener mensajes sin processed usando query (método preferido)
     async function getUnprocessedWithQuery(gmail, accountName) {
       try {
         const query = `in:inbox -label:processed after:${sixtyMinutesAgo}`;
         console.log(`[mfs] /control/process-unprocessed → Query ${accountName}: ${query}`);
-        
+
         const list = await gmail.users.messages.list({
           userId: "me",
           q: query,
           maxResults: MAX_MESSAGES_TO_CHECK,
         });
-        
+
         const messageIds = (list.data.messages || []).map(m => m.id);
         console.log(`[mfs] /control/process-unprocessed → Query ${accountName}: encontrados ${messageIds.length} mensajes sin processed`);
         return messageIds;
@@ -261,31 +261,31 @@ app.post("/control/process-unprocessed", async (_req, res) => {
         throw queryError; // Re-lanzar otros errores
       }
     }
-    
+
     // Función auxiliar para obtener mensajes sin processed usando fallback (sin query)
     async function getUnprocessedWithFallback(gmail, accountName) {
       try {
         console.log(`[mfs] /control/process-unprocessed → Fallback sin query para ${accountName} (últimos ${MAX_MESSAGES_TO_CHECK} mensajes del INBOX)`);
-        
+
         // Obtener mensajes del INBOX sin query (funciona con scope limitado)
         const list = await gmail.users.messages.list({
           userId: "me",
           labelIds: ["INBOX"],
           maxResults: MAX_MESSAGES_TO_CHECK,
         });
-        
+
         const messages = list.data.messages || [];
         console.log(`[mfs] /control/process-unprocessed → Fallback ${accountName}: encontrados ${messages.length} mensajes en INBOX`);
-        
+
         // Verificar cada mensaje para ver si tiene "processed" y es reciente
         const unprocessedIds = [];
         let processedCount = 0;
         let tooOldCount = 0;
-        
+
         for (const msg of messages) {
           if (!msg.id) continue;
           if (unprocessedIds.length >= MAX_MESSAGES_TO_CHECK) break;
-          
+
           try {
             // Obtener metadata del mensaje (solo labels e internalDate)
             const msgDetail = await gmail.users.messages.get({
@@ -294,22 +294,22 @@ app.post("/control/process-unprocessed", async (_req, res) => {
               format: "metadata",
               metadataHeaders: [],
             });
-            
+
             const labels = msgDetail.data.labelIds || [];
             const internalDate = parseInt(msgDetail.data.internalDate || "0", 10);
-            
+
             // Verificar si tiene "processed"
             if (labels.includes("processed")) {
               processedCount++;
               continue;
             }
-            
+
             // Verificar si es reciente (últimos 60 minutos)
             if (internalDate < sixtyMinutesAgoMs) {
               tooOldCount++;
               continue;
             }
-            
+
             // Agregar el mensaje
             unprocessedIds.push(msg.id);
           } catch (msgError) {
@@ -317,7 +317,7 @@ app.post("/control/process-unprocessed", async (_req, res) => {
             continue;
           }
         }
-        
+
         console.log(`[mfs] /control/process-unprocessed → Fallback ${accountName}: ${unprocessedIds.length} sin processed, ${processedCount} ya procesados, ${tooOldCount} muy antiguos`);
         return unprocessedIds;
       } catch (fallbackError) {
@@ -325,22 +325,22 @@ app.post("/control/process-unprocessed", async (_req, res) => {
         return [];
       }
     }
-    
+
     // Procesar cuenta principal (media.manager@feverup.com)
     try {
       const gmail = await getGmailClient();
-      
+
       // Intentar primero con query
       let messageIds = await getUnprocessedWithQuery(gmail, "cuenta principal");
-      
+
       // Si la query falló (null), usar fallback
       if (messageIds === null) {
         messageIds = await getUnprocessedWithFallback(gmail, "cuenta principal");
       }
-      
+
       totalEncontrados += messageIds.length;
       console.log(`[mfs] /control/process-unprocessed → Encontrados ${messageIds.length} mensajes sin processed (cuenta principal)`);
-      
+
       if (messageIds.length > 0) {
         const { processMessageIds } = await import("./services/processor.js");
         const results = await processMessageIds(gmail, messageIds, "Cloud Scheduler (Fallback automático cada 15 minutos - cuenta principal)");
@@ -353,22 +353,22 @@ app.post("/control/process-unprocessed", async (_req, res) => {
       console.error(`[mfs] /control/process-unprocessed → Error procesando cuenta principal:`, e?.message || e);
       logErr("control/process-unprocessed error (cuenta principal):", e);
     }
-    
+
     // Procesar cuenta SENDER (secretmedia@feverup.com)
     try {
       const gmailSender = await getGmailSenderClient();
-      
+
       // Intentar primero con query
       let senderMessageIds = await getUnprocessedWithQuery(gmailSender, "cuenta SENDER");
-      
+
       // Si la query falló (null), usar fallback
       if (senderMessageIds === null) {
         senderMessageIds = await getUnprocessedWithFallback(gmailSender, "cuenta SENDER");
       }
-      
+
       totalEncontrados += senderMessageIds.length;
       console.log(`[mfs] /control/process-unprocessed → Encontrados ${senderMessageIds.length} mensajes sin processed (cuenta SENDER)`);
-      
+
       if (senderMessageIds.length > 0) {
         const { processMessageIds } = await import("./services/processor.js");
         const senderResults = await processMessageIds(gmailSender, senderMessageIds, "Cloud Scheduler (Fallback automático cada 15 minutos - cuenta SENDER)");
@@ -381,7 +381,7 @@ app.post("/control/process-unprocessed", async (_req, res) => {
       console.error(`[mfs] /control/process-unprocessed → Error procesando cuenta SENDER:`, e?.message || e);
       logErr("control/process-unprocessed error (cuenta SENDER):", e);
     }
-    
+
     res.json({
       ok: true,
       message: `Fallback completado: ${totalProcesados} procesados, ${totalFallidos} fallidos, ${totalSaltados} saltados`,
@@ -404,15 +404,15 @@ app.post("/control/process-unprocessed", async (_req, res) => {
 app.post("/webhook/airtable-stop", async (_req, res) => {
   try {
     console.log("[mfs] 🚨 /webhook/airtable-stop → Webhook recibido de sistema de alerting, DETENIENDO SERVICIO COMPLETAMENTE");
-    
+
     // Escribir estado "stopped" en GCS
     await writeServiceStatus("stopped");
     console.log("[mfs] 🚨 /webhook/airtable-stop → Estado 'stopped' escrito en GCS");
-    
+
     // VERIFICAR que el estado se guardó correctamente (lectura inmediata)
     const { readServiceStatus } = await import("./services/storage.js");
     const verificationStatus = await readServiceStatus();
-    
+
     if (verificationStatus.status !== "stopped") {
       console.error(`[mfs] 🚨 ERROR CRÍTICO: El estado no se guardó correctamente. Estado esperado: 'stopped', Estado actual: '${verificationStatus.status}'`);
       // Intentar escribir de nuevo
@@ -422,9 +422,9 @@ app.post("/webhook/airtable-stop", async (_req, res) => {
         throw new Error(`No se pudo guardar el estado 'stopped'. Estado actual: '${secondVerification.status}'`);
       }
     }
-    
+
     console.log(`[mfs] 🚨 /webhook/airtable-stop → ✓ VERIFICACIÓN EXITOSA: Servicio detenido completamente. Estado verificado: '${verificationStatus.status}'. NO se procesarán mensajes hasta que se reactive manualmente desde el webapp.`);
-    
+
     res.json({
       ok: true,
       message: "Servicio detenido completamente desde webhook de alerting. No se procesarán mensajes hasta que se reactive desde el webapp.",
@@ -436,7 +436,7 @@ app.post("/webhook/airtable-stop", async (_req, res) => {
   } catch (e) {
     console.error("[mfs] 🚨 ERROR CRÍTICO en /webhook/airtable-stop:", e?.message || e);
     logErr("webhook/airtable-stop error:", e);
-    res.status(500).json({ 
+    res.status(500).json({
       ok: false,
       error: e?.message || "Error desconocido al detener el servicio",
       status: "unknown",
@@ -449,498 +449,271 @@ app.post("/webhook/airtable-stop", async (_req, res) => {
  */
 app.get("/control", async (_req, res) => {
   try {
-    const { readServiceStatus, readSalesforceStatus, readEmailSendingStatus } = await import("./services/storage.js");
-    const status = await readServiceStatus();
-    const salesforceStatus = await readSalesforceStatus();
-    const emailStatus = await readEmailSendingStatus();
+    const {
+      readServiceStatus,
+      readSalesforceStatus,
+      readEmailSendingStatus,
+      readSystemState,
+      writeSystemState
+    } = await import("./services/storage.js");
+
+    // Read System State (Flags)
+    const systemState = await readSystemState();
+
+    // Read Hourly Cost (Counter)
+    // We read directly from GCS to avoid importing internal function from cost-guard.js
+    let currentCost = 0.0;
+    let currentDayCost = 0.0;
+    let yesterdayCost = 0.0;
+    try {
+      const storage = new Storage();
+      const bucket = storage.bucket(CFG.GCS_BUCKET);
+      const file = bucket.file(CFG.COST_GUARD_STATE_FILE || "state/cost_guard.json");
+      const [exists] = await file.exists();
+      if (exists) {
+        const [content] = await file.download();
+        const data = JSON.parse(content.toString());
+
+        // Always read daily stats if available
+        currentDayCost = data.current_day_cost_usd || 0.0;
+        yesterdayCost = data.yesterday_cost_usd || 0.0;
+
+        // Verify it's current hour
+        const now = new Date();
+        const currentHourKey = `${now.toISOString().slice(0, 13)}`;
+        if (data.hourKey === currentHourKey) {
+          currentCost = data.current_hour_cost_usd || 0.0;
+        }
+      }
+    } catch (e) {
+      console.warn("Error reading cost state:", e.message);
+    }
+
     const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Control del Servicio - MFS Lead Generation</title>
+  <title>MFS AI Cost Guard Control</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    :root {
+      --primary: #6366f1;
+      --bg: #f3f4f6;
+      --card: #ffffff;
+      --text: #1f2937;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
     }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-    .container {
-      background: white;
-      border-radius: 20px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-      padding: 40px;
-      max-width: 500px;
-      width: 100%;
-      text-align: center;
-    }
-    h1 {
-      color: #333;
-      margin-bottom: 10px;
-      font-size: 28px;
-    }
-    .subtitle {
-      color: #666;
-      margin-bottom: 30px;
-      font-size: 14px;
-    }
-    .status {
-      display: inline-block;
-      padding: 12px 24px;
-      border-radius: 50px;
-      font-weight: 600;
-      font-size: 16px;
-      margin-bottom: 30px;
-      transition: all 0.3s;
-    }
-    .status.active {
-      background: #10b981;
-      color: white;
-    }
-    .status.stopped {
-      background: #ef4444;
-      color: white;
-    }
-    .buttons {
-      display: flex;
-      gap: 15px;
-      margin-bottom: 30px;
-    }
-    button {
-      flex: 1;
-      padding: 15px 30px;
-      border: none;
-      border-radius: 10px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.3s;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-    }
-    button:active {
-      transform: translateY(0);
-    }
-    .btn-start {
-      background: #10b981;
-      color: white;
-    }
-    .btn-start:hover {
-      background: #059669;
-    }
-    .btn-start:disabled {
-      background: #d1d5db;
-      cursor: not-allowed;
-      transform: none;
-    }
-    .btn-stop {
-      background: #ef4444;
-      color: white;
-    }
-    .btn-stop:hover {
-      background: #dc2626;
-    }
-    .btn-stop:disabled {
-      background: #d1d5db;
-      cursor: not-allowed;
-      transform: none;
-    }
-    .info {
-      background: #f3f4f6;
-      border-radius: 10px;
-      padding: 20px;
-      margin-top: 20px;
-      text-align: left;
-    }
-    .info h3 {
-      color: #333;
-      margin-bottom: 10px;
-      font-size: 14px;
-    }
-    .info p {
-      color: #666;
-      font-size: 13px;
-      line-height: 1.6;
-      margin-bottom: 8px;
-    }
-    .info ul {
-      color: #666;
-      font-size: 13px;
-      line-height: 1.6;
-      margin-left: 20px;
-    }
-    .loading {
-      display: none;
-      color: #666;
-      font-size: 14px;
-      margin-top: 10px;
-    }
-    .loading.show {
-      display: block;
-    }
-    .updated-at {
-      color: #999;
-      font-size: 12px;
-      margin-top: 20px;
-    }
-    .control-section {
-      background: #f9fafb;
-      border: 2px solid #e5e7eb;
-      border-radius: 12px;
-      padding: 20px;
-      margin-top: 20px;
-      text-align: left;
-    }
-    .control-section h3 {
-      color: #1f2937;
-      margin-bottom: 12px;
-      font-size: 16px;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .control-section .description {
-      color: #6b7280;
-      font-size: 13px;
-      line-height: 1.5;
-      margin-bottom: 15px;
-    }
-    .control-section .status-badge {
-      display: inline-block;
-      padding: 6px 12px;
-      border-radius: 20px;
-      font-size: 13px;
-      font-weight: 600;
-      margin-bottom: 15px;
-    }
-    .control-section .status-badge.active {
-      background: #d1fae5;
-      color: #065f46;
-    }
-    .control-section .status-badge.stopped {
-      background: #fee2e2;
-      color: #991b1b;
-    }
-    @media (max-width: 640px) {
-      .container {
-        padding: 20px;
-        border-radius: 16px;
-      }
-      h1 {
-        font-size: 24px;
-      }
-      .subtitle {
-        font-size: 13px;
-      }
-      .status {
-        font-size: 14px;
-        padding: 10px 20px;
-      }
-      button {
-        padding: 12px 20px;
-        font-size: 14px;
-      }
-      .control-section {
-        padding: 16px;
-      }
-      .control-section h3 {
-        font-size: 15px;
-      }
-      .info {
-        padding: 16px;
-      }
-      .info p {
-        font-size: 12px;
-      }
-    }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; padding: 20px; line-height: 1.5; }
+    .container { background: var(--card); border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 100%; max-width: 600px; padding: 32px; }
+    h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; text-align: center; }
+    .subtitle { color: #6b7280; text-align: center; margin-bottom: 32px; font-size: 14px; }
+    
+    .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+    .status-card { background: #f9fafb; padding: 16px; border-radius: 12px; border: 1px solid #e5e7eb; }
+    .status-label { font-size: 12px; color: #6b7280; margin-bottom: 4px; font-weight: 600; text-transform: uppercase; }
+    .status-value { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    
+    .cost-display { text-align: center; margin-bottom: 32px; padding: 24px; background: #eef2ff; border-radius: 16px; border: 1px solid #c7d2fe; }
+    .cost-label { color: #4338ca; font-weight: 600; font-size: 14px; margin-bottom: 8px; text-transform: uppercase; }
+    .cost-value { font-size: 36px; font-weight: 800; color: #312e81; }
+    .cost-limit { font-size: 14px; color: #6366f1; margin-top: 4px; }
+    
+    .stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 20px; text-align: left; background: white; padding: 12px; border-radius: 8px; }
+    .stat-item h4 { font-size: 11px; color: #6b7280; text-transform: uppercase; font-weight: 600; margin-bottom: 4px; }
+    .stat-item p { font-size: 14px; font-weight: 700; color: #1f2937; }
+
+    .tier-badge { display: inline-block; padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: 700; }
+    .tier-normal { background: #d1fae5; color: #065f46; }
+    .tier-warning { background: #fef3c7; color: #92400e; }
+    .tier-danger { background: #fee2e2; color: #991b1b; }
+    
+    .controls { display: flex; flex-direction: column; gap: 12px; }
+    .btn { width: 100%; padding: 16px; border: none; border-radius: 12px; font-weight: 600; font-size: 16px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .btn:active { transform: scale(0.98); }
+    
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-success { background: var(--success); color: white; }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-warning { background: var(--warning); color: white; }
+    .btn-outline { background: white; border: 2px solid #e5e7eb; color: var(--text); }
+    
+    .pulse { animation: pulse 2s infinite; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>🚀 Control del Servicio</h1>
-    <p class="subtitle">MFS Lead Generation AI</p>
-    
-    <div class="status ${status.status}" id="status">
-      ${status.status === "active" ? "🟢 ACTIVO" : "🔴 DETENIDO"}
+    <h1>MFS Lead Gen AI</h1>
+    <p class="subtitle">Cloud Run Instance: ${process.env.K_SERVICE || 'local'}</p>
+
+    <div class="cost-display">
+        <div class="cost-label">Current Hourly Cost</div>
+        <div class="cost-value">$${currentCost.toFixed(4)}</div>
+        <div class="cost-limit">Tier 1 Limit: $2.00 | Tier 2 Limit: $8.00</div>
+        <div style="margin-top: 12px;">
+            ${currentCost > 8.00 ? '<span class="tier-badge tier-danger">TIER 2 EXCEEDED</span>' :
+        currentCost > 2.00 ? '<span class="tier-badge tier-warning">TIER 1 EXCEEDED</span>' :
+          '<span class="tier-badge tier-normal">NORMAL COST FLOW</span>'}
+        </div>
     </div>
-    
-    <div class="buttons">
-      <button class="btn-start" id="btnStart" ${status.status === "active" ? "disabled" : ""}>
-        ▶ Iniciar
-      </button>
-      <button class="btn-stop" id="btnStop" ${status.status === "stopped" ? "disabled" : ""}>
-        ⏸ Detener
-      </button>
+
+    <div class="status-grid">
+        <div class="status-card">
+            <div class="status-label">Service Status</div>
+            <div class="status-value">
+                <span style="color: ${systemState.service_status === 'active' ? 'var(--success)' : 'var(--danger)'}">
+                    ${systemState.service_status === 'active' ? '● ACTIVE' : '● STOPPED'}
+                </span>
+            </div>
+        </div>
+        <div class="status-card">
+            <div class="status-label">AI Mode</div>
+            <div class="status-value">
+                <span style="color: ${systemState.low_power_mode ? 'var(--warning)' : 'var(--success)'}">
+                    ${systemState.low_power_mode ? '⚡ LOW POWER' : '🚀 PRECISION'}
+                </span>
+            </div>
+        </div>
+        <div class="status-card">
+            <div class="status-label">Salesforce Sync</div>
+            <div class="status-value">
+                <span style="color: ${systemState.salesforce_status === 'active' ? 'var(--success)' : 'var(--danger)'}">
+                    ${systemState.salesforce_status === 'active' ? '✓ ON' : '✕ OFF'}
+                </span>
+            </div>
+        </div>
+        <div class="status-card">
+            <div class="status-label">Email Sending</div>
+            <div class="status-value">
+                <span style="color: ${systemState.email_sending_status === 'active' ? 'var(--success)' : 'var(--danger)'}">
+                    ${systemState.email_sending_status === 'active' ? '✓ ON' : '✕ OFF'}
+                </span>
+            </div>
+        </div>
     </div>
-    
-    <div class="control-section">
-      <h3>☁️ Integración con Salesforce</h3>
-      <div class="status-badge ${salesforceStatus.status}" id="salesforceStatus">
-        ${salesforceStatus.status === "active" ? "🟢 ACTIVO" : "🔴 DETENIDO"}
-      </div>
-      <p class="description">Controla la creación de leads en Salesforce. Si está detenido, los emails se seguirán procesando en Airtable pero no se crearán leads.</p>
-      <div class="buttons">
-        <button class="btn-start" id="btnSalesforceStart" ${salesforceStatus.status === "active" ? "disabled" : ""}>
-          ▶ Activar
+
+    <div class="controls">
+        <button onclick="toggleService()" class="btn ${systemState.service_status === 'active' ? 'btn-danger' : 'btn-success'}">
+            ${systemState.service_status === 'active' ? 'STOP GLOBAL SERVICE' : 'START GLOBAL SERVICE'}
         </button>
-        <button class="btn-stop" id="btnSalesforceStop" ${salesforceStatus.status === "stopped" ? "disabled" : ""}>
-          ⏸ Detener
-        </button>
-      </div>
-    </div>
-    
-    <div class="control-section">
-      <h3>📧 Envío de Emails Automáticos</h3>
-      <div class="status-badge ${emailStatus.status}" id="emailStatus">
-        ${emailStatus.status === "active" ? "🟢 ACTIVO" : "🔴 DETENIDO"}
-      </div>
-      <p class="description">Controla el envío de emails automáticos de respuesta. Si está detenido, los emails se seguirán procesando en Airtable y se crearán leads, pero no se enviarán respuestas automáticas.</p>
-      <div class="buttons">
-        <button class="btn-start" id="btnEmailStart" ${emailStatus.status === "active" ? "disabled" : ""}>
-          ▶ Activar
-        </button>
-        <button class="btn-stop" id="btnEmailStop" ${emailStatus.status === "stopped" ? "disabled" : ""}>
-          ⏸ Detener
-        </button>
-      </div>
-    </div>
-    
-    <div class="loading" id="loading">Procesando...</div>
-    
-    <div class="info">
-      <h3>ℹ️ Información</h3>
-      <p><strong>Estado actual:</strong> ${status.status === "active" ? "El servicio está procesando mensajes nuevos" : "El servicio está detenido y no procesa mensajes"}</p>
-      <p><strong>Al iniciar:</strong> Se actualiza el historyId para solo procesar mensajes nuevos a partir de ahora. Los mensajes antiguos NO se procesarán.</p>
-      <p><strong>Al detener:</strong> El servicio deja de procesar mensajes completamente. Las notificaciones de Pub/Sub se ignoran.</p>
-      <p><strong>Importante:</strong> Los mensajes con etiqueta "processed" NUNCA se procesarán, sin importar el estado del servicio.</p>
-    </div>
-    
-    ${status.updatedAt ? `<div class="updated-at">Última actualización: ${new Date(status.updatedAt).toLocaleString("es-ES")}</div>` : ""}
-  </div>
-  
-  <script>
-    const btnStart = document.getElementById('btnStart');
-    const btnStop = document.getElementById('btnStop');
-    const statusEl = document.getElementById('status');
-    const loading = document.getElementById('loading');
-    
-    const btnSalesforceStart = document.getElementById('btnSalesforceStart');
-    const btnSalesforceStop = document.getElementById('btnSalesforceStop');
-    const salesforceStatusEl = document.getElementById('salesforceStatus');
-    const btnEmailStart = document.getElementById('btnEmailStart');
-    const btnEmailStop = document.getElementById('btnEmailStop');
-    const emailStatusEl = document.getElementById('emailStatus');
-    
-    async function updateStatus() {
-      try {
-        const res = await fetch('/control/status');
-        const data = await res.json();
         
-        // El endpoint siempre devuelve data.ok: true y data.status, data.salesforce, data.emailSending
-        if (data && (data.ok || data.status !== undefined)) {
-          const serviceStatus = data.status || 'active';
-          const salesforceStatus = data.salesforce || 'active';
-          const emailSendingStatus = data.emailSending || 'active';
-          
-          // Actualizar estado del servicio principal
-          statusEl.className = 'status ' + serviceStatus;
-          statusEl.textContent = serviceStatus === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
-          btnStart.disabled = serviceStatus === 'active';
-          btnStop.disabled = serviceStatus === 'stopped';
-          
-          // Actualizar estado de Salesforce
-          salesforceStatusEl.className = 'status-badge ' + salesforceStatus;
-          salesforceStatusEl.textContent = salesforceStatus === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
-          btnSalesforceStart.disabled = salesforceStatus === 'active';
-          btnSalesforceStop.disabled = salesforceStatus === 'stopped';
-          
-          // Actualizar estado de envío de emails
-          emailStatusEl.className = 'status-badge ' + emailSendingStatus;
-          emailStatusEl.textContent = emailSendingStatus === 'active' ? '🟢 ACTIVO' : '🔴 DETENIDO';
-          btnEmailStart.disabled = emailSendingStatus === 'active';
-          btnEmailStop.disabled = emailSendingStatus === 'stopped';
+        <button onclick="resetNormalFlow()" class="btn btn-primary">
+            🔄 RESET NORMAL FLOW <small>(Clear Flags & Re-enable)</small>
+        </button>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <button onclick="toggleSalesforce()" class="btn btn-outline">
+                SF: ${systemState.salesforce_status === 'active' ? 'DISABLE' : 'ENABLE'}
+            </button>
+            <button onclick="toggleEmail()" class="btn btn-outline">
+                EMAIL: ${systemState.email_sending_status === 'active' ? 'DISABLE' : 'ENABLE'}
+            </button>
+        </div>
+        
+        <button onclick="toggleLowPower()" class="btn btn-outline" style="margin-top:8px; font-size: 14px;">
+            Force Low Power Mode: ${systemState.low_power_mode ? 'OFF' : 'ON'}
+        </button>
+    </div>
+
+    <script>
+        async function apiCall(endpoint) {
+            document.body.style.opacity = '0.5';
+            try {
+                const res = await fetch(endpoint, { method: 'POST' });
+                if (res.ok) window.location.reload();
+                else alert('Error: ' + await res.text());
+            } catch (e) {
+                alert('Connection error');
+            }
+            document.body.style.opacity = '1';
         }
-      } catch (e) {
-        console.error('Error actualizando estado:', e);
-      }
-    }
-    
-    async function startService() {
-      loading.classList.add('show');
-      btnStart.disabled = true;
-      btnStop.disabled = true;
-      
-      try {
-        const res = await fetch('/control/start', { method: 'POST' });
-        const data = await res.json();
-        if (data.ok) {
-          await updateStatus();
-          alert('✅ Servicio activado. Solo se procesarán mensajes nuevos.');
-        } else {
-          alert('❌ Error: ' + (data.error || 'No se pudo activar el servicio'));
+
+        function toggleService() { apiCall('/control/toggle'); }
+        function toggleSalesforce() { apiCall('/control/toggle-salesforce'); }
+        function toggleEmail() { apiCall('/control/toggle-email'); }
+        function toggleLowPower() { apiCall('/control/toggle-low-power'); }
+        function resetNormalFlow() { 
+            if(confirm('This will re-enable Salesforce, Emails, and switch AI to Precision mode. Continue?')) {
+                apiCall('/control/reset-cost-guard'); 
+            }
         }
-      } catch (e) {
-        alert('❌ Error: ' + e.message);
-      } finally {
-        loading.classList.remove('show');
-      }
-    }
-    
-    async function stopService() {
-      loading.classList.add('show');
-      btnStart.disabled = true;
-      btnStop.disabled = true;
-      
-      try {
-        const res = await fetch('/control/stop', { method: 'POST' });
-        const data = await res.json();
-        if (data.ok) {
-          await updateStatus();
-          alert('⏸ Servicio detenido. No se procesarán mensajes hasta que se reactive.');
-        } else {
-          alert('❌ Error: ' + (data.error || 'No se pudo detener el servicio'));
-        }
-      } catch (e) {
-        alert('❌ Error: ' + e.message);
-      } finally {
-        loading.classList.remove('show');
-      }
-    }
-    
-    btnStart.addEventListener('click', startService);
-    btnStop.addEventListener('click', stopService);
-    
-    // Control de Salesforce
-    async function startSalesforce() {
-      loading.classList.add('show');
-      btnSalesforceStart.disabled = true;
-      btnSalesforceStop.disabled = true;
-      
-      try {
-        const res = await fetch('/control/salesforce', { 
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'start' })
-        });
-        const data = await res.json();
-        if (data.ok) {
-          await updateStatus();
-          alert('✅ Integración con Salesforce activada.');
-        } else {
-          alert('❌ Error: ' + (data.error || 'No se pudo activar Salesforce'));
-        }
-      } catch (e) {
-        alert('❌ Error: ' + e.message);
-      } finally {
-        loading.classList.remove('show');
-      }
-    }
-    
-    async function stopSalesforce() {
-      loading.classList.add('show');
-      btnSalesforceStart.disabled = true;
-      btnSalesforceStop.disabled = true;
-      
-      try {
-        const res = await fetch('/control/salesforce', { 
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'stop' })
-        });
-        const data = await res.json();
-        if (data.ok) {
-          await updateStatus();
-          alert('⏸ Integración con Salesforce detenida.');
-        } else {
-          alert('❌ Error: ' + (data.error || 'No se pudo detener Salesforce'));
-        }
-      } catch (e) {
-        alert('❌ Error: ' + e.message);
-      } finally {
-        loading.classList.remove('show');
-      }
-    }
-    
-    btnSalesforceStart.addEventListener('click', startSalesforce);
-    btnSalesforceStop.addEventListener('click', stopSalesforce);
-    
-    // Control de envío de emails
-    async function startEmailSending() {
-      loading.classList.add('show');
-      btnEmailStart.disabled = true;
-      btnEmailStop.disabled = true;
-      
-      try {
-        const res = await fetch('/control/email-sending', { 
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'start' })
-        });
-        const data = await res.json();
-        if (data.ok) {
-          await updateStatus();
-          alert('✅ Envío de emails automáticos activado.');
-        } else {
-          alert('❌ Error: ' + (data.error || 'No se pudo activar el envío de emails'));
-        }
-      } catch (e) {
-        alert('❌ Error: ' + e.message);
-      } finally {
-        loading.classList.remove('show');
-      }
-    }
-    
-    async function stopEmailSending() {
-      loading.classList.add('show');
-      btnEmailStart.disabled = true;
-      btnEmailStop.disabled = true;
-      
-      try {
-        const res = await fetch('/control/email-sending', { 
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'stop' })
-        });
-        const data = await res.json();
-        if (data.ok) {
-          await updateStatus();
-          alert('⏸ Envío de emails automáticos detenido.');
-        } else {
-          alert('❌ Error: ' + (data.error || 'No se pudo detener el envío de emails'));
-        }
-      } catch (e) {
-        alert('❌ Error: ' + e.message);
-      } finally {
-        loading.classList.remove('show');
-      }
-    }
-    
-    btnEmailStart.addEventListener('click', startEmailSending);
-    btnEmailStop.addEventListener('click', stopEmailSending);
-    
-    // Actualizar estado cada 5 segundos
-    setInterval(updateStatus, 5000);
-  </script>
+    </script>
+  </div>
 </body>
 </html>`;
     res.send(html);
   } catch (e) {
-    logErr("control web app error:", e);
-    res.status(500).send("Error cargando la página de control");
+    console.error("control error:", e);
+    res.status(500).send("Error loading control panel.");
+  }
+});
+
+app.post("/control/reset-cost-guard", async (_req, res) => {
+  try {
+    const { writeSystemState } = await import("./services/storage.js");
+    await writeSystemState({
+      tier1_triggered: false,
+      tier2_triggered: false,
+      low_power_mode: false,
+      salesforce_status: "active",
+      email_sending_status: "active"
+    });
+    console.log("[mfs] Manual Reset: Normal Flow Restored");
+    res.send("OK");
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+app.post("/control/toggle-low-power", async (_req, res) => {
+  try {
+    const { readSystemState, writeSystemState } = await import("./services/storage.js");
+    const current = await readSystemState();
+    await writeSystemState({ low_power_mode: !current.low_power_mode });
+    console.log("[mfs] Manual Toggle: Low Power Mode -> " + !current.low_power_mode);
+    res.send("OK");
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+app.post("/control/toggle", async (_req, res) => {
+  try {
+    const { readSystemState, writeSystemState } = await import("./services/storage.js");
+    const current = await readSystemState();
+    const newState = current.service_status === "active" ? "stopped" : "active";
+    await writeSystemState({ service_status: newState });
+    console.log(`[mfs] Manual Toggle: Service ${newState}`);
+    res.send("OK");
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+app.post("/control/toggle-salesforce", async (_req, res) => {
+  try {
+    const { readSystemState, writeSystemState } = await import("./services/storage.js");
+    const current = await readSystemState();
+    const newState = current.salesforce_status === "active" ? "stopped" : "active";
+    await writeSystemState({ salesforce_status: newState });
+    console.log(`[mfs] Manual Toggle: Salesforce ${newState}`);
+    res.send("OK");
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+app.post("/control/toggle-email", async (_req, res) => {
+  try {
+    const { readSystemState, writeSystemState } = await import("./services/storage.js");
+    const current = await readSystemState();
+    const newState = current.email_sending_status === "active" ? "stopped" : "active";
+    await writeSystemState({ email_sending_status: newState });
+    console.log(`[mfs] Manual Toggle: Email Sending ${newState}`);
+    res.send("OK");
+  } catch (e) {
+    res.status(500).send(e.message);
   }
 });
 
@@ -971,7 +744,7 @@ app.post("/reset", async (_req, res) => {
   try {
     console.log("[mfs] /reset → reiniciando watch e historia de Gmail");
     const results = {};
-    
+
     // Reset cuenta principal
     try {
       const gmail = await getGmailClient();
@@ -991,7 +764,7 @@ app.post("/reset", async (_req, res) => {
       logErr("reset error (cuenta principal):", e);
       results.principal = { error: e?.response?.data || e?.message };
     }
-    
+
     // Reset cuenta SENDER
     try {
       const gmailSender = await getGmailSenderClient();
@@ -1027,17 +800,17 @@ app.get("/diagnostico", async (_req, res) => {
   try {
     const gmail = await getGmailClient();
     const historyId = await readHistoryState();
-    
+
     // Verificar mensajes recientes en INBOX
     const list = await gmail.users.messages.list({
       userId: "me",
       q: "in:inbox",
       maxResults: 10,
     });
-    
+
     const recentMessages = (list.data.messages || []).slice(0, 5);
     const messageDetails = [];
-    
+
     for (const msg of recentMessages) {
       try {
         const full = await gmail.users.messages.get({
@@ -1059,7 +832,7 @@ app.get("/diagnostico", async (_req, res) => {
         messageDetails.push({ id: msg.id, error: e.message });
       }
     }
-    
+
     res.json({
       ok: true,
       historyId: historyId || "no configurado",
@@ -1085,35 +858,35 @@ app.post("/force-process", async (_req, res) => {
         status: "stopped",
       });
     }
-    
+
     console.log("[mfs] /force-process → Procesando mensajes directamente de INBOX");
     const allResults = [];
-    
+
     // Procesar cuenta principal (media.manager@feverup.com)
     try {
       const gmail = await getGmailClient();
-      
+
       // Obtener mensajes recientes de INBOX (últimas 24 horas) excluyendo procesados
       // Límite máximo de seguridad: 100 mensajes
       const MAX_MESSAGES_PER_EXECUTION = 100;
       const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
-      const query = `in:inbox -label:processed after:${oneDayAgo}`;
-      
+      const query = `in: inbox - label:processed after:${oneDayAgo} `;
+
       const list = await gmail.users.messages.list({
         userId: "me",
         q: query,
         maxResults: MAX_MESSAGES_PER_EXECUTION,
       });
-      
+
       const messageIds = (list.data.messages || []).map(m => m.id);
-      console.log(`[mfs] /force-process → Encontrados ${messageIds.length} mensajes en INBOX (cuenta principal)`);
-      
+      console.log(`[mfs] / force - process → Encontrados ${messageIds.length} mensajes en INBOX(cuenta principal)`);
+
       if (messageIds.length > 0) {
         const { processMessageIds } = await import("./services/processor.js");
         const results = await processMessageIds(gmail, messageIds, "Force Process Endpoint (Manual - cuenta principal)");
         allResults.push(...results);
       }
-      
+
       // Actualizar historyId al actual para sincronizar
       try {
         const prof = await gmail.users.getProfile({ userId: "me" });
@@ -1129,7 +902,7 @@ app.post("/force-process", async (_req, res) => {
     } catch (e) {
       logErr("force-process error (cuenta principal):", e);
     }
-    
+
     // Procesar cuenta SENDER (secretmedia@feverup.com)
     console.log("[mfs] ===== /force-process: INICIANDO PROCESAMIENTO CUENTA SENDER =====");
     try {
@@ -1137,22 +910,22 @@ app.post("/force-process", async (_req, res) => {
       console.log("[mfs] /force-process → Obteniendo cliente Gmail SENDER...");
       const gmailSender = await getGmailSenderClient();
       console.log("[mfs] /force-process → ✓ Cliente Gmail SENDER obtenido exitosamente");
-      
+
       // Límite máximo de seguridad: 100 mensajes
       const MAX_MESSAGES_PER_EXECUTION = 100;
       const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
-      const query = `in:inbox -label:processed after:${oneDayAgo}`;
+      const query = `in: inbox - label:processed after:${oneDayAgo} `;
       console.log("[mfs] /force-process → Buscando mensajes con query:", query);
-      
+
       const list = await gmailSender.users.messages.list({
         userId: "me",
         q: query,
         maxResults: MAX_MESSAGES_PER_EXECUTION,
       });
-      
+
       const senderMessageIds = (list.data.messages || []).map(m => m.id);
-      console.log(`[mfs] /force-process → Encontrados ${senderMessageIds.length} mensajes en INBOX (cuenta SENDER)`);
-      
+      console.log(`[mfs] / force - process → Encontrados ${senderMessageIds.length} mensajes en INBOX(cuenta SENDER)`);
+
       if (senderMessageIds.length > 0) {
         console.log("[mfs] /force-process → Procesando", senderMessageIds.length, "mensajes de cuenta SENDER...");
         const { processMessageIds } = await import("./services/processor.js");
@@ -1170,7 +943,7 @@ app.post("/force-process", async (_req, res) => {
       // Continuar aunque falle la cuenta SENDER
     }
     console.log("[mfs] ===== /force-process: FIN PROCESAMIENTO CUENTA SENDER =====");
-    
+
     if (allResults.length === 0) {
       return res.json({
         ok: true,
@@ -1178,7 +951,7 @@ app.post("/force-process", async (_req, res) => {
         procesados: 0,
       });
     }
-    
+
     res.json({
       ok: true,
       message: `Procesados ${allResults.length} mensajes`,
@@ -1197,7 +970,7 @@ app.post("/watch", async (_req, res) => {
   try {
     console.log("[mfs] /watch → configurando watch en Gmail");
     const results = {};
-    
+
     // Configurar watch para cuenta principal
     try {
       const gmail = await getGmailClient();
@@ -1213,7 +986,7 @@ app.post("/watch", async (_req, res) => {
       logErr("watch error (cuenta principal):", e);
       results.principal = { error: e?.response?.data || e?.message };
     }
-    
+
     // Configurar watch para cuenta SENDER
     try {
       const gmailSender = await getGmailSenderClient();
@@ -1229,7 +1002,7 @@ app.post("/watch", async (_req, res) => {
       logErr("watch error (cuenta SENDER):", e);
       results.sender = { error: e?.response?.data || e?.message };
     }
-    
+
     const allSuccess = results.principal?.historyId && results.sender?.historyId;
     if (allSuccess) {
       res.json({
@@ -1286,7 +1059,7 @@ if (
 ) {
   const PORT = process.env.PORT || 8080;
   app.listen(PORT, async () => {
-    console.log(`[mfs] HTTP server escuchando en puerto ${PORT}`);
+    console.log(`[mfs] HTTP server escuchando en puerto ${PORT} `);
     console.log("[mfs] Boot →", {
       project: CFG.PROJECT_ID,
       location: CFG.VERTEX_LOCATION,
@@ -1299,7 +1072,7 @@ if (
         console.log(
           "[mfs] RESET_ON_START activo → reseteo watch e historyId al arrancar"
         );
-        
+
         // Reset cuenta principal
         try {
           const gmail = await getGmailClient();
@@ -1318,7 +1091,7 @@ if (
         } catch (e) {
           logErr("[mfs] RESET_ON_START error (cuenta principal):", e);
         }
-        
+
         // Reset cuenta SENDER
         try {
           const gmailSender = await getGmailSenderClient();

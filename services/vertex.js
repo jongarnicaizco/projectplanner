@@ -395,6 +395,61 @@ ${bodyToAnalyze}${bodyNote}`.trim();
 }
 
 /**
+ * LOW POWER MODE CLASSIFICATION (>8€/h)
+ * Uses minimal token count prompt, no MEDDIC, no long reasoning.
+ */
+export async function classifyIntentLowPower({ subject, from, to, body }) {
+  console.log("[mfs] [classify] ⚠️ LOW POWER MODE ACTIVATED for:", { from, subject: subject.slice(0, 50) });
+
+  // TRUNCATE EXTREME: 1000 chars max
+  const bodyToAnalyze = body ? body.slice(0, 1000) : "";
+
+  const prompt = `${INTENT_PROMPT_LOW_POWER}
+
+Lead:
+From: ${from}
+Subject: ${subject}
+Body: ${bodyToAnalyze}`.trim();
+
+  let intent = "Low";
+  let confidence = 0.0;
+  let reasoning = "Low Power Calculation";
+
+  try {
+    const raw = await callModelText(CFG.VERTEX_INTENT_MODEL, prompt);
+    if (raw && raw.trim()) {
+      const text = raw.trim();
+      const jsonStr = text.includes("{")
+        ? text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)
+        : text;
+      const parsed = JSON.parse(jsonStr);
+
+      intent = parsed.intent || "Low";
+      confidence = parsed.confidence || 0.0;
+      reasoning = parsed.reasoning || "Low Power";
+    }
+  } catch (e) {
+    console.warn("[mfs] [classify] Low Power Model Error:", e.message);
+  }
+
+  // Return minimal object (compatible with existing flow but with empty fields)
+  return {
+    intent,
+    confidence,
+    reasoning,
+    meddicMetrics: "no info (low power)",
+    meddicEconomicBuyer: "no info (low power)",
+    meddicDecisionCriteria: "no info (low power)",
+    meddicDecisionProcess: "no info (low power)",
+    meddicIdentifyPain: "no info (low power)",
+    meddicChampion: "no info (low power)",
+    isFreeCoverage: false,
+    isBarter: false,
+    isPricing: false
+  };
+}
+
+/**
  * Clasificación heurística (lógica de reglas)
  */
 async function classifyIntentHeuristic({
