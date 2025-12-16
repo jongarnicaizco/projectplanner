@@ -301,11 +301,40 @@
 
             if (!task || !position) return null;
 
+            // Smart positioning: keep popover within viewport
+            const popoverWidth = 340; // matches w-[340px]
+            const popoverHeight = 400; // approximate height
+            const padding = 20; // edge padding
+
+            let left = position.x;
+            let top = position.y + 10;
+            let transformX = '-50%'; // center by default
+
+            // Check right edge
+            if (left + popoverWidth / 2 > window.innerWidth - padding) {
+                left = window.innerWidth - popoverWidth - padding;
+                transformX = '0'; // align to left edge of popover
+            }
+            // Check left edge
+            else if (left - popoverWidth / 2 < padding) {
+                left = padding;
+                transformX = '0';
+            }
+
+            // Check bottom edge
+            if (top + popoverHeight > window.innerHeight - padding) {
+                top = position.y - popoverHeight - 10; // position above instead
+            }
+            // Check top edge
+            if (top < padding) {
+                top = padding;
+            }
+
             const style = {
                 position: 'fixed',
-                left: position.x,
-                top: position.y + 10,
-                transform: 'translateX(-50%)',
+                left: left,
+                top: top,
+                transform: `translateX(${transformX})`,
                 zIndex: 9999
             };
 

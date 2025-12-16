@@ -1,0 +1,65 @@
+========================================
+COMANDOS PARA EJECUTAR MANUALMENTE
+========================================
+
+Copia y pega estos comandos UNO POR UNO en PowerShell:
+
+1. Navegar al directorio:
+cd "C:\Users\fever\Media Fees Lead Automation\mfs-lead-generation-ai"
+
+2. Configurar remoto con token:
+git remote set-url origin https://jongarnicaizco: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@github.com/jongarnicaizco/mfs-lead-generation-ai.git
+
+3. Verificar archivos:
+Test-Path "services\email-sender.js"
+Test-Path ".github\workflows\deploy.yml"
+
+4. Añadir todos los cambios:
+git add -A
+
+5. Ver qué se va a commitear:
+git status
+
+6. Hacer commit:
+git commit -m "Add: Email de prueba antes de Airtable + GitHub Actions workflow"
+
+7. Hacer push:
+git push origin main
+
+8. Verificar que funcionó:
+git ls-remote origin HEAD
+
+========================================
+VERIFICACIÓN EN GITHUB
+========================================
+
+Después de ejecutar los comandos, verifica:
+
+1. Repositorio:
+   https://github.com/jongarnicaizco/mfs-lead-generation-ai
+
+2. Debe existir:
+   - services/email-sender.js
+   - .github/workflows/deploy.yml
+
+3. Actions:
+   https://github.com/jongarnicaizco/mfs-lead-generation-ai/actions
+
+4. Debe aparecer el workflow "Deploy to Cloud Run"
+
+========================================
+SI EL PUSH FALLA
+========================================
+
+Si git push falla, intenta:
+
+1. Verificar autenticación:
+   git config --global credential.helper manager-core
+
+2. O usar GitHub CLI:
+   gh auth login
+   gh repo sync
+
+3. O hacer push forzado (solo si es necesario):
+   git push -f origin main
+

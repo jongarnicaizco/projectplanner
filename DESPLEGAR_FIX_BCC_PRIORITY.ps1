@@ -1,0 +1,53 @@
+# Script para desplegar el fix de prioridad BCC sobre CC
+$ErrorActionPreference = "Continue"
+
+$scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $scriptPath
+
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "DESPLEGANDO FIX: BCC PRIORITY OVER CC" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
+
+# 1. Verificar cambios
+Write-Host "1. Verificando cambios..." -ForegroundColor Yellow
+git status 2>&1 | Write-Host
+
+# 2. Commit y push
+Write-Host "`n2. Haciendo commit y push..." -ForegroundColor Yellow
+git add -A 2>&1 | Out-Null
+$status = git status --short 2>&1
+if ($status) {
+    git commit -m "Fix: Priorizar BCC sobre CC cuando To no tiene dominio válido" 2>&1 | Write-Host
+    git push origin main 2>&1 | Write-Host
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "   ✓ Push completado" -ForegroundColor Green
+    }
+} else {
+    Write-Host "   No hay cambios para commit" -ForegroundColor Yellow
+}
+
+# 3. Desplegar
+Write-Host "`n3. Desplegando..." -ForegroundColor Yellow
+$imageTag = "fix-bcc-priority-over-cc-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+$substitutions = "_IMAGE_TAG=$imageTag,_SERVICE_NAME=mfs-lead-generation-ai,_REGION=us-central1,_REPOSITORY=cloud-run-source-deploy,_AIRTABLE_BASE_ID=appT0vQS4arJ3dQ6w,_AIRTABLE_TABLE=tblPIUeGJWqOtqage,_AIRTABLE_TOKEN_SECRET=AIRTABLE_API_KEY"
+
+gcloud builds submit --config=cloudbuild.yaml --project=check-in-sf --substitutions=$substitutions 2>&1 | Write-Host
+
+if ($LASTEXITCODE -eq 0) {
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host "DESPLIEGUE EXITOSO" -ForegroundColor Green
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "El servicio ahora priorizará BCC sobre CC cuando To no tiene dominio válido." -ForegroundColor Cyan
+} else {
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Red
+    Write-Host "ERROR EN EL DESPLIEGUE" -ForegroundColor Red
+    Write-Host "========================================" -ForegroundColor Red
+}
+
+Write-Host ""
+
