@@ -205,11 +205,20 @@ function quickDiscardCheck({ subject, from, to, body }) {
     return { isDiscard: true, reason: "E-commerce newsletter/marketing email" };
   }
   
-  // 8b. Newsletters con tracking links específicos de email marketing (click.email., view.email., etc.)
+  // 8b. Newsletters con tracking links específicos de email marketing (click.email., view.email., Mailchimp, Partiful, etc.)
   // Si tiene unsubscribe Y tracking links de email marketing, es newsletter
-  const hasEmailTrackingLinks = /(click\.email\.|view\.email\.|email\.[a-z0-9]+\.org|email\.[a-z0-9]+\.com|links\.[a-z0-9]+\.(com|org|net))/i.test(mailText);
+  const hasEmailTrackingLinks = /(click\.email\.|view\.email\.|email\.[a-z0-9]+\.org|email\.[a-z0-9]+\.com|links\.[a-z0-9]+\.(com|org|net)|mailchi\.mp|mailchimp\.com|partiful\.com|list-manage\.com)/i.test(mailText);
   if (hasUnsubscribe && hasEmailTrackingLinks) {
     return { isDiscard: true, reason: "Newsletter with email tracking links" };
+  }
+  
+  // 8c. Invitaciones promocionales a eventos con unsubscribe (Mailchimp, Partiful, etc.)
+  // Si tiene unsubscribe Y es invitación a evento promocional, es newsletter
+  const isEventPromoInvite = /(you're invited|you are invited|get your tickets|buy tickets|event invitation|invitation to)/i.test(mailText) &&
+    hasUnsubscribe &&
+    (hasEmailTrackingLinks || /mailchi\.mp|mailchimp\.com|partiful\.com/i.test(mailText));
+  if (isEventPromoInvite && !/(partnership|collaboration|advertising|sponsorship|publicidad|colaboraci[oó]n|rate|pricing|budget|fee)/i.test(mailText)) {
+    return { isDiscard: true, reason: "Promotional event invitation newsletter" };
   }
   
   // 9. Flippa - plataforma de venta de negocios (newsletters de marketing)
