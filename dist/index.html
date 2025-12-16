@@ -137,6 +137,8 @@
         const IconCalendar = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>;
         const IconX = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
         const IconPlus = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>;
+        const IconCheck = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"></polyline></svg>;
+        const IconRotateCcw = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>;
 
         // --- CONSTANTS & HELPERS ---
         const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -212,6 +214,11 @@
             });
 
             return sorted.map(t => {
+                // Skip schedule calculation for completed tasks - keep their existing schedule
+                if (t.completed) {
+                    return { ...t };
+                }
+
                 if (t.prio === 'Done') {
                     return { ...t, startDayIndex: 0, endDayIndex: 0 };
                 }
@@ -242,24 +249,24 @@
 
         // --- DATA ---
         const RAW_TASKS = [
-            { id: 't1', title: 'AI classifier', category: 'Inbound', prio: 'Done', durationDays: 0, color: 'bg-emerald-100 border-emerald-300 text-emerald-900', description: 'Done' },
-            { id: 't2', title: 'Automatic reply for low leads', category: 'Inbound', prio: 0, durationDays: 2, description: '1/2 days', color: 'bg-blue-100 border-blue-300 text-blue-900' },
-            { id: 't3', title: 'Pushing them automatically into SF + automatic assignment to rep', category: 'Inbound', prio: 2, durationDays: 21, description: '3 weeks (for all inbounds)', color: 'bg-blue-100 border-blue-300 text-blue-900' },
-            { id: 't4', title: 'Automatic reply to book a meeting with them', category: 'Inbound', prio: 1, durationDays: 7, description: '1 week', color: 'bg-blue-100 border-blue-300 text-blue-900' },
-            { id: 't5', title: 'Nurturing (Clay)', category: 'Inbound', prio: 3, durationDays: 11, description: '1.5 weeks ~ 11 days', color: 'bg-blue-100 border-blue-300 text-blue-900' },
-            { id: 't6', title: 'Automatic reply and email conversation to qualify them', category: 'Inbound', prio: 4, durationDays: 30, description: '1 month', color: 'bg-blue-100 border-blue-300 text-blue-900' },
-            { id: 't7', title: 'Contract automation - full, in all markets', category: 'Admin', prio: 6, durationDays: 3, description: '3 days (template creation)', color: 'bg-purple-100 border-purple-300 text-purple-900' },
-            { id: 't8', title: 'Schedule automation with the pieces of content', category: 'Admin', prio: 5, durationDays: 7, description: '1 week (automate the contract flow)', color: 'bg-purple-100 border-purple-300 text-purple-900' },
-            { id: 't10', title: 'Build product object in Salesforce', category: 'Rate Cards', prio: 7, durationDays: 7, description: '1 week', color: 'bg-amber-100 border-amber-300 text-amber-900' },
-            { id: 't11', title: 'Calculator with the logic', category: 'Rate Cards', prio: 8, durationDays: 7, description: '1 week', color: 'bg-amber-100 border-amber-300 text-amber-900' },
-            { id: 't12', title: 'Connect to other elements (e.g.: contracts, MKT templates, etc)', category: 'Rate Cards', prio: 9, durationDays: 14, description: 'TBD', color: 'bg-amber-100 border-amber-300 text-amber-900' },
-            { id: 't9', title: 'Invoice automation', category: 'Admin', prio: 10, durationDays: 14, description: '2 weeks', color: 'bg-purple-100 border-purple-300 text-purple-900' },
-            { id: 't13', title: 'Tailored email based on customer profile + templates', category: 'Outbound', prio: 11, durationDays: 14, description: '2 weeks', color: 'bg-rose-100 border-rose-300 text-rose-900' },
-            { id: 't14', title: 'Gong cadences', category: 'Outbound', prio: 12, durationDays: 7, description: '1 week', color: 'bg-rose-100 border-rose-300 text-rose-900' },
+            { id: 't1', title: 'AI classifier', category: 'Inbound', prio: 'Done', durationDays: 0, color: 'bg-emerald-100 border-emerald-300 text-emerald-900', description: 'Done', completed: false },
+            { id: 't2', title: 'Automatic reply for low leads', category: 'Inbound', prio: 0, durationDays: 2, description: '1/2 days', color: 'bg-blue-100 border-blue-300 text-blue-900', completed: false },
+            { id: 't3', title: 'Pushing them automatically into SF + automatic assignment to rep', category: 'Inbound', prio: 2, durationDays: 21, description: '3 weeks (for all inbounds)', color: 'bg-blue-100 border-blue-300 text-blue-900', completed: false },
+            { id: 't4', title: 'Automatic reply to book a meeting with them', category: 'Inbound', prio: 1, durationDays: 7, description: '1 week', color: 'bg-blue-100 border-blue-300 text-blue-900', completed: false },
+            { id: 't5', title: 'Nurturing (Clay)', category: 'Inbound', prio: 3, durationDays: 11, description: '1.5 weeks ~ 11 days', color: 'bg-blue-100 border-blue-300 text-blue-900', completed: false },
+            { id: 't6', title: 'Automatic reply and email conversation to qualify them', category: 'Inbound', prio: 4, durationDays: 30, description: '1 month', color: 'bg-blue-100 border-blue-300 text-blue-900', completed: false },
+            { id: 't7', title: 'Contract automation - full, in all markets', category: 'Admin', prio: 6, durationDays: 3, description: '3 days (template creation)', color: 'bg-purple-100 border-purple-300 text-purple-900', completed: false },
+            { id: 't8', title: 'Schedule automation with the pieces of content', category: 'Admin', prio: 5, durationDays: 7, description: '1 week (automate the contract flow)', color: 'bg-purple-100 border-purple-300 text-purple-900', completed: false },
+            { id: 't10', title: 'Build product object in Salesforce', category: 'Rate Cards', prio: 7, durationDays: 7, description: '1 week', color: 'bg-amber-100 border-amber-300 text-amber-900', completed: false },
+            { id: 't11', title: 'Calculator with the logic', category: 'Rate Cards', prio: 8, durationDays: 7, description: '1 week', color: 'bg-amber-100 border-amber-300 text-amber-900', completed: false },
+            { id: 't12', title: 'Connect to other elements (e.g.: contracts, MKT templates, etc)', category: 'Rate Cards', prio: 9, durationDays: 14, description: 'TBD', color: 'bg-amber-100 border-amber-300 text-amber-900', completed: false },
+            { id: 't9', title: 'Invoice automation', category: 'Admin', prio: 10, durationDays: 14, description: '2 weeks', color: 'bg-purple-100 border-purple-300 text-purple-900', completed: false },
+            { id: 't13', title: 'Tailored email based on customer profile + templates', category: 'Outbound', prio: 11, durationDays: 14, description: '2 weeks', color: 'bg-rose-100 border-rose-300 text-rose-900', completed: false },
+            { id: 't14', title: 'Gong cadences', category: 'Outbound', prio: 12, durationDays: 7, description: '1 week', color: 'bg-rose-100 border-rose-300 text-rose-900', completed: false },
         ];
 
 
-        const TaskPopover = ({ task, position, onClose, onSave }) => {
+        const TaskPopover = ({ task, position, onClose, onSave, onToggleComplete }) => {
             const [editData, setEditData] = useState({ ...task });
 
             // Sync state if task prop changes (e.g. if popover is kept open while switching tasks)
@@ -296,6 +303,11 @@
 
             const handleSaveClick = () => {
                 onSave(editData);
+                onClose();
+            };
+
+            const handleToggleComplete = () => {
+                onToggleComplete(task);
                 onClose();
             };
 
@@ -392,12 +404,33 @@
                             />
                         </div>
 
-                        <button
-                            onClick={handleSaveClick}
-                            className="mt-2 w-full py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded shadow-sm transition-colors"
-                        >
-                            Save Changes
-                        </button>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleSaveClick}
+                                className="flex-1 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded shadow-sm transition-colors"
+                            >
+                                Save Changes
+                            </button>
+                            <button
+                                onClick={handleToggleComplete}
+                                className={`flex-1 py-2 text-xs font-bold rounded shadow-sm transition-colors flex items-center justify-center gap-1 ${task.completed
+                                    ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                                    : 'bg-green-500 hover:bg-green-600 text-white'
+                                    }`}
+                            >
+                                {task.completed ? (
+                                    <>
+                                        <IconRotateCcw className="w-3 h-3" />
+                                        Restore
+                                    </>
+                                ) : (
+                                    <>
+                                        <IconCheck className="w-3 h-3" />
+                                        Mark as Done
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </div>
             );
@@ -519,6 +552,7 @@
             const [popover, setPopover] = useState(null);
             const [showAddModal, setShowAddModal] = useState(false);
             const [activeDragId, setActiveDragId] = useState(null);
+            const [activeTab, setActiveTab] = useState('pending');
 
             const mainRef = useRef(null);
             const dragRef = useRef(null);
@@ -537,6 +571,18 @@
                 setTasks(prev => {
                     const newRaw = [...prev, newTask];
                     return calculateTaskScheduleRecursive(newRaw);
+                });
+            };
+
+            const handleToggleComplete = (task) => {
+                setTasks(prev => {
+                    const updated = prev.map(t =>
+                        t.id === task.id
+                            ? { ...t, completed: !t.completed }
+                            : t
+                    );
+                    // Only recalculate schedule for pending (non-completed) tasks
+                    return calculateTaskScheduleRecursive(updated);
                 });
             };
 
@@ -673,7 +719,7 @@
 
                     {showAddModal && <AddTaskModal onClose={() => setShowAddModal(false)} onSave={handleAddTask} />}
 
-                    {popover && <TaskPopover key={popover.task.id} task={popover.task} position={popover} onClose={() => setPopover(null)} onSave={handleTaskUpdate} />}
+                    {popover && <TaskPopover key={popover.task.id} task={popover.task} position={popover} onClose={() => setPopover(null)} onSave={handleTaskUpdate} onToggleComplete={handleToggleComplete} />}
 
                     {/* Top Bar */}
                     <div className="h-16 flex-shrink-0 glass flex items-center px-6 justify-between z-30 relative shadow-sm">
@@ -709,160 +755,236 @@
                     <div className="flex flex-1 overflow-hidden relative">
                         {/* Sidebar */}
                         <div className="w-[320px] flex-shrink-0 bg-white border-r border-stone-200 z-20 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] overflow-y-auto">
-                            <div className="sticky top-0 bg-white/95 backdrop-blur z-10 border-b border-stone-100 p-4 flex justify-between items-center">
-                                <span className="text-xs font-bold text-stone-400 uppercase tracking-widest">Priority Queue</span>
-                                <button onClick={() => setShowAddModal(true)} className="flex items-center gap-1 px-2 py-1 bg-brand-50 text-brand-600 rounded text-[10px] font-bold hover:bg-brand-100 transition-colors">
-                                    <IconPlus className="w-3 h-3" /> Add Task
-                                </button>
+                            <div className="sticky top-0 bg-white/95 backdrop-blur z-10 border-b border-stone-100">
+                                <div className="p-4 flex justify-between items-center border-b border-stone-100">
+                                    <span className="text-xs font-bold text-stone-400 uppercase tracking-widest">Task Manager</span>
+                                    <button onClick={() => setShowAddModal(true)} className="flex items-center gap-1 px-2 py-1 bg-brand-50 text-brand-600 rounded text-[10px] font-bold hover:bg-brand-100 transition-colors">
+                                        <IconPlus className="w-3 h-3" /> Add Task
+                                    </button>
+                                </div>
+                                {/* Tab Navigation */}
+                                <div className="flex bg-stone-50">
+                                    <button
+                                        onClick={() => setActiveTab('pending')}
+                                        className={`flex-1 px-4 py-2 text-xs font-bold transition-all ${activeTab === 'pending'
+                                            ? 'bg-white text-brand-600 border-b-2 border-brand-600'
+                                            : 'text-stone-500 hover:text-stone-700'
+                                            }`}
+                                    >
+                                        Pending Tasks
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab('completed')}
+                                        className={`flex-1 px-4 py-2 text-xs font-bold transition-all ${activeTab === 'completed'
+                                            ? 'bg-white text-brand-600 border-b-2 border-brand-600'
+                                            : 'text-stone-500 hover:text-stone-700'
+                                            }`}
+                                    >
+                                        Completed Tasks
+                                    </button>
+                                </div>
                             </div>
                             <div className="p-4 space-y-6">
-                                {Object.entries(categories).map(([cat, catTasks]) => (
-                                    <div key={cat}>
-                                        <h3 className="text-[10px] font-bold text-stone-900 uppercase tracking-widest mb-2 pl-1 border-l-2 border-brand-500">{cat}</h3>
-                                        <div className="space-y-1">
-                                            {catTasks.sort((a, b) => {
-                                                const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
-                                                const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
-                                                return pA - pB;
-                                            }).map(task => (
-                                                <div
-                                                    key={task.id}
-                                                    className="group p-2 rounded border border-stone-100 bg-stone-50 hover:bg-white hover:border-brand-200 transition-all cursor-pointer hover:shadow-sm"
-                                                    onClick={(e) => handleSidebarClick(e, task)}
-                                                >
-                                                    <div className="flex justify-between items-start">
-                                                        <div className="flex flex-col items-start gap-0.5">
-                                                            <span className="text-xs font-semibold text-stone-700 leading-tight">{task.title}</span>
-                                                            <span className="text-[10px] text-stone-400 font-medium">{formatDuration(task.durationDays)}</span>
+                                {Object.entries(categories).map(([cat, catTasks]) => {
+                                    const filteredTasks = catTasks.filter(t =>
+                                        activeTab === 'pending' ? !t.completed : t.completed
+                                    );
+
+                                    if (filteredTasks.length === 0) return null;
+
+                                    return (
+                                        <div key={cat}>
+                                            <h3 className="text-[10px] font-bold text-stone-900 uppercase tracking-widest mb-2 pl-1 border-l-2 border-brand-500">{cat}</h3>
+                                            <div className="space-y-1">
+                                                {filteredTasks.sort((a, b) => {
+                                                    const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
+                                                    const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
+                                                    return pA - pB;
+                                                }).map(task => (
+                                                    <div
+                                                        key={task.id}
+                                                        className={`group p-2 rounded border transition-all cursor-pointer hover:shadow-sm relative ${task.completed
+                                                            ? 'bg-green-50 border-green-300 hover:bg-green-100'
+                                                            : 'bg-stone-50 border-stone-100 hover:bg-white hover:border-brand-200'
+                                                            }`}
+                                                        onClick={(e) => handleSidebarClick(e, task)}
+                                                    >
+                                                        <div className="flex justify-between items-start">
+                                                            <div className="flex items-start gap-2 flex-1">
+                                                                {task.completed && (
+                                                                    <IconCheck className="w-3 h-3 text-green-600 flex-shrink-0 mt-0.5" />
+                                                                )}
+                                                                <div className="flex flex-col items-start gap-0.5 flex-1">
+                                                                    <span className={`text-xs font-semibold leading-tight ${task.completed ? 'text-green-800' : 'text-stone-700'
+                                                                        }`}>{task.title}</span>
+                                                                    <span className={`text-[10px] font-medium ${task.completed ? 'text-green-600' : 'text-stone-400'
+                                                                        }`}>{formatDuration(task.durationDays)}</span>
+                                                                </div>
+                                                            </div>
+                                                            {task.prio !== 'Done' && !task.completed && (
+                                                                <span className="text-[9px] bg-stone-200 text-stone-600 px-1 rounded font-mono mt-1">P{task.prio}</span>
+                                                            )}
                                                         </div>
-                                                        {task.prio !== 'Done' && <span className="text-[9px] bg-stone-200 text-stone-600 px-1 rounded font-mono mt-1">P{task.prio}</span>}
+                                                        {!task.completed && (
+                                                            <div className="flex justify-end items-center mt-1 text-[9px] text-stone-400">
+                                                                <span className={checkDayOOO(task.startDayIndex) ? 'text-rose-500' : ''}>
+                                                                    {addDays(START_DATE, task.startDayIndex).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {/* Quick action button */}
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleToggleComplete(task);
+                                                            }}
+                                                            className={`absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded ${task.completed
+                                                                ? 'bg-amber-100 hover:bg-amber-200 text-amber-700'
+                                                                : 'bg-green-100 hover:bg-green-200 text-green-700'
+                                                                }`}
+                                                            title={task.completed ? 'Restore task' : 'Mark as done'}
+                                                        >
+                                                            {task.completed ? (
+                                                                <IconRotateCcw className="w-3 h-3" />
+                                                            ) : (
+                                                                <IconCheck className="w-3 h-3" />
+                                                            )}
+                                                        </button>
                                                     </div>
-                                                    <div className="flex justify-end items-center mt-1 text-[9px] text-stone-400">
-                                                        <span className={checkDayOOO(task.startDayIndex) ? 'text-rose-500' : ''}>
-                                                            {addDays(START_DATE, task.startDayIndex).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            ))}
+                                                ))}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="h-20"></div>
-                            <div className="mt-auto p-4 border-t border-stone-200">
-                                <button onClick={handleResetData} className="text-[10px] text-stone-400 hover:text-red-500 w-full text-center hover:underline">
-                                    Reset to Defaults
-                                </button>
+                                    );
+                                })}
                             </div>
                         </div>
+                        <div className="h-20"></div>
+                        <div className="mt-auto p-4 border-t border-stone-200">
+                            <button onClick={handleResetData} className="text-[10px] text-stone-400 hover:text-red-500 w-full text-center hover:underline">
+                                Reset to Defaults
+                            </button>
+                        </div>
+                    </div>
 
-                        {/* Gantt Scroll Area */}
-                        <div className="flex-1 overflow-auto bg-cream-50 relative custom-scrollbar flex flex-col" ref={mainRef}>
-                            <div style={{ width: VIEW_DAYS * cellWidth, minHeight: '100%' }} className="relative flex flex-col">
+                    {/* Gantt Scroll Area */}
+                    <div className="flex-1 overflow-auto bg-cream-50 relative custom-scrollbar flex flex-col" ref={mainRef}>
+                        <div style={{ width: VIEW_DAYS * cellWidth, minHeight: '100%' }} className="relative flex flex-col">
 
-                                <div className="sticky top-0 z-10 flex border-b border-stone-200 bg-cream-50/95 backdrop-blur-sm h-[50px]">
-                                    {Array.from({ length: VIEW_DAYS }).map((_, i) => {
-                                        const date = addDays(START_DATE, i);
-                                        const ooo = isOOO(date);
-                                        const isMonthStart = date.getDate() === 1;
-                                        const isWeekStart = date.getDay() === 1;
+                            <div className="sticky top-0 z-10 flex border-b border-stone-200 bg-cream-50/95 backdrop-blur-sm h-[50px]">
+                                {Array.from({ length: VIEW_DAYS }).map((_, i) => {
+                                    const date = addDays(START_DATE, i);
+                                    const ooo = isOOO(date);
+                                    const isMonthStart = date.getDate() === 1;
+                                    const isWeekStart = date.getDay() === 1;
 
-                                        let showLabel = false;
-                                        let label = '';
+                                    let showLabel = false;
+                                    let label = '';
 
-                                        if (viewMode === 'day') {
+                                    if (viewMode === 'day') {
+                                        showLabel = true;
+                                        label = date.getDate();
+                                    } else if (viewMode === 'week') {
+                                        if (isWeekStart || i === 0) {
                                             showLabel = true;
                                             label = date.getDate();
-                                        } else if (viewMode === 'week') {
-                                            if (isWeekStart || i === 0) {
-                                                showLabel = true;
-                                                label = date.getDate();
-                                            }
-                                        } else if (viewMode === 'month') {
-                                            if (isMonthStart || i === 0) {
-                                                showLabel = true;
-                                                label = date.toLocaleString('default', { month: 'short' });
-                                            }
                                         }
+                                    } else if (viewMode === 'month') {
+                                        if (isMonthStart || i === 0) {
+                                            showLabel = true;
+                                            label = date.toLocaleString('default', { month: 'short' });
+                                        }
+                                    }
 
-                                        return (
-                                            <div
-                                                key={i}
-                                                className={`flex-shrink-0 flex flex-col items-center justify-end border-r border-stone-100 relative pb-1
+                                    return (
+                                        <div
+                                            key={i}
+                                            className={`flex-shrink-0 flex flex-col items-center justify-end border-r border-stone-100 relative pb-1
                                                     ${ooo ? 'bg-rose-50' : ''}
                                                     ${isMonthStart ? 'border-l-2 border-l-stone-300' : ''}
                                                 `}
+                                            style={{ width: cellWidth }}
+                                        >
+                                            {(viewMode !== 'month' && isMonthStart) && (
+                                                <div className="absolute top-1 left-1.5 text-[10px] font-bold text-stone-900 uppercase whitespace-nowrap z-20 bg-cream-50/80 px-1 rounded backdrop-blur-sm">
+                                                    {date.toLocaleString('default', { month: 'long' })}
+                                                </div>
+                                            )}
+
+                                            {showLabel && (
+                                                <span className={`text-[10px] font-medium leading-none ${ooo ? 'text-rose-400' : 'text-stone-400'}`}>
+                                                    {label}
+                                                </span>
+                                            )}
+
+                                            {ooo && <div className="absolute bottom-0 w-full h-0.5 bg-rose-200"></div>}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            <div className="flex-1 relative pt-4 pb-20">
+                                <div className="absolute inset-0 flex pointer-events-none">
+                                    {Array.from({ length: VIEW_DAYS }).map((_, i) => {
+                                        const ooo = checkDayOOO(i);
+                                        return (
+                                            <div
+                                                key={i}
+                                                className={`flex-shrink-0 border-r border-stone-100 h-full ${ooo ? 'bg-rose-50' : ''}`}
                                                 style={{ width: cellWidth }}
-                                            >
-                                                {(viewMode !== 'month' && isMonthStart) && (
-                                                    <div className="absolute top-1 left-1.5 text-[10px] font-bold text-stone-900 uppercase whitespace-nowrap z-20 bg-cream-50/80 px-1 rounded backdrop-blur-sm">
-                                                        {date.toLocaleString('default', { month: 'long' })}
-                                                    </div>
-                                                )}
-
-                                                {showLabel && (
-                                                    <span className={`text-[10px] font-medium leading-none ${ooo ? 'text-rose-400' : 'text-stone-400'}`}>
-                                                        {label}
-                                                    </span>
-                                                )}
-
-                                                {ooo && <div className="absolute bottom-0 w-full h-0.5 bg-rose-200"></div>}
-                                            </div>
+                                            ></div>
                                         );
                                     })}
                                 </div>
 
-                                <div className="flex-1 relative pt-4 pb-20">
-                                    <div className="absolute inset-0 flex pointer-events-none">
-                                        {Array.from({ length: VIEW_DAYS }).map((_, i) => {
-                                            const ooo = checkDayOOO(i);
-                                            return (
+                                <div className="space-y-2 relative z-0 px-2 mt-2">
+                                    {Object.entries(categories).flatMap(([cat, t]) => t.sort((a, b) => {
+                                        const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
+                                        const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
+                                        return pA - pB;
+                                    })).filter(task => !task.completed).map((task) => {
+                                        if (task.prio === 'Done' && task.durationDays === 0) return null;
+
+                                        const left = task.startDayIndex * cellWidth;
+                                        const width = Math.max(cellWidth, (task.endDayIndex - task.startDayIndex) * cellWidth);
+
+                                        return (
+                                            <div key={task.id} className="h-11 relative flex items-center">
                                                 <div
-                                                    key={i}
-                                                    className={`flex-shrink-0 border-r border-stone-100 h-full ${ooo ? 'bg-rose-50' : ''}`}
-                                                    style={{ width: cellWidth }}
-                                                ></div>
-                                            );
-                                        })}
-                                    </div>
-
-                                    <div className="space-y-2 relative z-0 px-2 mt-2">
-                                        {Object.entries(categories).flatMap(([cat, t]) => t.sort((a, b) => {
-                                            const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
-                                            const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
-                                            return pA - pB;
-                                        })).map((task) => {
-                                            if (task.prio === 'Done' && task.durationDays === 0) return null;
-
-                                            const left = task.startDayIndex * cellWidth;
-                                            const width = Math.max(cellWidth, (task.endDayIndex - task.startDayIndex) * cellWidth);
-
-                                            return (
-                                                <div key={task.id} className="h-11 relative flex items-center">
-                                                    <div
-                                                        id={'task-bar-' + task.id}
-                                                        className={`absolute top-0.5 bottom-0.5 rounded-md shadow-sm border flex flex-col justify-center px-2 cursor-pointer group select-none overflow-hidden
+                                                    id={'task-bar-' + task.id}
+                                                    className={`absolute top-0.5 bottom-0.5 rounded-md shadow-sm border flex flex-col justify-center px-2 cursor-pointer group select-none overflow-hidden
                                                             ${task.color}
                                                             ${(activeDragId === task.id || popover?.task.id === task.id) ? 'z-50 ring-2 ring-brand-400 shadow-xl opacity-90' : 'hover:shadow-md'}
                                                         `}
-                                                        style={{ left, width, transition: activeDragId === task.id ? 'none' : 'all 0.1s' }}
-                                                        onMouseDown={(e) => handleMouseDown(e, task, 'move')}
-                                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                                                    >
-                                                        <span className="text-[10px] font-bold text-stone-800/90 whitespace-nowrap leading-tight">{task.title}</span>
-                                                        <span className="text-[9px] font-medium text-stone-600/80 whitespace-nowrap leading-tight">{formatDuration(task.durationDays)}</span>
+                                                    style={{ left, width, transition: activeDragId === task.id ? 'none' : 'all 0.1s' }}
+                                                    onMouseDown={(e) => handleMouseDown(e, task, 'move')}
+                                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                                >
+                                                    <span className="text-[10px] font-bold text-stone-800/90 whitespace-nowrap leading-tight">{task.title}</span>
+                                                    <span className="text-[9px] font-medium text-stone-600/80 whitespace-nowrap leading-tight">{formatDuration(task.durationDays)}</span>
 
-                                                        <div
-                                                            className="absolute right-0 top-0 bottom-0 w-3 cursor-e-resize flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-black/5"
-                                                            onMouseDown={(e) => handleMouseDown(e, task, 'resize')}
-                                                        >
-                                                            <div className="w-0.5 h-3 bg-black/20 rounded-full"></div>
-                                                        </div>
+                                                    {/* Quick mark as done button */}
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            handleToggleComplete(task);
+                                                        }}
+                                                        className="absolute left-1 top-1 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded bg-green-100 hover:bg-green-200 text-green-700"
+                                                        title="Mark as done"
+                                                    >
+                                                        <IconCheck className="w-3 h-3" />
+                                                    </button>
+
+                                                    <div
+                                                        className="absolute right-0 top-0 bottom-0 w-3 cursor-e-resize flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-black/5"
+                                                        onMouseDown={(e) => handleMouseDown(e, task, 'resize')}
+                                                    >
+                                                        <div className="w-0.5 h-3 bg-black/20 rounded-full"></div>
                                                     </div>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
