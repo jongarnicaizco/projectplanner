@@ -232,11 +232,11 @@ export const INTENT_PROMPT = `
 DISCARD CHECKS (execute first, skip rest if match):
 - Auto signatures: "Sent from Outlook/Gmail", "aka.ms" links, email client signatures → "Discard"
 - Gambling: betting, casinos, sportsbooks, poker promotion requests → "Discard" (even with pricing mentions)
-- Offers TO us: portfolios, UGC services, influencer services, products/services offered → "Discard" (key: are they ASKING us to promote FOR THEM? If not, it's an offer)
+- Offers TO us: portfolios, UGC services, influencer services, products/services offered → "Discard" (key: are they ASKING us to promote FOR THEM? If not, it's an offer. EXCEPT if they want to PAY US for a sponsored post/guest post).
 
 PARTNERSHIP ANALYSIS (if not Discard):
 Very High: Multi-year commitment OR major brand (Coca-Cola, Uber, Nike, Amazon, etc.) OR >$50K upfront OR well-known person/corporation
-High: Clear proposal with budget/fees/scope OR pricing request WITH partnership context OR defined volume/frequency (e.g., "5 articles/month")
+High: Clear proposal with budget/fees/scope OR pricing request WITH partnership context OR defined volume/frequency (e.g., "5 articles/month") OR Explicit request to pay for "Guest Post" / "Sponsored Post" / "Paid Placement".
 Medium: Partnership intent but undefined scope (e.g., "help promote our restaurant")
 
 NON-PARTNERSHIP (if no partnership):
