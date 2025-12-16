@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strategic Roadmap 2025</title>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Error Handling -->
+    <script>
+        window.onerror = function (message, source, lineno, colno, error) {
+            const errorBox = document.createElement('div');
+            Object.assign(errorBox.style, {
+                color: '#b91c1c', backgroundColor: '#fef2f2', padding: '24px',
+                zIndex: '10000', position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                fontFamily: 'sans-serif'
+            });
+            errorBox.innerHTML = '<h2 style="font-size: 24px; margin-bottom: 8px;">Application Error</h2><p style="font-size: 16px; margin-bottom: 16px;">' + message + '</p><pre style="background: rgba(0,0,0,0.05); padding: 16px; border-radius: 8px; overflow: auto; max-width: 800px;">' + (error ? error.stack : 'No stack') + '</pre><button onclick="window.location.reload()" style="margin-top:20px; padding: 10px 20px; background: #b91c1c; color: white; border: none; border-radius: 6px; cursor: pointer;">Reload Application</button>';
+            document.body.appendChild(errorBox);
+        };
+    </script>
+
+    <!-- Tailwind Config for Cream/Light Look -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        cream: {
+                            50: '#FDFBF7',
+                            100: '#F7F5F0',
+                            200: '#EBE9E4',
+                            900: '#1c1917'
+                        },
+                        brand: {
+                            500: '#3b82f6',
+                            600: '#2563eb'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        display: ['Outfit', 'Inter', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700&display=swap');
+
+        body {
+            background-color: #FDFBF7;
+            /* Cream Background */
+            color: #1c1917;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Synced Scrollbar Styles */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #d6d3d1;
+            border-radius: 5px;
+            border: 2px solid #FDFBF7;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a8a29e;
+        }
+
+        /* Light Glassmorphism */
+        .glass {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        /* Popover Animation */
+        .popover-enter {
+            animation: popoverIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes popoverIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        input,
+        textarea,
+        select {
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        input:focus,
+        textarea:focus,
+        select:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+        }
+    </style>
+</head>
+
+<body class="h-screen w-screen overflow-hidden text-stone-900 flex flex-col">
+    <div id="root" class="h-full w-full"></div>
+
+    <script type="text/babel">
+        // Safe imports
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- ICONS ---
+        const IconCalendar = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>;
+        const IconX = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
+        const IconPlus = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>;
+
+        // --- CONSTANTS & HELPERS ---
+        const MS_PER_DAY = 24 * 60 * 60 * 1000;
+        const START_DATE = new Date(2025, 11, 16); // Dec 16, 2025
+        const OOO_RANGES = [
+            { start: new Date(2025, 11, 24), end: new Date(2025, 11, 28) }, // Dec 24 - Dec 28
+            { start: new Date(2025, 11, 31), end: new Date(2026, 0, 7) }    // Dec 31 - Jan 7
+        ];
+        const VIEW_DAYS = 365;
+
+        const addDays = (date, days) => {
+            const result = new Date(date);
+            result.setDate(result.getDate() + days);
+            return result;
+        };
+
+        const getDaysDiff = (d1, d2) => {
+            return Math.round((d2 - d1) / MS_PER_DAY);
+        };
+
+        const isOOO = (date) => {
+            return OOO_RANGES.some(range => date >= range.start && date <= range.end);
+        };
+
+        // Calculate "Working Days" (Non-OOO) between two dates
+        const getWorkingDaysCount = (start, end) => {
+            if (end < start) return 0;
+            let count = 0;
+            let current = new Date(start);
+            while (current < end) {
+                // If current day is NOT OOO, it counts as a working day
+                // Note: end date is exclusive in typical duration calc? 
+                // Let's assume inclusive Start, Exclusive End for duration calculation logic
+                // If I work Jan 1 to Jan 2 (1 day duration), Jan 1 is worked.
+                if (!isOOO(current)) {
+                    count++;
+                }
+                current = addDays(current, 1);
+            }
+            return count;
+        };
+
+        // Format Date for Input (YYYY-MM-DD)
+        const formatDateInput = (date) => {
+            if (!date) return '';
+            const d = new Date(date);
+            let month = '' + (d.getMonth() + 1);
+            let day = '' + d.getDate();
+            const year = d.getFullYear();
+
+            if (month.length < 2) month = '0' + month;
+            if (day.length < 2) day = '0' + day;
+
+            return [year, month, day].join('-');
+        };
+
+        const calculateTaskScheduleRecursive = (tasks) => {
+            let cursorDate = new Date(START_DATE);
+            const sorted = [...tasks].sort((a, b) => {
+                // Determine numerical priority
+                const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
+                const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
+                return pA - pB;
+            });
+
+            return sorted.map(t => {
+                if (t.prio === 'Done') {
+                    return { ...t, startDayIndex: 0, endDayIndex: 0 };
+                }
+
+                while (isOOO(cursorDate)) {
+                    cursorDate = addDays(cursorDate, 1);
+                }
+
+                const startIndex = getDaysDiff(START_DATE, cursorDate);
+
+                let daysRemaining = t.durationDays;
+                let tempDate = new Date(cursorDate);
+
+                // Add working days (skip OOO)
+                while (daysRemaining > 0) {
+                    tempDate = addDays(tempDate, 1);
+                    if (!isOOO(tempDate)) {
+                        daysRemaining--;
+                    }
+                }
+
+                const endIndex = getDaysDiff(START_DATE, tempDate);
+                cursorDate = tempDate;
+
+                return { ...t, startDayIndex: startIndex, endDayIndex: endIndex };
+            });
+        };
+
+        // --- DATA ---
+        const RAW_TASKS = [
+            { id: 't1', title: 'AI classifier', category: 'Inbound', prio: 'Done', durationDays: 0, color: 'bg-emerald-100 border-emerald-300 text-emerald-900', description: 'Done' },
+            { id: 't2', title: 'Automatic reply for low leads', category: 'Inbound', prio: 0, durationDays: 2, description: '1/2 days', color: 'bg-blue-100 border-blue-300 text-blue-900' },
+            { id: 't3', title: 'Pushing them automatically into SF + automatic assignment to rep', category: 'Inbound', prio: 2, durationDays: 21, description: '3 weeks (for all inbounds)', color: 'bg-blue-100 border-blue-300 text-blue-900' },
+            { id: 't4', title: 'Automatic reply to book a meeting with them', category: 'Inbound', prio: 1, durationDays: 7, description: '1 week', color: 'bg-blue-100 border-blue-300 text-blue-900' },
+            { id: 't5', title: 'Nurturing (Clay)', category: 'Inbound', prio: 3, durationDays: 11, description: '1.5 weeks ~ 11 days', color: 'bg-blue-100 border-blue-300 text-blue-900' },
+            { id: 't6', title: 'Automatic reply and email conversation to qualify them', category: 'Inbound', prio: 4, durationDays: 30, description: '1 month', color: 'bg-blue-100 border-blue-300 text-blue-900' },
+            { id: 't7', title: 'Contract automation - full, in all markets', category: 'Admin', prio: 6, durationDays: 3, description: '3 days (template creation)', color: 'bg-purple-100 border-purple-300 text-purple-900' },
+            { id: 't8', title: 'Schedule automation with the pieces of content', category: 'Admin', prio: 5, durationDays: 7, description: '1 week (automate the contract flow)', color: 'bg-purple-100 border-purple-300 text-purple-900' },
+            { id: 't10', title: 'Build product object in Salesforce', category: 'Rate Cards', prio: 7, durationDays: 7, description: '1 week', color: 'bg-amber-100 border-amber-300 text-amber-900' },
+            { id: 't11', title: 'Calculator with the logic', category: 'Rate Cards', prio: 8, durationDays: 7, description: '1 week', color: 'bg-amber-100 border-amber-300 text-amber-900' },
+            { id: 't12', title: 'Connect to other elements (e.g.: contracts, MKT templates, etc)', category: 'Rate Cards', prio: 9, durationDays: 14, description: 'TBD', color: 'bg-amber-100 border-amber-300 text-amber-900' },
+            { id: 't9', title: 'Invoice automation', category: 'Admin', prio: 10, durationDays: 14, description: '2 weeks', color: 'bg-purple-100 border-purple-300 text-purple-900' },
+            { id: 't13', title: 'Tailored email based on customer profile + templates', category: 'Outbound', prio: 11, durationDays: 14, description: '2 weeks', color: 'bg-rose-100 border-rose-300 text-rose-900' },
+            { id: 't14', title: 'Gong cadences', category: 'Outbound', prio: 12, durationDays: 7, description: '1 week', color: 'bg-rose-100 border-rose-300 text-rose-900' },
+        ];
+
+
+        const TaskPopover = ({ task, position, onClose, onSave }) => {
+            const [editData, setEditData] = useState({ ...task });
+
+            // Sync state if task prop changes (e.g. if popover is kept open while switching tasks)
+            useEffect(() => {
+                setEditData({ ...task });
+            }, [task]);
+
+            // Calculate current end date
+            const currentEndDate = addDays(START_DATE, task.endDayIndex);
+
+            // To ensure UI consistency, we also need start date
+            const currentStartDate = addDays(START_DATE, task.startDayIndex);
+
+            const handleChange = (field, value) => {
+                setEditData(prev => ({ ...prev, [field]: value }));
+            };
+
+            const handleDateChange = (field, value) => {
+                const newDate = new Date(value);
+                if (field === 'end') {
+                    // Update Duration based on New End Date (Subtracting OOO)
+                    // We assume Start Date is fixed (current task start)
+                    // If user changes End Date, they are defining new Calendar Span.
+                    // New Working Days = (NewEnd - Start) - OOO
+                    const startDate = addDays(START_DATE, task.startDayIndex);
+
+                    // Simple working days calc
+                    const workingDays = getWorkingDaysCount(startDate, newDate);
+                    const days = Math.max(1, workingDays);
+
+                    setEditData(prev => ({ ...prev, durationDays: days }));
+                }
+            };
+
+            const handleSaveClick = () => {
+                onSave(editData);
+                onClose();
+            };
+
+            if (!task || !position) return null;
+
+            const style = {
+                position: 'fixed',
+                left: position.x,
+                top: position.y + 10,
+                transform: 'translateX(-50%)',
+                zIndex: 9999
+            };
+
+            return (
+                <div
+                    className="bg-white rounded-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.2)] border border-stone-200 w-[340px] popover-enter pointer-events-auto flex flex-col"
+                    style={style}
+                    onMouseDown={e => e.stopPropagation()}
+                    onClick={e => e.stopPropagation()}
+                >
+                    <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white rotate-45 border-t border-l border-stone-200"></div>
+
+                    <button onClick={onClose} className="absolute top-3 right-3 p-1 text-stone-300 hover:text-stone-500 rounded-full hover:bg-stone-50 transition-colors z-10">
+                        <IconX className="w-4 h-4" />
+                    </button>
+
+                    <div className="p-5 flex flex-col gap-3">
+                        {/* Title */}
+                        <div>
+                            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block mb-1">Task Name</label>
+                            <textarea
+                                value={editData.title}
+                                onChange={e => handleChange('title', e.target.value)}
+                                className="w-full text-sm font-bold text-stone-900 border-b border-stone-200 pb-1 focus:border-brand-500 bg-transparent resize-none h-12 leading-tight"
+                            />
+                        </div>
+
+                        {/* Category & Priority */}
+                        <div className="flex gap-3">
+                            <div className="flex-1">
+                                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block mb-1">Category</label>
+                                <select
+                                    value={editData.category}
+                                    onChange={e => handleChange('category', e.target.value)}
+                                    className="w-full text-xs text-stone-700 bg-stone-50 rounded p-1 border border-stone-200"
+                                >
+                                    {['Inbound', 'Outbound', 'Admin', 'Rate Cards', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            </div>
+                            <div className="w-16">
+                                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block mb-1">Prio</label>
+                                <input
+                                    type="text"
+                                    value={editData.prio}
+                                    onChange={e => handleChange('prio', e.target.value)}
+                                    className="w-full text-xs text-stone-700 bg-stone-50 rounded p-1 border border-stone-200 text-center"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Dates */}
+                        <div className="p-3 bg-stone-50 rounded-lg border border-stone-100">
+                            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block mb-2">Schedule</label>
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="flex-1">
+                                    <span className="text-[9px] text-stone-400 block mb-0.5">Start</span>
+                                    <div className="text-xs font-semibold text-stone-500">
+                                        {formatDateInput(currentStartDate)}
+                                    </div>
+                                </div>
+                                <div className="text-stone-300">→</div>
+                                <div className="flex-1">
+                                    <span className="text-[9px] text-stone-400 block mb-0.5">End (Calc Duration)</span>
+                                    <input
+                                        type="date"
+                                        defaultValue={formatDateInput(currentEndDate)}
+                                        onChange={e => handleDateChange('end', e.target.value)}
+                                        className="w-full text-xs font-semibold text-stone-900 bg-white border border-stone-200 rounded px-1 py-0.5"
+                                    />
+                                </div>
+                            </div>
+                            <div className="mt-2 text-center text-[10px] text-stone-500">
+                                Duration (Working Days): {editData.durationDays}
+                            </div>
+                        </div>
+
+                        {/* Description */}
+                        <div>
+                            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block mb-1">Description</label>
+                            <textarea
+                                value={editData.description || ''}
+                                onChange={e => handleChange('description', e.target.value)}
+                                className="w-full text-xs text-stone-600 bg-stone-50 border border-stone-200 rounded p-2 min-h-[60px]"
+                            />
+                        </div>
+
+                        <button
+                            onClick={handleSaveClick}
+                            className="mt-2 w-full py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded shadow-sm transition-colors"
+                        >
+                            Save Changes
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const AddTaskModal = ({ onClose, onSave }) => {
+            const [newData, setNewData] = useState({
+                title: '',
+                category: 'Inbound',
+                prio: '',
+                startDate: formatDateInput(new Date()), // Default to today
+                endDate: formatDateInput(addDays(new Date(), 1)),
+                description: '',
+                color: 'bg-stone-100 border-stone-300 text-stone-900'
+            });
+
+            const handleSave = () => {
+                if (!newData.title) return alert('Title required');
+
+                // Calculate Duration from Start/End SUBTRACTING OOO DAYS
+                const s = new Date(newData.startDate);
+                const e = new Date(newData.endDate);
+
+                const workingDays = getWorkingDaysCount(s, e);
+                const days = Math.max(1, workingDays);
+
+
+                onSave({
+                    id: 't' + Date.now(),
+                    title: newData.title,
+                    category: newData.category,
+                    prio: newData.prio,
+                    durationDays: days,
+                    description: newData.description,
+                    color: newData.category === 'Inbound' ? 'bg-blue-100 border-blue-300 text-blue-900' :
+                        newData.category === 'Admin' ? 'bg-purple-100 border-purple-300 text-purple-900' :
+                            newData.category === 'Rate Cards' ? 'bg-amber-100 border-amber-300 text-amber-900' :
+                                newData.category === 'Outbound' ? 'bg-rose-100 border-rose-300 text-rose-900' : 'bg-stone-100 border-stone-300 text-stone-900'
+                });
+                onClose();
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[10000] flex items-center justify-center p-4" onClick={onClose}>
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="px-5 py-4 border-b border-stone-100 flex justify-between items-center">
+                            <h3 className="font-bold text-stone-800">Add New Task</h3>
+                            <button onClick={onClose}><IconX className="w-5 h-5 text-stone-400" /></button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-stone-500 uppercase">Title</label>
+                                <input className="w-full border p-2 rounded text-sm mt-1" value={newData.title} onChange={e => setNewData({ ...newData, title: e.target.value })} placeholder="Task Name" />
+                            </div>
+                            <div className="flex gap-2">
+                                <div className="flex-1">
+                                    <label className="text-xs font-bold text-stone-500 uppercase">Category</label>
+                                    <select className="w-full border p-2 rounded text-sm mt-1" value={newData.category} onChange={e => setNewData({ ...newData, category: e.target.value })}>
+                                        {['Inbound', 'Outbound', 'Admin', 'Rate Cards', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                </div>
+                                <div className="w-20">
+                                    <label className="text-xs font-bold text-stone-500 uppercase">Prio</label>
+                                    <input className="w-full border p-2 rounded text-sm mt-1" type="number" value={newData.prio} onChange={e => setNewData({ ...newData, prio: e.target.value })} placeholder="0.." />
+                                </div>
+                            </div>
+
+                            {/* NEW DATES */}
+                            <div className="flex gap-2">
+                                <div className="flex-1">
+                                    <label className="text-xs font-bold text-stone-500 uppercase">Start Date</label>
+                                    <input className="w-full border p-2 rounded text-sm mt-1" type="date" value={newData.startDate} onChange={e => setNewData({ ...newData, startDate: e.target.value })} />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="text-xs font-bold text-stone-500 uppercase">End Date</label>
+                                    <input className="w-full border p-2 rounded text-sm mt-1" type="date" value={newData.endDate} onChange={e => setNewData({ ...newData, endDate: e.target.value })} />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-stone-500 uppercase">Description</label>
+                                <textarea className="w-full border p-2 rounded text-sm mt-1" rows="2" value={newData.description} onChange={e => setNewData({ ...newData, description: e.target.value })}></textarea>
+                            </div>
+                            <button onClick={handleSave} className="w-full bg-brand-600 text-white font-bold py-2 rounded hover:bg-brand-700">Add Task</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const STORAGE_KEY = 'strategic_roadmap_2025_data';
+
+        const App = () => {
+            const [tasks, setTasks] = useState(() => {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    try {
+                        return JSON.parse(saved);
+                    } catch (e) {
+                        console.error("Failed to parse saved data", e);
+                    }
+                }
+                return calculateTaskScheduleRecursive(RAW_TASKS);
+            });
+
+            // Auto-save whenever tasks change
+            useEffect(() => {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+            }, [tasks]);
+
+            const handleResetData = () => {
+                if (confirm('Are you sure you want to reset all data to default? This cannot be undone.')) {
+                    localStorage.removeItem(STORAGE_KEY);
+                    window.location.reload();
+                }
+            };
+
+            const [viewMode, setViewMode] = useState('week');
+            const [popover, setPopover] = useState(null);
+            const [showAddModal, setShowAddModal] = useState(false);
+            const [activeDragId, setActiveDragId] = useState(null);
+
+            const mainRef = useRef(null);
+            const dragRef = useRef(null);
+            const tasksRef = useRef(tasks);
+
+            useEffect(() => { tasksRef.current = tasks; }, [tasks]);
+
+            const handleTaskUpdate = (updatedTask) => {
+                setTasks(prev => {
+                    const newRaw = prev.map(t => t.id === updatedTask.id ? updatedTask : t);
+                    return calculateTaskScheduleRecursive(newRaw);
+                });
+            };
+
+            const handleAddTask = (newTask) => {
+                setTasks(prev => {
+                    const newRaw = [...prev, newTask];
+                    return calculateTaskScheduleRecursive(newRaw);
+                });
+            };
+
+            const cellWidth = useMemo(() => {
+                switch (viewMode) {
+                    case 'week': return 20;
+                    case 'month': return 8;
+                    case 'day': default: return 50;
+                }
+            }, [viewMode]);
+            const cellWidthRef = useRef(cellWidth);
+            useEffect(() => { cellWidthRef.current = cellWidth; }, [cellWidth]);
+
+            useEffect(() => {
+                const handleClickOutside = () => setPopover(null);
+                window.addEventListener('click', handleClickOutside);
+                return () => window.removeEventListener('click', handleClickOutside);
+            }, []);
+
+            useEffect(() => {
+                const onMouseMove = (e) => {
+                    const dragState = dragRef.current;
+                    if (!dragState) return;
+
+                    const deltaPx = e.clientX - dragState.startX;
+                    if (Math.abs(deltaPx) > 5) dragState.hasMoved = true;
+
+                    const cw = cellWidthRef.current;
+                    const deltaDays = Math.round(deltaPx / cw);
+
+                    setTasks(prev => prev.map(t => {
+                        if (t.id !== dragState.id) return t;
+                        if (dragState.mode === 'move') {
+                            const duration = dragState.initialEnd - dragState.initialStart;
+                            let newStart = dragState.initialStart + deltaDays;
+                            if (newStart < 0) newStart = 0;
+                            return { ...t, startDayIndex: newStart, endDayIndex: newStart + duration };
+                        }
+                        if (dragState.mode === 'resize') {
+                            let newEnd = dragState.initialEnd + deltaDays;
+                            if (newEnd <= t.startDayIndex) newEnd = t.startDayIndex + 1;
+                            return { ...t, endDayIndex: newEnd };
+                        }
+                        return t;
+                    }));
+                };
+
+                const onMouseUp = (e) => {
+                    const dragState = dragRef.current;
+                    if (dragState) {
+                        if (!dragState.hasMoved) {
+                            // CLICK: Use ID lookup
+                            const currentTasks = tasksRef.current;
+                            const task = currentTasks.find(t => t.id === dragState.id);
+
+                            if (task) {
+                                let targetEl = document.getElementById(`task-bar-${task.id}`);
+
+                                if (targetEl) {
+                                    const rect = targetEl.getBoundingClientRect();
+                                    setPopover({
+                                        task: task,
+                                        x: rect.left + rect.width / 2,
+                                        y: rect.bottom
+                                    });
+                                }
+                            }
+                        }
+                        dragRef.current = null;
+                        setActiveDragId(null);
+                    }
+                };
+
+                window.addEventListener('mousemove', onMouseMove);
+                window.addEventListener('mouseup', onMouseUp);
+                return () => {
+                    window.removeEventListener('mousemove', onMouseMove);
+                    window.removeEventListener('mouseup', onMouseUp);
+                };
+            }, []);
+
+            const handleMouseDown = (e, task, mode) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                dragRef.current = {
+                    id: task.id,
+                    mode,
+                    startX: e.clientX,
+                    initialStart: task.startDayIndex,
+                    initialEnd: task.endDayIndex,
+                    hasMoved: false
+                };
+                setActiveDragId(task.id);
+            };
+
+            const handleSidebarClick = (e, task) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const rect = e.currentTarget.getBoundingClientRect();
+                setPopover({
+                    task: task,
+                    x: rect.left + rect.width / 2,
+                    y: rect.bottom
+                });
+            };
+
+            const checkDayOOO = (index) => isOOO(addDays(START_DATE, index));
+
+            const categories = useMemo(() => {
+                const cats = {};
+                tasks.forEach(t => {
+                    if (!cats[t.category]) cats[t.category] = [];
+                    cats[t.category].push(t);
+                });
+                return cats;
+            }, [tasks]);
+
+            return (
+                <div className="flex flex-col h-full bg-cream-50 text-stone-900">
+
+                    {showAddModal && <AddTaskModal onClose={() => setShowAddModal(false)} onSave={handleAddTask} />}
+
+                    {popover && <TaskPopover key={popover.task.id} task={popover.task} position={popover} onClose={() => setPopover(null)} onSave={handleTaskUpdate} />}
+
+                    {/* Top Bar */}
+                    <div className="h-16 flex-shrink-0 glass flex items-center px-6 justify-between z-30 relative shadow-sm">
+                        <div className="flex items-center gap-4">
+                            <div className="p-2 bg-white rounded-lg shadow-sm border border-stone-200">
+                                <IconCalendar className="text-stone-700 w-5 h-5" />
+                            </div>
+                            <h1 className="text-xl font-display font-bold text-stone-800 tracking-tight">
+                                Strategic Roadmap <span className="text-stone-400 font-medium">2025</span>
+                            </h1>
+                        </div>
+
+                        <div className="flex bg-stone-200/50 p-1 rounded-lg">
+                            {['day', 'week', 'month'].map(mode => (
+                                <button
+                                    key={mode}
+                                    onClick={() => setViewMode(mode)}
+                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md capitalize transition-all ${viewMode === mode ? 'bg-white shadow text-stone-900' : 'text-stone-500 hover:text-stone-700'}`}
+                                >
+                                    {mode} view
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="flex items-center gap-6">
+                            <div className="flex items-center gap-2 text-xs font-semibold text-rose-600 bg-rose-50 px-3 py-1.5 rounded-full border border-rose-100">
+                                <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>
+                                OOO: Dec 24-28 & Dec 31-Jan 7
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-1 overflow-hidden relative">
+                        {/* Sidebar */}
+                        <div className="w-[320px] flex-shrink-0 bg-white border-r border-stone-200 z-20 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] overflow-y-auto">
+                            <div className="sticky top-0 bg-white/95 backdrop-blur z-10 border-b border-stone-100 p-4 flex justify-between items-center">
+                                <span className="text-xs font-bold text-stone-400 uppercase tracking-widest">Priority Queue</span>
+                                <button onClick={() => setShowAddModal(true)} className="flex items-center gap-1 px-2 py-1 bg-brand-50 text-brand-600 rounded text-[10px] font-bold hover:bg-brand-100 transition-colors">
+                                    <IconPlus className="w-3 h-3" /> Add Task
+                                </button>
+                            </div>
+                            <div className="p-4 space-y-6">
+                                {Object.entries(categories).map(([cat, catTasks]) => (
+                                    <div key={cat}>
+                                        <h3 className="text-[10px] font-bold text-stone-900 uppercase tracking-widest mb-2 pl-1 border-l-2 border-brand-500">{cat}</h3>
+                                        <div className="space-y-1">
+                                            {catTasks.sort((a, b) => {
+                                                const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
+                                                const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
+                                                return pA - pB;
+                                            }).map(task => (
+                                                <div
+                                                    key={task.id}
+                                                    className="group p-2 rounded border border-stone-100 bg-stone-50 hover:bg-white hover:border-brand-200 transition-all cursor-pointer hover:shadow-sm"
+                                                    onClick={(e) => handleSidebarClick(e, task)}
+                                                >
+                                                    <div className="flex justify-between items-start">
+                                                        <span className="text-xs font-semibold text-stone-700 leading-tight">{task.title}</span>
+                                                        {task.prio !== 'Done' && <span className="text-[9px] bg-stone-200 text-stone-600 px-1 rounded font-mono">P{task.prio}</span>}
+                                                    </div>
+                                                    <div className="flex justify-between items-center mt-1 text-[9px] text-stone-400">
+                                                        <span>{task.durationDays}d</span>
+                                                        <span className={checkDayOOO(task.startDayIndex) ? 'text-rose-500' : ''}>
+                                                            {addDays(START_DATE, task.startDayIndex).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="h-20"></div>
+                            <div className="mt-auto p-4 border-t border-stone-200">
+                                <button onClick={handleResetData} className="text-[10px] text-stone-400 hover:text-red-500 w-full text-center hover:underline">
+                                    Reset to Defaults
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Gantt Scroll Area */}
+                        <div className="flex-1 overflow-auto bg-cream-50 relative custom-scrollbar flex flex-col" ref={mainRef}>
+                            <div style={{ width: VIEW_DAYS * cellWidth, minHeight: '100%' }} className="relative flex flex-col">
+
+                                <div className="sticky top-0 z-10 flex border-b border-stone-200 bg-cream-50/95 backdrop-blur-sm h-[50px]">
+                                    {Array.from({ length: VIEW_DAYS }).map((_, i) => {
+                                        const date = addDays(START_DATE, i);
+                                        const ooo = isOOO(date);
+                                        const isMonthStart = date.getDate() === 1;
+                                        const isWeekStart = date.getDay() === 1;
+
+                                        let showLabel = false;
+                                        let label = '';
+
+                                        if (viewMode === 'day') {
+                                            showLabel = true;
+                                            label = date.getDate();
+                                        } else if (viewMode === 'week') {
+                                            if (isWeekStart || i === 0) {
+                                                showLabel = true;
+                                                label = date.getDate();
+                                            }
+                                        } else if (viewMode === 'month') {
+                                            if (isMonthStart || i === 0) {
+                                                showLabel = true;
+                                                label = date.toLocaleString('default', { month: 'short' });
+                                            }
+                                        }
+
+                                        return (
+                                            <div
+                                                key={i}
+                                                className={`flex-shrink-0 flex flex-col items-center justify-end border-r border-stone-100 relative pb-1
+                                                    ${ooo ? 'bg-rose-50' : ''}
+                                                `}
+                                                style={{ width: cellWidth }}
+                                            >
+                                                {(viewMode !== 'month' && isMonthStart) && (
+                                                    <div className="absolute top-1 left-1 text-[10px] font-bold text-stone-900 uppercase whitespace-nowrap z-20">
+                                                        {date.toLocaleString('default', { month: 'long' })}
+                                                    </div>
+                                                )}
+
+                                                {showLabel && (
+                                                    <span className={`text-[10px] font-medium leading-none ${ooo ? 'text-rose-400' : 'text-stone-400'}`}>
+                                                        {label}
+                                                    </span>
+                                                )}
+
+                                                {ooo && <div className="absolute bottom-0 w-full h-0.5 bg-rose-200"></div>}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="flex-1 relative pt-4 pb-20">
+                                    <div className="absolute inset-0 flex pointer-events-none">
+                                        {Array.from({ length: VIEW_DAYS }).map((_, i) => {
+                                            const ooo = checkDayOOO(i);
+                                            return (
+                                                <div
+                                                    key={i}
+                                                    className={`flex-shrink-0 border-r border-stone-100 h-full ${ooo ? 'bg-rose-50' : ''}`}
+                                                    style={{ width: cellWidth }}
+                                                ></div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <div className="space-y-2 relative z-0 px-2 mt-2">
+                                        {Object.entries(categories).flatMap(([cat, t]) => t.sort((a, b) => {
+                                            const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
+                                            const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
+                                            return pA - pB;
+                                        })).map((task) => {
+                                            if (task.prio === 'Done' && task.durationDays === 0) return null;
+
+                                            const left = task.startDayIndex * cellWidth;
+                                            const width = Math.max(cellWidth, (task.endDayIndex - task.startDayIndex) * cellWidth);
+
+                                            return (
+                                                <div key={task.id} className="h-8 relative">
+                                                    <div
+                                                        id={'task-bar-' + task.id}
+                                                        className={`absolute top-0 bottom-0 rounded-md shadow-sm border flex items-center px-2 cursor-pointer group select-none overflow-hidden
+                                                            ${task.color}
+                                                            ${(activeDragId === task.id || popover?.task.id === task.id) ? 'z-50 ring-2 ring-brand-400 shadow-xl opacity-90' : 'hover:shadow-md'}
+                                                        `}
+                                                        style={{ left, width, transition: activeDragId === task.id ? 'none' : 'all 0.1s' }}
+                                                        onMouseDown={(e) => handleMouseDown(e, task, 'move')}
+                                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                                    >
+                                                        <span className="text-[10px] font-bold pr-2 text-stone-800/90 whitespace-nowrap">{task.title}</span>
+
+                                                        <div
+                                                            className="absolute right-0 top-0 bottom-0 w-3 cursor-e-resize flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-black/5"
+                                                            onMouseDown={(e) => handleMouseDown(e, task, 'resize')}
+                                                        >
+                                                            <div className="w-0.5 h-3 bg-black/20 rounded-full"></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
