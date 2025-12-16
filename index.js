@@ -549,13 +549,29 @@ app.get("/control", async (_req, res) => {
     <p class="subtitle">Cloud Run Instance: ${process.env.K_SERVICE || 'local'}</p>
 
     <div class="cost-display">
-        <div class="cost-label">Current Hourly Cost</div>
+        <div class="cost-label">Current Hourly Cost (USD)</div>
         <div class="cost-value">$${currentCost.toFixed(4)}</div>
-        <div class="cost-limit">Tier 1 Limit: $2.00 | Tier 2 Limit: $8.00</div>
-        <div style="margin-top: 12px;">
+        <div class="cost-limit">Limit: $2.00 (Tier 1) / $8.00 (Tier 2)</div>
+        
+        <div>
             ${currentCost > 8.00 ? '<span class="tier-badge tier-danger">TIER 2 EXCEEDED</span>' :
         currentCost > 2.00 ? '<span class="tier-badge tier-warning">TIER 1 EXCEEDED</span>' :
           '<span class="tier-badge tier-normal">NORMAL COST FLOW</span>'}
+        </div>
+
+        <div class="stats-row">
+            <div class="stat-item">
+                <h4>Consumed Today</h4>
+                <p>$${currentDayCost.toFixed(3)}</p>
+            </div>
+            <div class="stat-item">
+                <h4>Yesterday Total</h4>
+                <p>$${yesterdayCost.toFixed(3)}</p>
+            </div>
+            <div class="stat-item">
+                <h4>Yesterday Hourly Avg</h4>
+                <p>$${avgYesterday.toFixed(3)}/h</p>
+            </div>
         </div>
     </div>
 
