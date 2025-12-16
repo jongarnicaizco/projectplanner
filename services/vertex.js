@@ -1192,9 +1192,13 @@ async function classifyIntentHeuristic({
   // Detección de newsletters/emails de marketing que deben ser Discard
   // Características: unsubscribe links, tracking links, "updates & insights", contenido promocional sin solicitud directa
   const newsletterKeywordsRegex = /(unsubscribe|unsubscribe preferences|manage your preferences|update your preferences|email preferences|subscription preferences|you're receiving this because|you received this email|update email preferences|change email preferences|stop receiving|opt[-\s]?out|darse de baja|cancelar suscripci[oó]n)/i;
-  const trackingLinkPattern = /(links\.|tracking|utm_source|utm_medium|utm_campaign|click tracking|email tracking|shopify-email|_t\/c\/v3|_t\/open|links\.flippa\.com|click\.email\.|view\.email\.|email\.[a-z0-9]+\.org)/i;
-  const newsletterSubjectPattern = /(new activity|updates & insights|weekly update|monthly update|newsletter|news digest|roundup|summary|insights|updates)/i;
+  const trackingLinkPattern = /(links\.|tracking|utm_source|utm_medium|utm_campaign|click tracking|email tracking|shopify-email|_t\/c\/v3|_t\/open|links\.flippa\.com|click\.email\.|view\.email\.|email\.[a-z0-9]+\.org|mailchi\.mp|mailchimp\.com|partiful\.com|list-manage\.com)/i;
+  const newsletterSubjectPattern = /(new activity|updates & insights|weekly update|monthly update|newsletter|news digest|roundup|summary|insights|updates|you're invited|you are invited)/i;
   const promotionalContentPattern = /(new buyers|businesses similar|valuation|indicative valuation|sell now|list your business|schedule a call|business advisor)/i;
+  
+  // Detección específica de Mailchimp y Partiful (plataformas de email marketing y eventos)
+  const isMailchimpEmail = /mailchi\.mp|mailchimp\.com|list-manage\.com/i.test(mailText);
+  const isPartifulEmail = /partiful\.com/i.test(mailText);
   
   // Detección específica de Flippa (plataforma de venta de negocios)
   // Estos correos son newsletters promocionales sin intención comercial real
@@ -1213,8 +1217,15 @@ async function classifyIntentHeuristic({
   
   // Es newsletter si tiene unsubscribe Y además tiene características de newsletter (tracking, subject pattern, contenido e-commerce, o contenido promocional sin partnership/pricing request)
   // IMPORTANTE: Si tiene unsubscribe + contenido de e-commerce, es definitivamente un newsletter de marketing, incluso si menciona partnership
-  // REGLA DURA: Flippa siempre es newsletter de marketing (sin intención comercial real)
-  const isNewsletterOrMarketing = isFlippaEmail || (hasUnsubscribeLink && 
+  // REGLA DURA: Flippa, Mailchimp, Partiful siempre son newsletters de marketing (sin intención comercial real)
+  // También: Invitaciones promocionales a eventos con unsubscribe + tracking links son newsletters
+  const isEventPromotionalInvite = /(you're invited|you are invited|get your tickets|buy tickets|event invitation|invitation to)/i.test(mailText) && 
+    hasUnsubscribeLink && 
+    (hasTrackingLinks || isMailchimpEmail || isPartifulEmail) &&
+    !hasPartnershipCollabAsk && 
+    !isPricing;
+  
+  const isNewsletterOrMarketing = isFlippaEmail || isMailchimpEmail || isPartifulEmail || isEventPromotionalInvite || (hasUnsubscribeLink && 
     (hasTrackingLinks || hasNewsletterSubject || hasEcommerceContent || (hasPromotionalContent && !hasPartnershipCollabAsk && !isPricing && !isCoverageRequest)));
 
   console.log("[mfs] [classify] Flags básicos:", {
