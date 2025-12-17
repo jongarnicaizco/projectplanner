@@ -607,11 +607,94 @@
             const [snapTargetIndex, setSnapTargetIndex] = useState(null);
             const [snapPoints, setSnapPoints] = useState([]);
 
+            // Undo/Redo system
+            const historyRef = useRef([]);
+            const historyIndexRef = useRef(-1);
+            const isUndoRedoRef = useRef(false);
+
             const mainRef = useRef(null);
             const dragRef = useRef(null);
             const tasksRef = useRef(tasks);
 
             useEffect(() => { tasksRef.current = tasks; }, [tasks]);
+
+            // Save state to history before making changes
+            const saveToHistory = (newTasks) => {
+                if (isUndoRedoRef.current) {
+                    // Don't save to history if we're undoing/redoing
+                    return;
+                }
+                
+                const currentState = JSON.parse(JSON.stringify(tasksRef.current));
+                const history = historyRef.current;
+                const currentIndex = historyIndexRef.current;
+                
+                // Remove any history after current index (if we're not at the end)
+                if (currentIndex < history.length - 1) {
+                    history.splice(currentIndex + 1);
+                }
+                
+                // Add new state to history
+                history.push(currentState);
+                
+                // Limit history size to 50 states
+                if (history.length > 50) {
+                    history.shift();
+                } else {
+                    historyIndexRef.current = history.length - 1;
+                }
+            };
+
+            // Undo function
+            const handleUndo = () => {
+                const history = historyRef.current;
+                const currentIndex = historyIndexRef.current;
+                
+                if (currentIndex > 0) {
+                    isUndoRedoRef.current = true;
+                    historyIndexRef.current = currentIndex - 1;
+                    const previousState = JSON.parse(JSON.stringify(history[currentIndex - 1]));
+                    setTasks(previousState);
+                    setTimeout(() => {
+                        isUndoRedoRef.current = false;
+                    }, 0);
+                }
+            };
+
+            // Redo function
+            const handleRedo = () => {
+                const history = historyRef.current;
+                const currentIndex = historyIndexRef.current;
+                
+                if (currentIndex < history.length - 1) {
+                    isUndoRedoRef.current = true;
+                    historyIndexRef.current = currentIndex + 1;
+                    const nextState = JSON.parse(JSON.stringify(history[currentIndex + 1]));
+                    setTasks(nextState);
+                    setTimeout(() => {
+                        isUndoRedoRef.current = false;
+                    }, 0);
+                }
+            };
+
+            // Keyboard shortcut listener
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    // Ctrl+Z or Cmd+Z (Mac) for undo
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleUndo();
+                    }
+                    // Ctrl+Y or Ctrl+Shift+Z for redo
+                    if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+                        e.preventDefault();
+                        handleRedo();
+                    }
+                };
+
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, []);
 
             // Function to get all snap points
             // When moving forward: show START positions (to place before tasks)
@@ -877,6 +960,7 @@
             };
 
             const handleTaskUpdate = (updatedTask) => {
+                saveToHistory();
                 setTasks(prev => {
                     const newRaw = prev.map(t => t.id === updatedTask.id ? updatedTask : t);
                     return calculateTaskScheduleRecursive(newRaw);
@@ -884,6 +968,7 @@
             };
 
             const handleAddTask = (newTask) => {
+                saveToHistory();
                 setTasks(prev => {
                     const newRaw = [...prev, newTask];
                     return calculateTaskScheduleRecursive(newRaw);
@@ -892,6 +977,7 @@
 
             const handleDeleteTask = (taskId) => {
                 if (window.confirm('Are you sure you want to delete this task? This action cannot be undone.')) {
+                    saveToHistory();
                     setTasks(prev => {
                         const newRaw = prev.filter(t => t.id !== taskId);
                         return calculateTaskScheduleRecursive(newRaw);
@@ -1001,6 +1087,8 @@
                                 
                                 // Only proceed if we have a valid snap or the position changed
                                 if (nearestSnap || currentStart !== dragState.initialStart) {
+                                    // Save to history before reorganizing
+                                    saveToHistory();
                                     // Use the snapped/final position and pass original position
                                     console.log('[MOVE] Reorganizing tasks...');
                                     setTasks(prev => {
@@ -1054,6 +1142,8 @@
                                     
                                     // If the end changed, shift following tasks
                                     if (endChange !== 0) {
+                                        // Save to history before reorganizing
+                                        saveToHistory();
                                         console.log('[RESIZE] Reorganizing following tasks...');
                                         const result = reorganizeTasksAfterResize(newRaw, dragState.id, originalEnd, newEnd);
                                         console.log('[RESIZE] Reorganization complete');
