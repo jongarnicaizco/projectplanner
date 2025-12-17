@@ -813,36 +813,24 @@
                 });
 
                 // Now shift affected tasks in cascade
-                // For backwards movement: shift each task forward by the duration
-                // For forwards movement: shift each task backward by the duration
+                // Key: Tasks should START where the moved task ENDS, maintaining concatenation
+                // Process tasks in order, each starting where the previous one ends
+                let cursorDate = new Date(movedTaskEndDate); // Start from where moved task ends
+                
                 updatedTasks = updatedTasks.map(t => {
                     const taskToShift = tasksToShift.find(ts => ts.id === t.id);
                     if (!taskToShift) return t;
                     
-                    let newStart = t.startDayIndex;
-                    
-                    if (movedBackwards) {
-                        // Shift forward (to later dates) by the duration of moved task
-                        newStart = t.startDayIndex + shiftAmount;
-                    } else {
-                        // Shift backward (to earlier dates) by the duration of moved task
-                        newStart = t.startDayIndex - shiftAmount;
+                    // Each task should start where the previous one ended
+                    // Skip OOO days
+                    while (isOOO(cursorDate)) {
+                        cursorDate = addDays(cursorDate, 1);
                     }
                     
-                    if (newStart < 0) newStart = 0;
-                    
-                    console.log('[REORGANIZE] Shifting task:', t.id, 'from', t.startDayIndex, 'to', newStart);
-                    
-                    // Adjust for OOO
-                    const newStartDate = addDays(START_DATE, newStart);
-                    let adjustedCursor = new Date(newStartDate);
-                    while (isOOO(adjustedCursor)) {
-                        adjustedCursor = addDays(adjustedCursor, 1);
-                    }
-                    const adjustedStartIndex = getDaysDiff(START_DATE, adjustedCursor);
+                    const adjustedStartIndex = getDaysDiff(START_DATE, cursorDate);
                     
                     // Calculate end date based on duration
-                    let taskEndDate = new Date(adjustedCursor);
+                    let taskEndDate = new Date(cursorDate);
                     let daysRemaining = t.durationDays;
                     while (daysRemaining > 0) {
                         taskEndDate = addDays(taskEndDate, 1);
@@ -851,6 +839,9 @@
                         }
                     }
                     const adjustedEndIndex = getDaysDiff(START_DATE, taskEndDate);
+                    
+                    // Update cursor for next task
+                    cursorDate = new Date(taskEndDate);
                     
                     console.log('[REORGANIZE] Task', t.id, 'new position:', adjustedStartIndex, '-', adjustedEndIndex);
                     
