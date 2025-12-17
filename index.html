@@ -864,17 +864,25 @@
                             const currentTasks = tasksRef.current;
                             const task = currentTasks.find(t => t.id === dragState.id);
                             if (task) {
-                                // ONLY allow move if we have a valid snap target, otherwise revert
-                                if (snapTargetIndex !== null) {
-                                    // Use the snapped position and pass original position for exchange
+                                // Calculate snap target from current task position (not from state)
+                                const snaps = getSnapPoints(currentTasks, dragState.id);
+                                const currentStart = task.startDayIndex;
+                                const nearestSnap = findNearestSnapPoint(currentStart, snaps);
+                                
+                                // Use snapped position if available, otherwise use current position
+                                const finalTargetStart = nearestSnap ? nearestSnap.dayIndex : currentStart;
+                                
+                                // Only proceed if we have a valid snap or the position changed
+                                if (nearestSnap || currentStart !== dragState.initialStart) {
+                                    // Use the snapped/final position and pass original position
                                     setTasks(prev => reorganizeTasksAfterMove(
                                         prev, 
                                         dragState.id, 
-                                        snapTargetIndex,
+                                        finalTargetStart,
                                         dragState.initialStart // Original position
                                     ));
                                 } else {
-                                    // No valid snap point - revert to original position
+                                    // No valid snap point and position didn't change - revert to original
                                     setTasks(prev => prev.map(t => {
                                         if (t.id === dragState.id) {
                                             return {
