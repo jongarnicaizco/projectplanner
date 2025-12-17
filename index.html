@@ -863,17 +863,27 @@
                             // A moved two or more positions back: B should start where taskBeforeB ends
                             // (A is now behind taskBeforeB, so B aligns with taskBeforeB)
                             if (taskBeforeB) {
-                                const beforeBEnd = updatedTasksMap.has(taskBeforeB.id) 
-                                    ? updatedTasksMap.get(taskBeforeB.id).endDayIndex 
-                                    : taskBeforeB.endDayIndex;
-                                const beforeBEndDate = addDays(START_DATE, beforeBEnd);
-                                bStartCursor = new Date(beforeBEndDate);
+                                // Check if taskBeforeB was in tasksToShiftForward (and thus updated)
+                                const taskBeforeBWasShifted = tasksToShiftForward.some(t => t.id === taskBeforeB.id);
+                                
+                                if (taskBeforeBWasShifted) {
+                                    // taskBeforeB was updated in tasksToShiftForward, use its updated endDayIndex
+                                    const beforeBEnd = updatedTasksMap.get(taskBeforeB.id).endDayIndex;
+                                    const beforeBEndDate = addDays(START_DATE, beforeBEnd);
+                                    bStartCursor = new Date(beforeBEndDate);
+                                } else {
+                                    // taskBeforeB was not shifted (it's before target), use its original endDayIndex
+                                    const beforeBEnd = taskBeforeB.endDayIndex;
+                                    const beforeBEndDate = addDays(START_DATE, beforeBEnd);
+                                    bStartCursor = new Date(beforeBEndDate);
+                                }
                             } else {
-                                // No task before B, start from where A ends
-                                bStartCursor = new Date(movedTaskEndDate);
+                                // No task before B, start from where last shifted task ended
+                                bStartCursor = shiftCursor;
                             }
                         }
                         
+                        // Skip OOO days
                         while (isOOO(bStartCursor)) {
                             bStartCursor = addDays(bStartCursor, 1);
                         }
