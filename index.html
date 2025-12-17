@@ -840,12 +840,7 @@
                 return updatedTasks;
             };
 
-            // Function to reorganize tasks after moving one to a new position
-            // Strategy:
-            // 1. Place moved task at target position (end of previous task - snap point)
-            // 2. Identify the gap left at original position
-            // 3. Tasks to the RIGHT of gap: shift LEFT to fill gap (join at start of nearest tasks to the left)
-            // 4. Tasks to the LEFT of gap: shift RIGHT to make room (join at end of nearest tasks to the right)
+            // Simple reorganization: place moved task at target, reorganize all others sequentially by priority
             const reorganizeTasksAfterMove = (tasks, movedTaskId, targetStartDayIndex, originalStartDayIndex) => {
                 const movedTask = tasks.find(t => t.id === movedTaskId);
                 if (!movedTask || movedTask.prio === 'Done') {
