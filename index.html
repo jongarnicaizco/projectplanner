@@ -602,23 +602,40 @@
 
             useEffect(() => { tasksRef.current = tasks; }, [tasks]);
 
-            // Function to get all snap points (END positions of all tasks - where new tasks can start)
-            const getSnapPoints = (tasks, excludeTaskId) => {
+            // Function to get all snap points
+            // When moving forward: show START positions (to place before tasks)
+            // When moving backward: show END positions (to place after tasks)
+            const getSnapPoints = (tasks, excludeTaskId, originalStartDayIndex = null, currentStartDayIndex = null) => {
                 const sortedTasks = [...tasks].sort((a, b) => {
                     const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
                     const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
                     return pA - pB;
                 });
 
+                // Determine direction: if current > original, moving forward (right)
+                const isMovingForward = originalStartDayIndex !== null && currentStartDayIndex !== null && 
+                                       currentStartDayIndex > originalStartDayIndex;
+
                 const points = [];
                 sortedTasks.forEach(task => {
                     if (task.id !== excludeTaskId && task.prio !== 'Done') {
-                        // Use endDayIndex as snap point (where the next task can start)
-                        points.push({
-                            dayIndex: task.endDayIndex,
-                            taskId: task.id,
-                            priority: task.prio === 'Done' ? -1 : parseInt(task.prio)
-                        });
+                        if (isMovingForward) {
+                            // When moving forward, use startDayIndex as snap point (place before this task)
+                            points.push({
+                                dayIndex: task.startDayIndex,
+                                taskId: task.id,
+                                priority: task.prio === 'Done' ? -1 : parseInt(task.prio),
+                                type: 'start'
+                            });
+                        } else {
+                            // When moving backward, use endDayIndex as snap point (place after this task)
+                            points.push({
+                                dayIndex: task.endDayIndex,
+                                taskId: task.id,
+                                priority: task.prio === 'Done' ? -1 : parseInt(task.prio),
+                                type: 'end'
+                            });
+                        }
                     }
                 });
                 return points.sort((a, b) => a.dayIndex - b.dayIndex);
@@ -896,7 +913,9 @@
                         if (newStart < 0) newStart = 0;
 
                         // Get snap points and find nearest - FORCE snap to valid positions only
-                        const snaps = getSnapPoints(currentTasks, dragState.id);
+                        // Pass original and current positions to determine direction
+                        const snaps = getSnapPoints(currentTasks, dragState.id, dragState.initialStart, newStart);
+                        setSnapPoints(snaps); // Update snap points dynamically based on direction
                         const nearestSnap = findNearestSnapPoint(newStart, snaps);
                         
                         // ALWAYS snap to nearest point if within range, otherwise don't allow movement
@@ -950,8 +969,8 @@
                             const task = currentTasks.find(t => t.id === dragState.id);
                             if (task) {
                                 // Calculate snap target from current task position (not from state)
-                                const snaps = getSnapPoints(currentTasks, dragState.id);
                                 const currentStart = task.startDayIndex;
+                                const snaps = getSnapPoints(currentTasks, dragState.id, dragState.initialStart, currentStart);
                                 const nearestSnap = findNearestSnapPoint(currentStart, snaps);
                                 
                                 // Use snapped position if available, otherwise use current position
@@ -1056,7 +1075,9 @@
                 // Set snap points for move mode
                 if (mode === 'move') {
                     const currentTasks = tasksRef.current;
-                    const snaps = getSnapPoints(currentTasks, task.id);
+                    // For initial display, show both types or default to end positions
+                    // We'll update this dynamically in onMouseMove based on direction
+                    const snaps = getSnapPoints(currentTasks, task.id, task.startDayIndex, task.startDayIndex);
                     setSnapPoints(snaps);
                 } else {
                     setSnapPoints([]);
