@@ -823,19 +823,8 @@
 
                     let shiftCursor = new Date(movedTaskEndDate);
                     tasksToShiftForward.forEach(task => {
-                        // Special handling for B: it should start where taskBeforeB ends
-                        if (task.id === taskBeforeOriginal?.id && taskBeforeB) {
-                            // B should start where taskBeforeB ends
-                            const beforeBEnd = updatedTasksMap.has(taskBeforeB.id) 
-                                ? updatedTasksMap.get(taskBeforeB.id).endDayIndex 
-                                : taskBeforeB.endDayIndex;
-                            const beforeBEndDate = addDays(START_DATE, beforeBEnd);
-                            shiftCursor = new Date(beforeBEndDate);
-                            while (isOOO(shiftCursor)) {
-                                shiftCursor = addDays(shiftCursor, 1);
-                            }
-                        }
-                        
+                        // All tasks in tasksToShiftForward (including B) should start from where A ends
+                        // This makes room for A in its new position
                         while (isOOO(shiftCursor)) {
                             shiftCursor = addDays(shiftCursor, 1);
                         }
