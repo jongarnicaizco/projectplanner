@@ -849,11 +849,31 @@
                         });
                     });
 
-                    // Process B (taskBeforeOriginal) separately - it should start where A ends
-                    // This works the same whether A moved one or two positions back
+                    // Process B (taskBeforeOriginal) separately
                     if (taskBeforeOriginal) {
-                        // B should start where A ends (making room for A)
-                        let bStartCursor = new Date(movedTaskEndDate);
+                        let bStartCursor;
+                        
+                        // Determine if A moved to immediate previous position or further back
+                        const movedToImmediatePrevious = targetStartDayIndex === taskBeforeOriginal.startDayIndex;
+                        
+                        if (movedToImmediatePrevious) {
+                            // A moved one position back: B should start where A ends (making room for A)
+                            bStartCursor = new Date(movedTaskEndDate);
+                        } else {
+                            // A moved two or more positions back: B should start where taskBeforeB ends
+                            // (A is now behind taskBeforeB, so B aligns with taskBeforeB)
+                            if (taskBeforeB) {
+                                const beforeBEnd = updatedTasksMap.has(taskBeforeB.id) 
+                                    ? updatedTasksMap.get(taskBeforeB.id).endDayIndex 
+                                    : taskBeforeB.endDayIndex;
+                                const beforeBEndDate = addDays(START_DATE, beforeBEnd);
+                                bStartCursor = new Date(beforeBEndDate);
+                            } else {
+                                // No task before B, start from where A ends
+                                bStartCursor = new Date(movedTaskEndDate);
+                            }
+                        }
+                        
                         while (isOOO(bStartCursor)) {
                             bStartCursor = addDays(bStartCursor, 1);
                         }
