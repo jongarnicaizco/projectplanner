@@ -961,16 +961,24 @@
                                 // Use snapped position if available, otherwise use current position
                                 const finalTargetStart = nearestSnap ? nearestSnap.dayIndex : currentStart;
                                 
+                                console.log('[MOVE] Task:', task.id, 'Original:', dragState.initialStart, 'Current:', currentStart, 'Target:', finalTargetStart, 'Snap:', nearestSnap);
+                                
                                 // Only proceed if we have a valid snap or the position changed
                                 if (nearestSnap || currentStart !== dragState.initialStart) {
                                     // Use the snapped/final position and pass original position
-                                    setTasks(prev => reorganizeTasksAfterMove(
-                                        prev, 
-                                        dragState.id, 
-                                        finalTargetStart,
-                                        dragState.initialStart // Original position
-                                    ));
+                                    console.log('[MOVE] Reorganizing tasks...');
+                                    setTasks(prev => {
+                                        const result = reorganizeTasksAfterMove(
+                                            prev, 
+                                            dragState.id, 
+                                            finalTargetStart,
+                                            dragState.initialStart // Original position
+                                        );
+                                        console.log('[MOVE] Reorganization complete');
+                                        return result;
+                                    });
                                 } else {
+                                    console.log('[MOVE] No valid snap, reverting');
                                     // No valid snap point and position didn't change - revert to original
                                     setTasks(prev => prev.map(t => {
                                         if (t.id === dragState.id) {
@@ -1001,6 +1009,8 @@
                                 const newEnd = task.endDayIndex;
                                 const endChange = newEnd - originalEnd;
 
+                                console.log('[RESIZE] Task:', task.id, 'Original End:', originalEnd, 'New End:', newEnd, 'Change:', endChange, 'New Duration:', newDuration);
+
                                 // Update task with new duration and adjust following tasks
                                 setTasks(prev => {
                                     const updatedTask = { ...task, durationDays: newDuration };
@@ -1008,7 +1018,10 @@
                                     
                                     // If the end changed, shift following tasks
                                     if (endChange !== 0) {
-                                        return reorganizeTasksAfterResize(newRaw, dragState.id, originalEnd, newEnd);
+                                        console.log('[RESIZE] Reorganizing following tasks...');
+                                        const result = reorganizeTasksAfterResize(newRaw, dragState.id, originalEnd, newEnd);
+                                        console.log('[RESIZE] Reorganization complete');
+                                        return result;
                                     }
                                     
                                     return newRaw;
