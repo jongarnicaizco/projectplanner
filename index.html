@@ -735,9 +735,17 @@
             //   C goes to 10-15, A shifts to 15-20, B shifts to 20-25
             const reorganizeTasksAfterMove = (tasks, movedTaskId, targetStartDayIndex, originalStartDayIndex) => {
                 const movedTask = tasks.find(t => t.id === movedTaskId);
-                if (!movedTask || movedTask.prio === 'Done') return tasks;
+                if (!movedTask || movedTask.prio === 'Done') {
+                    console.log('[REORGANIZE] Invalid task or Done, returning original tasks');
+                    return tasks;
+                }
 
-                console.log('[REORGANIZE] Moved task:', movedTaskId, 'Original:', originalStartDayIndex, 'Target:', targetStartDayIndex);
+                console.log('[REORGANIZE] ===== START =====');
+                console.log('[REORGANIZE] Moved task ID:', movedTaskId);
+                console.log('[REORGANIZE] Moved task priority:', movedTask.prio);
+                console.log('[REORGANIZE] Original start:', originalStartDayIndex);
+                console.log('[REORGANIZE] Target start:', targetStartDayIndex);
+                console.log('[REORGANIZE] All tasks before:', tasks.map(t => ({id: t.id, prio: t.prio, start: t.startDayIndex, end: t.endDayIndex})));
 
                 // Calculate new position for moved task (at target, adjusting for OOO)
                 const targetStartDate = addDays(START_DATE, targetStartDayIndex);
@@ -758,6 +766,8 @@
                 }
                 const movedTaskEndIndex = getDaysDiff(START_DATE, movedTaskEndDate);
 
+                console.log('[REORGANIZE] Moved task will be at:', adjustedTargetStartIndex, '-', movedTaskEndIndex);
+
                 // SIMPLE LOGIC: Reorganize ALL tasks in priority order
                 // When we encounter the moved task, place it at target position
                 // All other tasks concatenate sequentially: each starts where previous ends
@@ -767,17 +777,23 @@
                     return pA - pB;
                 });
 
+                console.log('[REORGANIZE] Sorted by priority:', sortedTasks.map(t => ({id: t.id, prio: t.prio, title: t.title})));
+
                 const newSortedTasks = [];
                 let globalCursor = new Date(START_DATE);
+                let movedTaskPlaced = false;
 
                 // Process all tasks in priority order
-                sortedTasks.forEach(task => {
+                sortedTasks.forEach((task, index) => {
+                    console.log(`[REORGANIZE] Processing task ${index + 1}/${sortedTasks.length}:`, task.id, 'prio:', task.prio, 'title:', task.title);
+                    
                     if (task.prio === 'Done') {
                         newSortedTasks.push({ ...task, startDayIndex: 0, endDayIndex: 0 });
                         return;
                     }
 
                     if (task.id === movedTaskId) {
+                        console.log('[REORGANIZE] Found moved task, placing at target position:', adjustedTargetStartIndex, '-', movedTaskEndIndex);
                         // Place moved task at target position
                         newSortedTasks.push({
                             ...task,
@@ -786,6 +802,8 @@
                         });
                         // Update cursor to continue from where moved task ends
                         globalCursor = new Date(movedTaskEndDate);
+                        movedTaskPlaced = true;
+                        console.log('[REORGANIZE] Cursor updated to:', movedTaskEndDate, 'dayIndex:', movedTaskEndIndex);
                     } else {
                         // Regular task: continue from cursor (where previous task ended)
                         // Skip OOO days
@@ -808,6 +826,8 @@
                         // Update cursor for next task (no gap - next task starts immediately after)
                         globalCursor = taskEndDate;
 
+                        console.log(`[REORGANIZE] Task ${task.id} (${task.title}) placed at:`, taskStartIndex, '-', taskEndIndex);
+
                         newSortedTasks.push({
                             ...task,
                             startDayIndex: taskStartIndex,
@@ -816,13 +836,20 @@
                     }
                 });
 
-                console.log('[REORGANIZE] Final tasks:', newSortedTasks.map(t => ({id: t.id, start: t.startDayIndex, end: t.endDayIndex})));
+                if (!movedTaskPlaced) {
+                    console.error('[REORGANIZE] ERROR: Moved task was not found in sorted tasks!');
+                }
+
+                console.log('[REORGANIZE] Final tasks:', newSortedTasks.map(t => ({id: t.id, prio: t.prio, start: t.startDayIndex, end: t.endDayIndex})));
+                console.log('[REORGANIZE] ===== END =====');
 
                 // Map back to original order
-                return tasks.map(t => {
+                const result = tasks.map(t => {
                     const updated = newSortedTasks.find(st => st.id === t.id);
                     return updated || t;
                 });
+                
+                return result;
             };
 
             const handleTaskUpdate = (updatedTask) => {
