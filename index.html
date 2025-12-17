@@ -519,7 +519,7 @@
 
         const STORAGE_KEY = 'strategic_roadmap_2025_data';
         const STORAGE_VERSION_KEY = 'strategic_roadmap_2025_version';
-        const CURRENT_VERSION = '1.2'; // Updated to force cache refresh
+        const CURRENT_VERSION = '1.3'; // Simple reorganization logic
 
         const App = () => {
             const [tasks, setTasks] = useState(() => {
@@ -758,96 +758,62 @@
                 }
                 const movedTaskEndIndex = getDaysDiff(START_DATE, movedTaskEndDate);
 
-                // Reorganize ALL tasks in priority order
+                // SIMPLE LOGIC: Reorganize ALL tasks in priority order
                 // When we encounter the moved task, place it at target position
-                // Tasks before moved task in priority order: place before target
-                // Tasks after moved task in priority order: place after moved task
+                // All other tasks concatenate sequentially: each starts where previous ends
                 const sortedTasks = [...tasks].sort((a, b) => {
                     const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
                     const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
                     return pA - pB;
                 });
 
-                const movedTaskIndex = sortedTasks.findIndex(t => t.id === movedTaskId);
-                const tasksBeforeMoved = sortedTasks.slice(0, movedTaskIndex);
-                const tasksAfterMoved = sortedTasks.slice(movedTaskIndex + 1);
-
                 const newSortedTasks = [];
                 let globalCursor = new Date(START_DATE);
 
-                // Process tasks before moved task in priority order
-                tasksBeforeMoved.forEach(task => {
+                // Process all tasks in priority order
+                sortedTasks.forEach(task => {
                     if (task.prio === 'Done') {
                         newSortedTasks.push({ ...task, startDayIndex: 0, endDayIndex: 0 });
                         return;
                     }
 
-                    // Skip OOO days
-                    while (isOOO(globalCursor)) {
-                        globalCursor = addDays(globalCursor, 1);
-                    }
-
-                    const taskStartIndex = getDaysDiff(START_DATE, globalCursor);
-                    
-                    // Calculate end date based on duration
-                    let taskEndDate = new Date(globalCursor);
-                    let daysRemaining = task.durationDays;
-                    while (daysRemaining > 0) {
-                        taskEndDate = addDays(taskEndDate, 1);
-                        if (!isOOO(taskEndDate)) {
-                            daysRemaining--;
+                    if (task.id === movedTaskId) {
+                        // Place moved task at target position
+                        newSortedTasks.push({
+                            ...task,
+                            startDayIndex: adjustedTargetStartIndex,
+                            endDayIndex: movedTaskEndIndex
+                        });
+                        // Update cursor to continue from where moved task ends
+                        globalCursor = new Date(movedTaskEndDate);
+                    } else {
+                        // Regular task: continue from cursor (where previous task ended)
+                        // Skip OOO days
+                        while (isOOO(globalCursor)) {
+                            globalCursor = addDays(globalCursor, 1);
                         }
-                    }
-                    const taskEndIndex = getDaysDiff(START_DATE, taskEndDate);
-                    globalCursor = taskEndDate;
 
-                    newSortedTasks.push({
-                        ...task,
-                        startDayIndex: taskStartIndex,
-                        endDayIndex: taskEndIndex
-                    });
-                });
-
-                // Place moved task at target position
-                newSortedTasks.push({
-                    ...movedTask,
-                    startDayIndex: adjustedTargetStartIndex,
-                    endDayIndex: movedTaskEndIndex
-                });
-                // Update cursor to continue from where moved task ends
-                globalCursor = new Date(movedTaskEndDate);
-
-                // Process tasks after moved task in priority order
-                tasksAfterMoved.forEach(task => {
-                    if (task.prio === 'Done') {
-                        newSortedTasks.push({ ...task, startDayIndex: 0, endDayIndex: 0 });
-                        return;
-                    }
-
-                    // Skip OOO days
-                    while (isOOO(globalCursor)) {
-                        globalCursor = addDays(globalCursor, 1);
-                    }
-
-                    const taskStartIndex = getDaysDiff(START_DATE, globalCursor);
-                    
-                    // Calculate end date based on duration
-                    let taskEndDate = new Date(globalCursor);
-                    let daysRemaining = task.durationDays;
-                    while (daysRemaining > 0) {
-                        taskEndDate = addDays(taskEndDate, 1);
-                        if (!isOOO(taskEndDate)) {
-                            daysRemaining--;
+                        const taskStartIndex = getDaysDiff(START_DATE, globalCursor);
+                        
+                        // Calculate end date based on duration
+                        let taskEndDate = new Date(globalCursor);
+                        let daysRemaining = task.durationDays;
+                        while (daysRemaining > 0) {
+                            taskEndDate = addDays(taskEndDate, 1);
+                            if (!isOOO(taskEndDate)) {
+                                daysRemaining--;
+                            }
                         }
-                    }
-                    const taskEndIndex = getDaysDiff(START_DATE, taskEndDate);
-                    globalCursor = taskEndDate;
+                        const taskEndIndex = getDaysDiff(START_DATE, taskEndDate);
+                        // Update cursor for next task (no gap - next task starts immediately after)
+                        globalCursor = taskEndDate;
 
-                    newSortedTasks.push({
-                        ...task,
-                        startDayIndex: taskStartIndex,
-                        endDayIndex: taskEndIndex
-                    });
+                        newSortedTasks.push({
+                            ...task,
+                            startDayIndex: taskStartIndex,
+                            endDayIndex: taskEndIndex
+                        });
+                    }
                 });
 
                 console.log('[REORGANIZE] Final tasks:', newSortedTasks.map(t => ({id: t.id, start: t.startDayIndex, end: t.endDayIndex})));
