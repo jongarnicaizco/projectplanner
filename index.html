@@ -873,12 +873,16 @@
                 }
                 const movedTaskEndIndex = getDaysDiff(START_DATE, movedTaskEndDate);
 
-                // Sort all tasks by priority
+                // Sort ALL tasks by priority (across ALL categories - Admin, Inbound, Rate Cards, Outbound, etc.)
+                // This ensures tasks from different categories are properly interleaved based on priority
                 const sortedTasks = [...tasks].sort((a, b) => {
                     const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
                     const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
                     return pA - pB;
                 });
+
+                console.log('[REORGANIZE] Processing', sortedTasks.length, 'tasks across all categories');
+                console.log('[REORGANIZE] Task categories:', [...new Set(sortedTasks.map(t => t.category))]);
 
                 const newSortedTasks = [];
                 let globalCursor = new Date(START_DATE);
@@ -905,8 +909,10 @@
                     const testStartIndex = getDaysDiff(START_DATE, testCursor);
                     
                     // If we haven't placed the moved task yet and this task would start at or after target, place moved task first
+                    // This works for tasks from ANY category - moved task can be placed before any other task
                     if (!movedTaskPlaced && testStartIndex >= adjustedTargetStartIndex) {
-                        // Place moved task at target
+                        // Place moved task at target (regardless of its category)
+                        console.log('[REORGANIZE] Placing moved task (category:', movedTask.category, ') at position:', adjustedTargetStartIndex, 'before task:', task.id, '(category:', task.category, ')');
                         newSortedTasks.push({
                             ...movedTask,
                             startDayIndex: adjustedTargetStartIndex,
