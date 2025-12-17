@@ -640,6 +640,95 @@
                 return minDist <= 5 ? nearest : null;
             };
 
+            // Function to reorganize tasks after resizing one
+            // Key principle: Following tasks shift to maintain concatenation
+            // If task grows: following tasks shift forward
+            // If task shrinks: following tasks shift backward
+            const reorganizeTasksAfterResize = (tasks, resizedTaskId, originalEndDayIndex, newEndDayIndex) => {
+                const resizedTask = tasks.find(t => t.id === resizedTaskId);
+                if (!resizedTask || resizedTask.prio === 'Done') return tasks;
+
+                const endChange = newEndDayIndex - originalEndDayIndex;
+                if (endChange === 0) return tasks; // No change
+
+                // Find tasks that start at or after the original end position
+                // These need to shift
+                const tasksToShift = tasks
+                    .filter(t => 
+                        t.id !== resizedTaskId && 
+                        t.prio !== 'Done' &&
+                        t.startDayIndex >= originalEndDayIndex
+                    )
+                    .sort((a, b) => a.startDayIndex - b.startDayIndex);
+
+                // Update resized task first (ensure end date is correct)
+                let updatedTasks = tasks.map(t => {
+                    if (t.id === resizedTaskId) {
+                        // Recalculate end date adjusting for OOO
+                        const startDate = addDays(START_DATE, t.startDayIndex);
+                        let cursor = new Date(startDate);
+                        while (isOOO(cursor)) {
+                            cursor = addDays(cursor, 1);
+                        }
+                        const adjustedStartIndex = getDaysDiff(START_DATE, cursor);
+                        
+                        let taskEndDate = new Date(cursor);
+                        let daysRemaining = t.durationDays;
+                        while (daysRemaining > 0) {
+                            taskEndDate = addDays(taskEndDate, 1);
+                            if (!isOOO(taskEndDate)) {
+                                daysRemaining--;
+                            }
+                        }
+                        const adjustedEndIndex = getDaysDiff(START_DATE, taskEndDate);
+                        
+                        return {
+                            ...t,
+                            startDayIndex: adjustedStartIndex,
+                            endDayIndex: adjustedEndIndex
+                        };
+                    }
+                    return t;
+                });
+
+                // Shift following tasks
+                updatedTasks = updatedTasks.map(t => {
+                    const taskToShift = tasksToShift.find(ts => ts.id === t.id);
+                    if (!taskToShift) return t;
+                    
+                    // Calculate new start position
+                    let newStart = t.startDayIndex + endChange;
+                    if (newStart < 0) newStart = 0;
+                    
+                    // Adjust for OOO
+                    const newStartDate = addDays(START_DATE, newStart);
+                    let adjustedCursor = new Date(newStartDate);
+                    while (isOOO(adjustedCursor)) {
+                        adjustedCursor = addDays(adjustedCursor, 1);
+                    }
+                    const adjustedStartIndex = getDaysDiff(START_DATE, adjustedCursor);
+                    
+                    // Calculate end date based on duration
+                    let taskEndDate = new Date(adjustedCursor);
+                    let daysRemaining = t.durationDays;
+                    while (daysRemaining > 0) {
+                        taskEndDate = addDays(taskEndDate, 1);
+                        if (!isOOO(taskEndDate)) {
+                            daysRemaining--;
+                        }
+                    }
+                    const adjustedEndIndex = getDaysDiff(START_DATE, taskEndDate);
+                    
+                    return {
+                        ...t,
+                        startDayIndex: adjustedStartIndex,
+                        endDayIndex: adjustedEndIndex
+                    };
+                });
+
+                return updatedTasks;
+            };
+
             // Function to reorganize tasks after moving one to a new position
             // Key principle: Tasks shift in cascade to fill the space
             // Example: A(10-15), B(15-20), C(20-25). Move C to 10:
@@ -907,12 +996,22 @@
                                 const endDate = addDays(START_DATE, task.endDayIndex);
                                 const newDuration = getWorkingDaysCount(startDate, endDate);
 
+                                // Calculate the change in end position
+                                const originalEnd = dragState.initialEnd;
+                                const newEnd = task.endDayIndex;
+                                const endChange = newEnd - originalEnd;
+
                                 // Update task with new duration and adjust following tasks
                                 setTasks(prev => {
                                     const updatedTask = { ...task, durationDays: newDuration };
                                     const newRaw = prev.map(t => t.id === updatedTask.id ? updatedTask : t);
-                                    // Adjust following tasks to maintain concatenation
-                                    return reorganizeTasksAfterMove(newRaw, dragState.id, task.startDayIndex);
+                                    
+                                    // If the end changed, shift following tasks
+                                    if (endChange !== 0) {
+                                        return reorganizeTasksAfterResize(newRaw, dragState.id, originalEnd, newEnd);
+                                    }
+                                    
+                                    return newRaw;
                                 });
                             }
                         }
