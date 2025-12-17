@@ -737,8 +737,12 @@
                 const movedTask = tasks.find(t => t.id === movedTaskId);
                 if (!movedTask || movedTask.prio === 'Done') return tasks;
 
+                // Store original end from the task's initial state (before any changes)
+                // We need to use the original endDayIndex from when drag started
                 const originalEndDayIndex = movedTask.endDayIndex;
                 const taskDuration = originalEndDayIndex - originalStartDayIndex;
+
+                console.log('[REORGANIZE] Moved task:', movedTaskId, 'Original:', originalStartDayIndex, '-', originalEndDayIndex, 'Target:', targetStartDayIndex, 'Duration:', taskDuration);
 
                 // Calculate new position for moved task (at target, adjusting for OOO)
                 const targetStartDate = addDays(START_DATE, targetStartDayIndex);
@@ -759,6 +763,8 @@
                 }
                 const movedTaskEndIndex = getDaysDiff(START_DATE, movedTaskEndDate);
 
+                console.log('[REORGANIZE] Moved task new position:', adjustedTargetStartIndex, '-', movedTaskEndIndex);
+
                 // Determine direction of movement
                 const movedBackwards = targetStartDayIndex < originalStartDayIndex;
                 const movedForwards = targetStartDayIndex > originalStartDayIndex;
@@ -777,6 +783,7 @@
                             t.startDayIndex < originalStartDayIndex
                         )
                         .sort((a, b) => a.startDayIndex - b.startDayIndex); // Sort by position
+                    console.log('[REORGANIZE] Moved backwards, tasks to shift forward:', tasksToShift.map(t => ({id: t.id, start: t.startDayIndex})));
                 } else if (movedForwards) {
                     // Moved forwards: tasks that were between original end and target position shift backward
                     tasksToShift = tasks
@@ -787,6 +794,7 @@
                             t.startDayIndex < targetStartDayIndex
                         )
                         .sort((a, b) => b.startDayIndex - a.startDayIndex); // Sort reverse for backward shift
+                    console.log('[REORGANIZE] Moved forwards, tasks to shift backward:', tasksToShift.map(t => ({id: t.id, start: t.startDayIndex})));
                 }
 
                 // Shift amount is the duration of the moved task
@@ -823,6 +831,8 @@
                     
                     if (newStart < 0) newStart = 0;
                     
+                    console.log('[REORGANIZE] Shifting task:', t.id, 'from', t.startDayIndex, 'to', newStart);
+                    
                     // Adjust for OOO
                     const newStartDate = addDays(START_DATE, newStart);
                     let adjustedCursor = new Date(newStartDate);
@@ -842,6 +852,8 @@
                     }
                     const adjustedEndIndex = getDaysDiff(START_DATE, taskEndDate);
                     
+                    console.log('[REORGANIZE] Task', t.id, 'new position:', adjustedStartIndex, '-', adjustedEndIndex);
+                    
                     return {
                         ...t,
                         startDayIndex: adjustedStartIndex,
@@ -849,6 +861,7 @@
                     };
                 });
 
+                console.log('[REORGANIZE] Final tasks:', updatedTasks.map(t => ({id: t.id, start: t.startDayIndex, end: t.endDayIndex})));
                 return updatedTasks;
             };
 
