@@ -737,8 +737,7 @@
                 const movedTask = tasks.find(t => t.id === movedTaskId);
                 if (!movedTask || movedTask.prio === 'Done') return tasks;
 
-                const originalEndDayIndex = movedTask.endDayIndex;
-                console.log('[REORGANIZE] Moved task:', movedTaskId, 'Original:', originalStartDayIndex, '-', originalEndDayIndex, 'Target:', targetStartDayIndex);
+                console.log('[REORGANIZE] Moved task:', movedTaskId, 'Original:', originalStartDayIndex, 'Target:', targetStartDayIndex);
 
                 // Calculate new position for moved task (at target, adjusting for OOO)
                 const targetStartDate = addDays(START_DATE, targetStartDayIndex);
@@ -759,345 +758,105 @@
                 }
                 const movedTaskEndIndex = getDaysDiff(START_DATE, movedTaskEndDate);
 
-                // Find task that was immediately before original position
-                const taskBeforeOriginal = tasks.find(t => 
-                    t.id !== movedTaskId && 
-                    t.prio !== 'Done' && 
-                    t.endDayIndex === originalStartDayIndex
-                );
+                // Reorganize ALL tasks in priority order
+                // When we encounter the moved task, place it at target position
+                // Tasks before moved task in priority order: place before target
+                // Tasks after moved task in priority order: place after moved task
+                const sortedTasks = [...tasks].sort((a, b) => {
+                    const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
+                    const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
+                    return pA - pB;
+                });
 
-                // Find task that was immediately after original position
-                const taskAfterOriginal = tasks.find(t => 
-                    t.id !== movedTaskId && 
-                    t.prio !== 'Done' && 
-                    t.startDayIndex === originalEndDayIndex
-                );
+                const movedTaskIndex = sortedTasks.findIndex(t => t.id === movedTaskId);
+                const tasksBeforeMoved = sortedTasks.slice(0, movedTaskIndex);
+                const tasksAfterMoved = sortedTasks.slice(movedTaskIndex + 1);
 
-                // Determine direction
-                const movedBackwards = targetStartDayIndex < originalStartDayIndex;
+                const newSortedTasks = [];
+                let globalCursor = new Date(START_DATE);
 
-                // Build a map to track updated tasks
-                const updatedTasksMap = new Map();
+                // Process tasks before moved task in priority order
+                tasksBeforeMoved.forEach(task => {
+                    if (task.prio === 'Done') {
+                        newSortedTasks.push({ ...task, startDayIndex: 0, endDayIndex: 0 });
+                        return;
+                    }
 
-                // 1. Place moved task at target position
-                updatedTasksMap.set(movedTaskId, {
+                    // Skip OOO days
+                    while (isOOO(globalCursor)) {
+                        globalCursor = addDays(globalCursor, 1);
+                    }
+
+                    const taskStartIndex = getDaysDiff(START_DATE, globalCursor);
+                    
+                    // Calculate end date based on duration
+                    let taskEndDate = new Date(globalCursor);
+                    let daysRemaining = task.durationDays;
+                    while (daysRemaining > 0) {
+                        taskEndDate = addDays(taskEndDate, 1);
+                        if (!isOOO(taskEndDate)) {
+                            daysRemaining--;
+                        }
+                    }
+                    const taskEndIndex = getDaysDiff(START_DATE, taskEndDate);
+                    globalCursor = taskEndDate;
+
+                    newSortedTasks.push({
+                        ...task,
+                        startDayIndex: taskStartIndex,
+                        endDayIndex: taskEndIndex
+                    });
+                });
+
+                // Place moved task at target position
+                newSortedTasks.push({
                     ...movedTask,
                     startDayIndex: adjustedTargetStartIndex,
                     endDayIndex: movedTaskEndIndex
                 });
+                // Update cursor to continue from where moved task ends
+                globalCursor = new Date(movedTaskEndDate);
 
-                if (movedBackwards) {
-                    // Moved backwards: 
-                    // - Tasks before target: keep their position
-                    // - Tasks between target and original: shift forward (start from where moved task ends)
-                    // - B must start where the task immediately before B ends, and end where C starts (in new position)
-                    // - C must start where B ends
-                    // - Tasks after C: continue concatenated
-
-                    // Tasks before target: keep position
-                    tasks.forEach(task => {
-                        if (task.prio === 'Done' || task.id === movedTaskId) return;
-                        if (task.endDayIndex <= targetStartDayIndex) {
-                            updatedTasksMap.set(task.id, task);
-                        }
-                    });
-
-                    // Find task immediately before B (taskBeforeOriginal)
-                    const taskBeforeB = taskBeforeOriginal ? tasks.find(t => 
-                        t.id !== movedTaskId && 
-                        t.id !== taskBeforeOriginal.id &&
-        t.prio !== 'Done' && 
-                        t.endDayIndex === taskBeforeOriginal.startDayIndex
-                    ) : null;
-
-                    // Tasks between target and original: shift forward
-                    // Exclude B (taskBeforeOriginal) - it will be processed separately
-                    const tasksToShiftForward = tasks
-                        .filter(t => 
-                            t.id !== movedTaskId && 
-                            t.prio !== 'Done' &&
-                            t.id !== taskBeforeOriginal?.id &&
-                            t.startDayIndex >= targetStartDayIndex && 
-                            t.startDayIndex < originalStartDayIndex
-                        )
-                        .sort((a, b) => a.startDayIndex - b.startDayIndex);
-
-                    let shiftCursor = new Date(movedTaskEndDate);
-                    tasksToShiftForward.forEach(task => {
-                        // All tasks in tasksToShiftForward should start from where A ends
-                        // This makes room for A in its new position
-                        while (isOOO(shiftCursor)) {
-                            shiftCursor = addDays(shiftCursor, 1);
-                        }
-                        const newStartIndex = getDaysDiff(START_DATE, shiftCursor);
-                        
-                        let taskEndDate = new Date(shiftCursor);
-                        let daysRemaining = task.durationDays;
-                        while (daysRemaining > 0) {
-                            taskEndDate = addDays(taskEndDate, 1);
-                            if (!isOOO(taskEndDate)) {
-                                daysRemaining--;
-                            }
-                        }
-                        const newEndIndex = getDaysDiff(START_DATE, taskEndDate);
-                        shiftCursor = taskEndDate;
-                        
-                        updatedTasksMap.set(task.id, {
-                            ...task,
-                            startDayIndex: newStartIndex,
-                            endDayIndex: newEndIndex
-                        });
-                    });
-
-                    // Process B (taskBeforeOriginal) separately
-                    if (taskBeforeOriginal) {
-                        let bStartCursor;
-                        
-                        // Determine if A moved to immediate previous position or further back
-                        const movedToImmediatePrevious = targetStartDayIndex === taskBeforeOriginal.startDayIndex;
-                        
-                        if (movedToImmediatePrevious) {
-                            // A moved one position back: B should start where A ends (making room for A)
-                            bStartCursor = new Date(movedTaskEndDate);
-                        } else {
-                            // A moved two or more positions back: B should start where taskBeforeB ends
-                            // (A is now behind taskBeforeB, so B aligns with taskBeforeB)
-                            if (taskBeforeB) {
-                                // Check if taskBeforeB was in tasksToShiftForward (and thus updated)
-                                const taskBeforeBWasShifted = tasksToShiftForward.some(t => t.id === taskBeforeB.id);
-                                
-                                if (taskBeforeBWasShifted) {
-                                    // taskBeforeB was updated in tasksToShiftForward, use its updated endDayIndex
-                                    const beforeBEnd = updatedTasksMap.get(taskBeforeB.id).endDayIndex;
-                                    const beforeBEndDate = addDays(START_DATE, beforeBEnd);
-                                    bStartCursor = new Date(beforeBEndDate);
-                                } else {
-                                    // taskBeforeB was not shifted (it's before target), use its original endDayIndex
-                                    const beforeBEnd = taskBeforeB.endDayIndex;
-                                    const beforeBEndDate = addDays(START_DATE, beforeBEnd);
-                                    bStartCursor = new Date(beforeBEndDate);
-                                }
-                            } else {
-                                // No task before B, start from where last shifted task ended
-                                bStartCursor = shiftCursor;
-                            }
-                        }
-                        
-                        // Skip OOO days
-                        while (isOOO(bStartCursor)) {
-                            bStartCursor = addDays(bStartCursor, 1);
-                        }
-                        
-                        const bStartIndex = getDaysDiff(START_DATE, bStartCursor);
-                        
-                        let bEndDate = new Date(bStartCursor);
-                        let daysRemaining = taskBeforeOriginal.durationDays;
-                        while (daysRemaining > 0) {
-                            bEndDate = addDays(bEndDate, 1);
-                            if (!isOOO(bEndDate)) {
-                                daysRemaining--;
-                            }
-                        }
-                        const bEndIndex = getDaysDiff(START_DATE, bEndDate);
-                        
-                        updatedTasksMap.set(taskBeforeOriginal.id, {
-                            ...taskBeforeOriginal,
-                            startDayIndex: bStartIndex,
-                            endDayIndex: bEndIndex
-                        });
-                        
-                        // C starts where B ends
-                        shiftCursor = bEndDate;
+                // Process tasks after moved task in priority order
+                tasksAfterMoved.forEach(task => {
+                    if (task.prio === 'Done') {
+                        newSortedTasks.push({ ...task, startDayIndex: 0, endDayIndex: 0 });
+                        return;
                     }
 
-                    // Tasks after original (including C): start from where B ends (or last shifted task)
-                    const tasksAfterOriginal = tasks
-                        .filter(t => 
-                            t.id !== movedTaskId && 
-                            t.prio !== 'Done' &&
-                            t.startDayIndex >= originalEndDayIndex
-                        )
-                        .sort((a, b) => a.startDayIndex - b.startDayIndex);
-
-                    tasksAfterOriginal.forEach(task => {
-                        if (updatedTasksMap.has(task.id)) return;
-                        
-                        while (isOOO(shiftCursor)) {
-                            shiftCursor = addDays(shiftCursor, 1);
-                        }
-                        const newStartIndex = getDaysDiff(START_DATE, shiftCursor);
-                        
-                        let taskEndDate = new Date(shiftCursor);
-                        let daysRemaining = task.durationDays;
-                        while (daysRemaining > 0) {
-                            taskEndDate = addDays(taskEndDate, 1);
-                            if (!isOOO(taskEndDate)) {
-                                daysRemaining--;
-                            }
-                        }
-                        const newEndIndex = getDaysDiff(START_DATE, taskEndDate);
-                        shiftCursor = taskEndDate;
-                        
-                        updatedTasksMap.set(task.id, {
-                            ...task,
-                            startDayIndex: newStartIndex,
-                            endDayIndex: newEndIndex
-                        });
-                    });
-
-                } else {
-                    // Moved forwards:
-                    // - Tasks before original: keep their position
-                    // - B and C must unite: B ends where C started (closing the gap left by A)
-                    // - Tasks between original end and target: shift backward (starting from where B ends)
-                    // - Tasks at or after target: start from where moved task ends
-
-                    // Tasks before original: keep position
-                    tasks.forEach(task => {
-                        if (task.prio === 'Done' || task.id === movedTaskId) return;
-                        if (task.endDayIndex <= originalStartDayIndex) {
-                            updatedTasksMap.set(task.id, task);
-                        }
-                    });
-
-                    // B and C must unite: B ends where C started (closing the gap)
-                    // B (taskBeforeOriginal) should end where C (taskAfterOriginal) started
-                    let backwardCursor;
-                    if (taskBeforeOriginal && taskAfterOriginal) {
-                        // B should end where C started
-                        const cStartDate = addDays(START_DATE, taskAfterOriginal.startDayIndex);
-                        let bEndCursor = new Date(cStartDate);
-                        while (isOOO(bEndCursor)) {
-                            bEndCursor = addDays(bEndCursor, 1);
-                        }
-                        
-                        // Recalculate B's position: keep its start, but end where C started
-                        const bStartDate = addDays(START_DATE, taskBeforeOriginal.startDayIndex);
-                        let bStartCursor = new Date(bStartDate);
-                        while (isOOO(bStartCursor)) {
-                            bStartCursor = addDays(bStartCursor, 1);
-                        }
-                        const bStartIndex = getDaysDiff(START_DATE, bStartCursor);
-                        
-                        // Calculate B's end based on its duration
-                        let bEndDate = new Date(bStartCursor);
-                        let daysRemaining = taskBeforeOriginal.durationDays;
-                        while (daysRemaining > 0) {
-                            bEndDate = addDays(bEndDate, 1);
-                            if (!isOOO(bEndDate)) {
-                                daysRemaining--;
-                            }
-                        }
-                        const bEndIndex = getDaysDiff(START_DATE, bEndDate);
-                        
-                        updatedTasksMap.set(taskBeforeOriginal.id, {
-                            ...taskBeforeOriginal,
-                            startDayIndex: bStartIndex,
-                            endDayIndex: bEndIndex
-                        });
-                        
-                        // C starts where B ends
-                        backwardCursor = bEndDate;
-                    } else if (taskBeforeOriginal) {
-                        // No C, B keeps its position
-                        const beforeEnd = taskBeforeOriginal.endDayIndex;
-                        const beforeEndDate = addDays(START_DATE, beforeEnd);
-                        backwardCursor = new Date(beforeEndDate);
-                        while (isOOO(backwardCursor)) {
-                            backwardCursor = addDays(backwardCursor, 1);
-                        }
-                    } else {
-                        // No B, start from beginning
-                        backwardCursor = new Date(START_DATE);
-                        while (isOOO(backwardCursor)) {
-                            backwardCursor = addDays(backwardCursor, 1);
-                        }
+                    // Skip OOO days
+                    while (isOOO(globalCursor)) {
+                        globalCursor = addDays(globalCursor, 1);
                     }
 
-                    // Tasks between original end and target: shift backward (starting from where B ends)
-                    const tasksToShiftBackward = tasks
-                        .filter(t => 
-                            t.id !== movedTaskId && 
-                            t.prio !== 'Done' &&
-                            t.startDayIndex >= originalEndDayIndex && 
-                            t.startDayIndex < targetStartDayIndex
-                        )
-                        .sort((a, b) => a.startDayIndex - b.startDayIndex);
-
-                    tasksToShiftBackward.forEach(task => {
-                        if (updatedTasksMap.has(task.id)) return;
-                        
-                        while (isOOO(backwardCursor)) {
-                            backwardCursor = addDays(backwardCursor, 1);
+                    const taskStartIndex = getDaysDiff(START_DATE, globalCursor);
+                    
+                    // Calculate end date based on duration
+                    let taskEndDate = new Date(globalCursor);
+                    let daysRemaining = task.durationDays;
+                    while (daysRemaining > 0) {
+                        taskEndDate = addDays(taskEndDate, 1);
+                        if (!isOOO(taskEndDate)) {
+                            daysRemaining--;
                         }
-                        const newStartIndex = getDaysDiff(START_DATE, backwardCursor);
-                        
-                        let taskEndDate = new Date(backwardCursor);
-                        let daysRemaining = task.durationDays;
-                        while (daysRemaining > 0) {
-                            taskEndDate = addDays(taskEndDate, 1);
-                            if (!isOOO(taskEndDate)) {
-                                daysRemaining--;
-                            }
-                        }
-                        const newEndIndex = getDaysDiff(START_DATE, taskEndDate);
-                        backwardCursor = taskEndDate;
-                        
-                        updatedTasksMap.set(task.id, {
-                            ...task,
-                            startDayIndex: newStartIndex,
-                            endDayIndex: newEndIndex
-                        });
-                    });
-
-                    // Tasks at or after target: start from where moved task ends
-                    let forwardCursor = new Date(movedTaskEndDate);
-                    const tasksAfterTarget = tasks
-                        .filter(t => 
-                            t.id !== movedTaskId && 
-                            t.prio !== 'Done' &&
-                            t.startDayIndex >= targetStartDayIndex
-                        )
-                        .sort((a, b) => a.startDayIndex - b.startDayIndex);
-
-                    tasksAfterTarget.forEach(task => {
-                        if (updatedTasksMap.has(task.id)) return;
-                        
-                        while (isOOO(forwardCursor)) {
-                            forwardCursor = addDays(forwardCursor, 1);
-                        }
-                        const newStartIndex = getDaysDiff(START_DATE, forwardCursor);
-                        
-                        let taskEndDate = new Date(forwardCursor);
-                        let daysRemaining = task.durationDays;
-                        while (daysRemaining > 0) {
-                            taskEndDate = addDays(taskEndDate, 1);
-                            if (!isOOO(taskEndDate)) {
-                                daysRemaining--;
-                            }
-                        }
-                        const newEndIndex = getDaysDiff(START_DATE, taskEndDate);
-                        forwardCursor = taskEndDate;
-                        
-                        updatedTasksMap.set(task.id, {
-                            ...task,
-                            startDayIndex: newStartIndex,
-                            endDayIndex: newEndIndex
-                        });
-                    });
-                }
-
-                // Ensure all tasks are in the map
-                tasks.forEach(task => {
-                    if (!updatedTasksMap.has(task.id)) {
-                        updatedTasksMap.set(task.id, task);
                     }
+                    const taskEndIndex = getDaysDiff(START_DATE, taskEndDate);
+                    globalCursor = taskEndDate;
+
+                    newSortedTasks.push({
+                        ...task,
+                        startDayIndex: taskStartIndex,
+                        endDayIndex: taskEndIndex
+                    });
                 });
 
-                console.log('[REORGANIZE] Final tasks:', Array.from(updatedTasksMap.values()).map(t => ({id: t.id, start: t.startDayIndex, end: t.endDayIndex})));
+                console.log('[REORGANIZE] Final tasks:', newSortedTasks.map(t => ({id: t.id, start: t.startDayIndex, end: t.endDayIndex})));
 
-                // Return in original order
-                return tasks.map(t => updatedTasksMap.get(t.id) || t);
+                // Map back to original order
+                return tasks.map(t => {
+                    const updated = newSortedTasks.find(st => st.id === t.id);
+                    return updated || t;
+                });
             };
 
             const handleTaskUpdate = (updatedTask) => {
