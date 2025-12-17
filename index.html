@@ -259,7 +259,7 @@
         ];
 
 
-        const TaskPopover = ({ task, position, onClose, onSave }) => {
+        const TaskPopover = ({ task, position, onClose, onSave, onDelete }) => {
             const [editData, setEditData] = useState({ ...task });
 
             // Sync state if task prop changes (e.g. if popover is kept open while switching tasks)
@@ -426,6 +426,17 @@
                             className="mt-2 w-full py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded shadow-sm transition-colors"
                         >
                             Save Changes
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                if (onDelete) {
+                                    onDelete(task.id);
+                                }
+                            }}
+                            className="mt-2 w-full py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold rounded shadow-sm transition-colors"
+                        >
+                            Delete Task
                         </button>
                     </div>
                 </div>
@@ -879,6 +890,16 @@
                 });
             };
 
+            const handleDeleteTask = (taskId) => {
+                if (window.confirm('Are you sure you want to delete this task? This action cannot be undone.')) {
+                    setTasks(prev => {
+                        const newRaw = prev.filter(t => t.id !== taskId);
+                        return calculateTaskScheduleRecursive(newRaw);
+                    });
+                    setPopover(null);
+                }
+            };
+
             const cellWidth = useMemo(() => {
                 switch (viewMode) {
                     case 'week': return 20;
@@ -1112,7 +1133,7 @@
 
                     {showAddModal && <AddTaskModal onClose={() => setShowAddModal(false)} onSave={handleAddTask} />}
 
-                    {popover && <TaskPopover key={popover.task.id} task={popover.task} position={popover} onClose={() => setPopover(null)} onSave={handleTaskUpdate} />}
+                    {popover && <TaskPopover key={popover.task.id} task={popover.task} position={popover} onClose={() => setPopover(null)} onSave={handleTaskUpdate} onDelete={handleDeleteTask} />}
 
                     {/* Top Bar */}
                     <div className="h-16 flex-shrink-0 glass flex items-center px-6 justify-between z-30 relative shadow-sm">
@@ -1166,9 +1187,25 @@
                                             }).map(task => (
                                                 <div
                                                     key={task.id}
-                                                    className="group p-2 rounded border border-stone-100 bg-stone-50 hover:bg-white hover:border-brand-200 transition-all cursor-pointer hover:shadow-sm"
+                                                    className="group p-2 rounded border border-stone-100 bg-stone-50 hover:bg-white hover:border-brand-200 transition-all cursor-pointer hover:shadow-sm relative"
                                                     onClick={(e) => handleSidebarClick(e, task)}
                                                 >
+                                                    {/* Delete button */}
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (window.confirm('Are you sure you want to delete this task? This action cannot be undone.')) {
+                                                                handleDeleteTask(task.id);
+                                                            }
+                                                        }}
+                                                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded bg-rose-500 hover:bg-rose-600 text-white"
+                                                        title="Delete Task"
+                                                    >
+                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                        </svg>
+                                                    </button>
+
                                                     <div className="flex justify-between items-start">
                                                         <div className="flex flex-col items-start gap-0.5">
                                                             <span className="text-xs font-semibold text-stone-700 leading-tight">{task.title}</span>
@@ -1178,7 +1215,7 @@
                                                     </div>
                                                     <div className="flex justify-end items-center mt-1 text-[9px] text-stone-400">
                                                         <span className={checkDayOOO(task.startDayIndex) ? 'text-rose-500' : ''}>
-                                                            {addDays(START_DATE, task.startDayIndex).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}
+                                                            {addDays(START_DATE, task.startDayIndex).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}
                                                         </span>
                                                     </div>
                                                 </div>
@@ -1220,7 +1257,7 @@
                                         } else if (viewMode === 'month') {
                                             if (isMonthStart || i === 0) {
                                                 showLabel = true;
-                                                label = date.toLocaleString('default', { month: 'short' });
+                                                label = date.toLocaleString('en-US', { month: 'short' });
                                             }
                                         }
 
@@ -1235,7 +1272,7 @@
                                             >
                                                 {(viewMode !== 'month' && isMonthStart) && (
                                                     <div className="absolute top-1 left-1.5 text-[10px] font-bold text-stone-900 uppercase whitespace-nowrap z-20 bg-cream-50/80 px-1 rounded backdrop-blur-sm">
-                                                        {date.toLocaleString('default', { month: 'long' })}
+                                                        {date.toLocaleString('en-US', { month: 'long' })}
                                                     </div>
                                                 )}
 
@@ -1322,6 +1359,22 @@
                                                     >
                                                         <span className="text-[10px] font-bold text-stone-800/90 whitespace-nowrap leading-tight">{task.title}</span>
                                                         <span className="text-[9px] font-medium text-stone-600/80 whitespace-nowrap leading-tight">{formatDuration(task.durationDays)}</span>
+
+                                                        {/* Delete button */}
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (window.confirm('Are you sure you want to delete this task? This action cannot be undone.')) {
+                                                                    handleDeleteTask(task.id);
+                                                                }
+                                                            }}
+                                                            className="absolute left-1 top-1 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded bg-rose-500 hover:bg-rose-600 text-white"
+                                                            title="Delete Task"
+                                                        >
+                                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                            </svg>
+                                                        </button>
 
                                                         <div
                                                             className="absolute right-0 top-0 bottom-0 w-3 cursor-e-resize flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-black/5"
