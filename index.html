@@ -636,8 +636,8 @@
                         nearest = point;
                     }
                 });
-                // Only snap if within 3 days
-                return minDist <= 3 ? nearest : null;
+                // Increase snap range to 5 days for better UX, but still require snap
+                return minDist <= 5 ? nearest : null;
             };
 
             // Function to reorganize tasks after moving one to a new position
@@ -660,7 +660,7 @@
                 }
                 const adjustedTargetStartIndex = getDaysDiff(START_DATE, targetCursor);
 
-                // Calculate where the moved task will end
+                // Calculate where the moved task will end (ensuring no gaps)
                 let movedTaskEndDate = new Date(targetCursor);
                 let daysRemaining = movedTask.durationDays;
                 while (daysRemaining > 0) {
@@ -671,10 +671,10 @@
                 }
                 const movedTaskEndIndex = getDaysDiff(START_DATE, movedTaskEndDate);
 
-                // Recalculate all tasks in priority order
-                // When we hit the moved task, place it at targetStartDayIndex
+                // Recalculate all tasks in priority order, ensuring no gaps
                 let globalCursor = new Date(START_DATE);
                 const newSortedTasks = [];
+                let movedTaskProcessed = false;
 
                 sortedTasks.forEach(task => {
                     if (task.prio === 'Done') {
@@ -689,16 +689,20 @@
                             startDayIndex: adjustedTargetStartIndex,
                             endDayIndex: movedTaskEndIndex
                         });
-                        // Update cursor to continue from where moved task ends
+                        // Update cursor to continue from where moved task ends (no gap)
                         globalCursor = new Date(movedTaskEndDate);
+                        movedTaskProcessed = true;
                     } else {
-                        // Regular task: continue from cursor
+                        // For tasks that come before the moved task in priority but after in time,
+                        // or tasks that come after, continue from cursor
+                        // Skip OOO days to ensure no gaps
                         while (isOOO(globalCursor)) {
                             globalCursor = addDays(globalCursor, 1);
                         }
 
                         const taskStartIndex = getDaysDiff(START_DATE, globalCursor);
                         
+                        // Calculate end date based on duration, skipping OOO
                         let daysRemaining = task.durationDays;
                         let tempDate = new Date(globalCursor);
 
@@ -710,6 +714,7 @@
                         }
 
                         const taskEndIndex = getDaysDiff(START_DATE, tempDate);
+                        // Update cursor to end of this task (no gap - next task starts immediately after)
                         globalCursor = tempDate;
 
                         newSortedTasks.push({
@@ -774,14 +779,17 @@
                         let newStart = dragState.initialStart + deltaDays;
                         if (newStart < 0) newStart = 0;
 
-                        // Get snap points and find nearest
+                        // Get snap points and find nearest - FORCE snap to valid positions only
                         const snaps = getSnapPoints(currentTasks, dragState.id);
                         const nearestSnap = findNearestSnapPoint(newStart, snaps);
                         
+                        // ALWAYS snap to nearest point if within range, otherwise don't allow movement
                         if (nearestSnap) {
                             newStart = nearestSnap.dayIndex;
                             setSnapTargetIndex(nearestSnap.dayIndex);
                         } else {
+                            // If no snap point nearby, keep original position (don't allow free movement)
+                            newStart = dragState.initialStart;
                             setSnapTargetIndex(null);
                         }
 
@@ -825,11 +833,23 @@
                             const currentTasks = tasksRef.current;
                             const task = currentTasks.find(t => t.id === dragState.id);
                             if (task) {
-                                // Use the snapped position
-                                const targetStart = snapTargetIndex !== null ? snapTargetIndex : task.startDayIndex;
-                                
-                                // Reorganize all tasks maintaining concatenation
-                                setTasks(prev => reorganizeTasksAfterMove(prev, dragState.id, targetStart));
+                                // ONLY allow move if we have a valid snap target, otherwise revert
+                                if (snapTargetIndex !== null) {
+                                    // Use the snapped position
+                                    setTasks(prev => reorganizeTasksAfterMove(prev, dragState.id, snapTargetIndex));
+                                } else {
+                                    // No valid snap point - revert to original position
+                                    setTasks(prev => prev.map(t => {
+                                        if (t.id === dragState.id) {
+                                            return {
+                                                ...t,
+                                                startDayIndex: dragState.initialStart,
+                                                endDayIndex: dragState.initialEnd
+                                            };
+                                        }
+                                        return t;
+                                    }));
+                                }
                             }
                             setSnapTargetIndex(null);
                             setSnapPoints([]);
@@ -1093,9 +1113,7 @@
                                         </div>
                                     )}
 
-                                    <div className={`space-y-2 relative z-0 px-2 mt-2 transition-opacity duration-200 ${
-                                        activeDragId ? 'opacity-40' : 'opacity-100'
-                                    }`}>
+                                    <div className="space-y-2 relative z-0 px-2 mt-2">
                                         {Object.entries(categories).flatMap(([cat, t]) => t.sort((a, b) => {
                                             const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
                                             const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
@@ -1105,20 +1123,27 @@
 
                                             const left = task.startDayIndex * cellWidth;
                                             const width = Math.max(cellWidth, (task.endDayIndex - task.startDayIndex) * cellWidth);
+                                            
+                                            // Determine opacity: active task stays at 100%, others fade to 30% when dragging
+                                            const isActiveTask = activeDragId === task.id;
+                                            const taskOpacity = isActiveTask 
+                                                ? 'opacity-100' 
+                                                : activeDragId 
+                                                    ? 'opacity-30' 
+                                                    : 'opacity-100';
 
                                             return (
                                                 <div key={task.id} className="h-11 relative flex items-center">
                                                     <div
                                                         id={'task-bar-' + task.id}
-                                                        className={`absolute top-0.5 bottom-0.5 rounded-md shadow-sm border flex flex-col justify-center px-2 cursor-pointer group select-none overflow-hidden
+                                                        className={`absolute top-0.5 bottom-0.5 rounded-md shadow-sm border flex flex-col justify-center px-2 cursor-pointer group select-none overflow-hidden transition-opacity duration-200
                                                             ${task.color}
-                                                            ${(activeDragId === task.id || popover?.task.id === task.id) 
-                                                                ? 'z-50 ring-2 ring-brand-400 shadow-xl opacity-100' 
-                                                                : activeDragId 
-                                                                    ? 'opacity-30' 
-                                                                    : 'hover:shadow-md opacity-100'}
+                                                            ${(isActiveTask || popover?.task.id === task.id) 
+                                                                ? 'z-50 ring-2 ring-brand-400 shadow-xl' 
+                                                                : 'hover:shadow-md'}
+                                                            ${taskOpacity}
                                                         `}
-                                                        style={{ left, width, transition: activeDragId === task.id ? 'none' : 'all 0.1s' }}
+                                                        style={{ left, width, transition: isActiveTask ? 'none' : 'all 0.1s' }}
                                                         onMouseDown={(e) => handleMouseDown(e, task, 'move')}
                                                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
                                                     >
