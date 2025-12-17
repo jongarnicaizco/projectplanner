@@ -641,17 +641,15 @@
             };
 
             // Function to reorganize tasks after moving one to a new position
-            // Key principle: When moving task A to where task B ends, task B moves to where task A was
+            // Key principle: Tasks shift to fill the gap left by the moved task
+            // - If moved backwards: tasks before original position shift forward
+            // - If moved forwards: tasks after original position shift backward
             const reorganizeTasksAfterMove = (tasks, movedTaskId, targetStartDayIndex, originalStartDayIndex) => {
-                // Find the task that ends at targetStartDayIndex (the task we're moving "after")
-                const taskAtTargetEnd = tasks.find(t => 
-                    t.id !== movedTaskId && 
-                    t.prio !== 'Done' && 
-                    t.endDayIndex === targetStartDayIndex
-                );
-
                 const movedTask = tasks.find(t => t.id === movedTaskId);
                 if (!movedTask || movedTask.prio === 'Done') return tasks;
+
+                const originalEndDayIndex = movedTask.endDayIndex;
+                const taskDuration = originalEndDayIndex - originalStartDayIndex;
 
                 // Calculate new position for moved task (at target, adjusting for OOO)
                 const targetStartDate = addDays(START_DATE, targetStartDayIndex);
@@ -672,108 +670,90 @@
                 }
                 const movedTaskEndIndex = getDaysDiff(START_DATE, movedTaskEndDate);
 
-                // If there's a task at the target end, it should move to where movedTask was
-                if (taskAtTargetEnd) {
-                    // Calculate new position for the displaced task (at original position of moved task)
-                    const originalStartDate = addDays(START_DATE, originalStartDayIndex);
-                    let originalCursor = new Date(originalStartDate);
-                    while (isOOO(originalCursor)) {
-                        originalCursor = addDays(originalCursor, 1);
-                    }
-                    const adjustedOriginalStartIndex = getDaysDiff(START_DATE, originalCursor);
+                // Determine direction of movement
+                const movedBackwards = targetStartDayIndex < originalStartDayIndex;
+                const movedForwards = targetStartDayIndex > originalStartDayIndex;
 
-                    // Calculate where the displaced task will end
-                    let displacedTaskEndDate = new Date(originalCursor);
-                    let displacedDaysRemaining = taskAtTargetEnd.durationDays;
-                    while (displacedDaysRemaining > 0) {
-                        displacedTaskEndDate = addDays(displacedTaskEndDate, 1);
-                        if (!isOOO(displacedTaskEndDate)) {
-                            displacedDaysRemaining--;
-                        }
-                    }
-                    const displacedTaskEndIndex = getDaysDiff(START_DATE, displacedTaskEndDate);
-
-                    // Update both tasks: moved task goes to target, displaced task goes to original position
-                    return tasks.map(t => {
-                        if (t.id === movedTaskId) {
-                            return {
-                                ...t,
-                                startDayIndex: adjustedTargetStartIndex,
-                                endDayIndex: movedTaskEndIndex
-                            };
-                        }
-                        if (t.id === taskAtTargetEnd.id) {
-                            return {
-                                ...t,
-                                startDayIndex: adjustedOriginalStartIndex,
-                                endDayIndex: displacedTaskEndIndex
-                            };
-                        }
-                        return t;
-                    });
-                } else {
-                    // No task at target end - just move the task and recalculate following tasks
-                    // Get all tasks sorted by priority
-                    const sortedTasks = [...tasks].sort((a, b) => {
-                        const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
-                        const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
-                        return pA - pB;
-                    });
-
-                    // Recalculate all tasks in priority order
-                    let globalCursor = new Date(START_DATE);
-                    const newSortedTasks = [];
-
-                    sortedTasks.forEach(task => {
-                        if (task.prio === 'Done') {
-                            newSortedTasks.push({ ...task, startDayIndex: 0, endDayIndex: 0 });
-                            return;
-                        }
-
-                        if (task.id === movedTaskId) {
-                            // Place moved task at target position
-                            newSortedTasks.push({
-                                ...task,
-                                startDayIndex: adjustedTargetStartIndex,
-                                endDayIndex: movedTaskEndIndex
-                            });
-                            // Update cursor to continue from where moved task ends
-                            globalCursor = new Date(movedTaskEndDate);
-                        } else {
-                            // Regular task: continue from cursor
-                            while (isOOO(globalCursor)) {
-                                globalCursor = addDays(globalCursor, 1);
-                            }
-
-                            const taskStartIndex = getDaysDiff(START_DATE, globalCursor);
-                            
-                            let daysRemaining = task.durationDays;
-                            let tempDate = new Date(globalCursor);
-
-                            while (daysRemaining > 0) {
-                                tempDate = addDays(tempDate, 1);
-                                if (!isOOO(tempDate)) {
-                                    daysRemaining--;
-                                }
-                            }
-
-                            const taskEndIndex = getDaysDiff(START_DATE, tempDate);
-                            globalCursor = tempDate;
-
-                            newSortedTasks.push({
-                                ...task,
-                                startDayIndex: taskStartIndex,
-                                endDayIndex: taskEndIndex
-                            });
-                        }
-                    });
-
-                    // Map back to original order
-                    return tasks.map(t => {
-                        const updated = newSortedTasks.find(st => st.id === t.id);
-                        return updated || t;
-                    });
+                // Find tasks that need to shift
+                let tasksToShift = [];
+                
+                if (movedBackwards) {
+                    // Moved backwards: tasks that were between target and original position shift forward
+                    tasksToShift = tasks.filter(t => 
+                        t.id !== movedTaskId && 
+                        t.prio !== 'Done' &&
+                        t.startDayIndex >= targetStartDayIndex && 
+                        t.startDayIndex < originalStartDayIndex
+                    );
+                } else if (movedForwards) {
+                    // Moved forwards: tasks that were between original and target position shift backward
+                    tasksToShift = tasks.filter(t => 
+                        t.id !== movedTaskId && 
+                        t.prio !== 'Done' &&
+                        t.startDayIndex > originalEndDayIndex && 
+                        t.startDayIndex <= targetStartDayIndex
+                    );
                 }
+
+                // Calculate shift amount
+                const shiftAmount = movedBackwards 
+                    ? (originalEndDayIndex - targetStartDayIndex) // Space freed by moving backwards
+                    : (targetStartDayIndex - originalEndDayIndex); // Space needed by moving forwards
+
+                // Update moved task
+                const updatedTasks = tasks.map(t => {
+                    if (t.id === movedTaskId) {
+                        return {
+                            ...t,
+                            startDayIndex: adjustedTargetStartIndex,
+                            endDayIndex: movedTaskEndIndex
+                        };
+                    }
+                    
+                    // Shift affected tasks
+                    if (tasksToShift.some(ts => ts.id === t.id)) {
+                        let newStart = t.startDayIndex;
+                        
+                        if (movedBackwards) {
+                            // Shift forward (to later dates)
+                            newStart = t.startDayIndex + shiftAmount;
+                        } else {
+                            // Shift backward (to earlier dates)
+                            newStart = t.startDayIndex - shiftAmount;
+                        }
+                        
+                        if (newStart < 0) newStart = 0;
+                        
+                        // Adjust for OOO
+                        const newStartDate = addDays(START_DATE, newStart);
+                        let adjustedCursor = new Date(newStartDate);
+                        while (isOOO(adjustedCursor)) {
+                            adjustedCursor = addDays(adjustedCursor, 1);
+                        }
+                        const adjustedStartIndex = getDaysDiff(START_DATE, adjustedCursor);
+                        
+                        // Calculate end date
+                        let taskEndDate = new Date(adjustedCursor);
+                        let daysRemaining = t.durationDays;
+                        while (daysRemaining > 0) {
+                            taskEndDate = addDays(taskEndDate, 1);
+                            if (!isOOO(taskEndDate)) {
+                                daysRemaining--;
+                            }
+                        }
+                        const adjustedEndIndex = getDaysDiff(START_DATE, taskEndDate);
+                        
+                        return {
+                            ...t,
+                            startDayIndex: adjustedStartIndex,
+                            endDayIndex: adjustedEndIndex
+                        };
+                    }
+                    
+                    return t;
+                });
+
+                return updatedTasks;
             };
 
             const handleTaskUpdate = (updatedTask) => {
