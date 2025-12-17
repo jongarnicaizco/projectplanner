@@ -555,6 +555,75 @@
 
             useEffect(() => { tasksRef.current = tasks; }, [tasks]);
 
+            // Function to adjust tasks after moving one, maintaining concatenation
+            const adjustTasksAfterMove = (tasks, movedTaskId, newStartDayIndex, newEndDayIndex) => {
+                // Find the moved task and its index in priority order
+                const sortedTasks = [...tasks].sort((a, b) => {
+                    const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
+                    const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
+                    return pA - pB;
+                });
+
+                const movedTaskIndex = sortedTasks.findIndex(t => t.id === movedTaskId);
+                if (movedTaskIndex === -1) return tasks;
+
+                // Update the moved task with new dates
+                const movedTask = sortedTasks[movedTaskIndex];
+                const newStartDate = addDays(START_DATE, newStartDayIndex);
+                const newEndDate = addDays(START_DATE, newEndDayIndex);
+                const newDuration = getWorkingDaysCount(newStartDate, newEndDate);
+
+                // Calculate new end date (this will be the start of the next task)
+                let cursorDate = newEndDate;
+
+                // Update moved task
+                sortedTasks[movedTaskIndex] = {
+                    ...movedTask,
+                    startDayIndex: newStartDayIndex,
+                    endDayIndex: newEndDayIndex,
+                    durationDays: newDuration
+                };
+
+                // Adjust all following tasks to start where the previous one ends
+                for (let i = movedTaskIndex + 1; i < sortedTasks.length; i++) {
+                    const task = sortedTasks[i];
+                    if (task.prio === 'Done') continue;
+
+                    // Skip OOO days
+                    while (isOOO(cursorDate)) {
+                        cursorDate = addDays(cursorDate, 1);
+                    }
+
+                    const taskStartIndex = getDaysDiff(START_DATE, cursorDate);
+                    
+                    // Calculate end date based on duration
+                    let daysRemaining = task.durationDays;
+                    let tempDate = new Date(cursorDate);
+
+                    while (daysRemaining > 0) {
+                        tempDate = addDays(tempDate, 1);
+                        if (!isOOO(tempDate)) {
+                            daysRemaining--;
+                        }
+                    }
+
+                    const taskEndIndex = getDaysDiff(START_DATE, tempDate);
+                    cursorDate = tempDate;
+
+                    sortedTasks[i] = {
+                        ...task,
+                        startDayIndex: taskStartIndex,
+                        endDayIndex: taskEndIndex
+                    };
+                }
+
+                // Map back to original order
+                return tasks.map(t => {
+                    const updated = sortedTasks.find(st => st.id === t.id);
+                    return updated || t;
+                });
+            };
+
             const handleTaskUpdate = (updatedTask) => {
                 setTasks(prev => {
                     const newRaw = prev.map(t => t.id === updatedTask.id ? updatedTask : t);
@@ -633,8 +702,20 @@
                                     });
                                 }
                             }
+                        } else if (dragState.mode === 'move') {
+                            // MOVE COMMIT: Update dates and adjust following tasks
+                            const currentTasks = tasksRef.current;
+                            const task = currentTasks.find(t => t.id === dragState.id);
+                            if (task) {
+                                // Use the current position after drag
+                                const newStart = task.startDayIndex;
+                                const newEnd = task.endDayIndex;
+                                
+                                // Adjust all tasks maintaining concatenation
+                                setTasks(prev => adjustTasksAfterMove(prev, dragState.id, newStart, newEnd));
+                            }
                         } else if (dragState.mode === 'resize') {
-                            // RESIZE COMMIT: Calculate new duration and trigger auto-schedule
+                            // RESIZE COMMIT: Calculate new duration and adjust following tasks
                             const currentTasks = tasksRef.current;
                             const task = currentTasks.find(t => t.id === dragState.id);
                             if (task) {
@@ -643,8 +724,13 @@
                                 const endDate = addDays(START_DATE, task.endDayIndex);
                                 const newDuration = getWorkingDaysCount(startDate, endDate);
 
-                                // Update task with new duration and trigger auto-schedule
-                                handleTaskUpdate({ ...task, durationDays: newDuration });
+                                // Update task with new duration and adjust following tasks
+                                setTasks(prev => {
+                                    const updatedTask = { ...task, durationDays: newDuration };
+                                    const newRaw = prev.map(t => t.id === updatedTask.id ? updatedTask : t);
+                                    // Adjust following tasks to maintain concatenation
+                                    return adjustTasksAfterMove(newRaw, dragState.id, task.startDayIndex, task.endDayIndex);
+                                });
                             }
                         }
                         dragRef.current = null;

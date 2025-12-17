@@ -518,23 +518,68 @@
         };
 
         const STORAGE_KEY = 'strategic_roadmap_2025_data';
+        const STORAGE_VERSION_KEY = 'strategic_roadmap_2025_version';
+        const CURRENT_VERSION = '1.0';
 
         const App = () => {
             const [tasks, setTasks] = useState(() => {
                 const saved = localStorage.getItem(STORAGE_KEY);
+                const savedVersion = localStorage.getItem(STORAGE_VERSION_KEY);
+                
                 if (saved) {
                     try {
-                        return JSON.parse(saved);
+                        const parsed = JSON.parse(saved);
+                        // Validate that we have valid task data
+                        if (Array.isArray(parsed) && parsed.length > 0) {
+                            // Validate that all required fields are present
+                            const isValid = parsed.every(t => 
+                                t.id && 
+                                t.title !== undefined && 
+                                t.startDayIndex !== undefined && 
+                                t.endDayIndex !== undefined &&
+                                t.durationDays !== undefined
+                            );
+                            
+                            if (isValid) {
+                                console.log('[Load] Restored', parsed.length, 'tasks from localStorage (version', savedVersion || 'unknown' + ')');
+                                return parsed;
+                            } else {
+                                console.warn('[Load] Saved data is invalid, using default tasks');
+                            }
+                        }
                     } catch (e) {
-                        console.error("Failed to parse saved data", e);
+                        console.error("[Load] Failed to parse saved data", e);
                     }
                 }
+                console.log('[Load] No saved data found, using default tasks');
                 return calculateTaskScheduleRecursive(RAW_TASKS);
             });
 
             // Auto-save whenever tasks change
             useEffect(() => {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+                try {
+                    // Save all task data including positions, dates, and durations
+                    const dataToSave = tasks.map(t => ({
+                        id: t.id,
+                        title: t.title,
+                        category: t.category,
+                        prio: t.prio,
+                        durationDays: t.durationDays,
+                        description: t.description,
+                        color: t.color,
+                        startDayIndex: t.startDayIndex,
+                        endDayIndex: t.endDayIndex
+                    }));
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+                    localStorage.setItem(STORAGE_VERSION_KEY, CURRENT_VERSION);
+                    console.log('[Auto-save] Tasks saved to localStorage (version', CURRENT_VERSION + ')');
+                } catch (e) {
+                    console.error('[Auto-save] Failed to save tasks:', e);
+                    // Try to save with quota exceeded handling
+                    if (e.name === 'QuotaExceededError') {
+                        alert('Storage quota exceeded. Please clear some browser data or contact support.');
+                    }
+                }
             }, [tasks]);
 
             const handleResetData = () => {
@@ -548,12 +593,138 @@
             const [popover, setPopover] = useState(null);
             const [showAddModal, setShowAddModal] = useState(false);
             const [activeDragId, setActiveDragId] = useState(null);
+            const [snapTargetIndex, setSnapTargetIndex] = useState(null);
+            const [snapPoints, setSnapPoints] = useState([]);
 
             const mainRef = useRef(null);
             const dragRef = useRef(null);
             const tasksRef = useRef(tasks);
 
             useEffect(() => { tasksRef.current = tasks; }, [tasks]);
+
+            // Function to get all snap points (start positions of all tasks)
+            const getSnapPoints = (tasks, excludeTaskId) => {
+                const sortedTasks = [...tasks].sort((a, b) => {
+                    const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
+                    const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
+                    return pA - pB;
+                });
+
+                const points = [];
+                sortedTasks.forEach(task => {
+                    if (task.id !== excludeTaskId && task.prio !== 'Done') {
+                        points.push({
+                            dayIndex: task.startDayIndex,
+                            taskId: task.id,
+                            priority: task.prio === 'Done' ? -1 : parseInt(task.prio)
+                        });
+                    }
+                });
+                return points.sort((a, b) => a.dayIndex - b.dayIndex);
+            };
+
+            // Function to find nearest snap point
+            const findNearestSnapPoint = (dayIndex, snapPoints) => {
+                if (snapPoints.length === 0) return null;
+                let nearest = snapPoints[0];
+                let minDist = Math.abs(dayIndex - snapPoints[0].dayIndex);
+                snapPoints.forEach(point => {
+                    const dist = Math.abs(dayIndex - point.dayIndex);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        nearest = point;
+                    }
+                });
+                // Only snap if within 3 days
+                return minDist <= 3 ? nearest : null;
+            };
+
+            // Function to reorganize tasks after moving one to a new position
+            const reorganizeTasksAfterMove = (tasks, movedTaskId, targetStartDayIndex) => {
+                // Get all tasks sorted by priority
+                const sortedTasks = [...tasks].sort((a, b) => {
+                    const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
+                    const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
+                    return pA - pB;
+                });
+
+                const movedTask = sortedTasks.find(t => t.id === movedTaskId);
+                if (!movedTask || movedTask.prio === 'Done') return tasks;
+
+                // Calculate the target start date and adjust for OOO
+                const targetStartDate = addDays(START_DATE, targetStartDayIndex);
+                let targetCursor = new Date(targetStartDate);
+                while (isOOO(targetCursor)) {
+                    targetCursor = addDays(targetCursor, 1);
+                }
+                const adjustedTargetStartIndex = getDaysDiff(START_DATE, targetCursor);
+
+                // Calculate where the moved task will end
+                let movedTaskEndDate = new Date(targetCursor);
+                let daysRemaining = movedTask.durationDays;
+                while (daysRemaining > 0) {
+                    movedTaskEndDate = addDays(movedTaskEndDate, 1);
+                    if (!isOOO(movedTaskEndDate)) {
+                        daysRemaining--;
+                    }
+                }
+                const movedTaskEndIndex = getDaysDiff(START_DATE, movedTaskEndDate);
+
+                // Recalculate all tasks in priority order
+                // When we hit the moved task, place it at targetStartDayIndex
+                let globalCursor = new Date(START_DATE);
+                const newSortedTasks = [];
+
+                sortedTasks.forEach(task => {
+                    if (task.prio === 'Done') {
+                        newSortedTasks.push({ ...task, startDayIndex: 0, endDayIndex: 0 });
+                        return;
+                    }
+
+                    if (task.id === movedTaskId) {
+                        // Place moved task at target position
+                        newSortedTasks.push({
+                            ...task,
+                            startDayIndex: adjustedTargetStartIndex,
+                            endDayIndex: movedTaskEndIndex
+                        });
+                        // Update cursor to continue from where moved task ends
+                        globalCursor = new Date(movedTaskEndDate);
+                    } else {
+                        // Regular task: continue from cursor
+                        while (isOOO(globalCursor)) {
+                            globalCursor = addDays(globalCursor, 1);
+                        }
+
+                        const taskStartIndex = getDaysDiff(START_DATE, globalCursor);
+                        
+                        let daysRemaining = task.durationDays;
+                        let tempDate = new Date(globalCursor);
+
+                        while (daysRemaining > 0) {
+                            tempDate = addDays(tempDate, 1);
+                            if (!isOOO(tempDate)) {
+                                daysRemaining--;
+                            }
+                        }
+
+                        const taskEndIndex = getDaysDiff(START_DATE, tempDate);
+                        globalCursor = tempDate;
+
+                        newSortedTasks.push({
+                            ...task,
+                            startDayIndex: taskStartIndex,
+                            endDayIndex: taskEndIndex
+                        });
+                    }
+                });
+
+                // Map back to original order
+                return tasks.map(t => {
+                    const updated = newSortedTasks.find(st => st.id === t.id);
+                    return updated || t;
+                });
+            };
 
             const handleTaskUpdate = (updatedTask) => {
                 setTasks(prev => {
@@ -596,21 +767,36 @@
                     const cw = cellWidthRef.current;
                     const deltaDays = Math.round(deltaPx / cw);
 
-                    setTasks(prev => prev.map(t => {
-                        if (t.id !== dragState.id) return t;
-                        if (dragState.mode === 'move') {
-                            const duration = dragState.initialEnd - dragState.initialStart;
-                            let newStart = dragState.initialStart + deltaDays;
-                            if (newStart < 0) newStart = 0;
-                            return { ...t, startDayIndex: newStart, endDayIndex: newStart + duration };
+                    if (dragState.mode === 'move') {
+                        const currentTasks = tasksRef.current;
+                        const duration = dragState.initialEnd - dragState.initialStart;
+                        let newStart = dragState.initialStart + deltaDays;
+                        if (newStart < 0) newStart = 0;
+
+                        // Get snap points and find nearest
+                        const snaps = getSnapPoints(currentTasks, dragState.id);
+                        const nearestSnap = findNearestSnapPoint(newStart, snaps);
+                        
+                        if (nearestSnap) {
+                            newStart = nearestSnap.dayIndex;
+                            setSnapTargetIndex(nearestSnap.dayIndex);
+                        } else {
+                            setSnapTargetIndex(null);
                         }
-                        if (dragState.mode === 'resize') {
+
+                        setTasks(prev => prev.map(t => {
+                            if (t.id !== dragState.id) return t;
+                            return { ...t, startDayIndex: newStart, endDayIndex: newStart + duration };
+                        }));
+                    } else if (dragState.mode === 'resize') {
+                        setSnapTargetIndex(null);
+                        setTasks(prev => prev.map(t => {
+                            if (t.id !== dragState.id) return t;
                             let newEnd = dragState.initialEnd + deltaDays;
                             if (newEnd <= t.startDayIndex) newEnd = t.startDayIndex + 1;
                             return { ...t, endDayIndex: newEnd };
-                        }
-                        return t;
-                    }));
+                        }));
+                    }
                 };
 
                 const onMouseUp = (e) => {
@@ -633,8 +819,21 @@
                                     });
                                 }
                             }
+                        } else if (dragState.mode === 'move') {
+                            // MOVE COMMIT: Reorganize tasks based on new position
+                            const currentTasks = tasksRef.current;
+                            const task = currentTasks.find(t => t.id === dragState.id);
+                            if (task) {
+                                // Use the snapped position
+                                const targetStart = snapTargetIndex !== null ? snapTargetIndex : task.startDayIndex;
+                                
+                                // Reorganize all tasks maintaining concatenation
+                                setTasks(prev => reorganizeTasksAfterMove(prev, dragState.id, targetStart));
+                            }
+                            setSnapTargetIndex(null);
+                            setSnapPoints([]);
                         } else if (dragState.mode === 'resize') {
-                            // RESIZE COMMIT: Calculate new duration and trigger auto-schedule
+                            // RESIZE COMMIT: Calculate new duration and adjust following tasks
                             const currentTasks = tasksRef.current;
                             const task = currentTasks.find(t => t.id === dragState.id);
                             if (task) {
@@ -643,12 +842,19 @@
                                 const endDate = addDays(START_DATE, task.endDayIndex);
                                 const newDuration = getWorkingDaysCount(startDate, endDate);
 
-                                // Update task with new duration and trigger auto-schedule
-                                handleTaskUpdate({ ...task, durationDays: newDuration });
+                                // Update task with new duration and adjust following tasks
+                                setTasks(prev => {
+                                    const updatedTask = { ...task, durationDays: newDuration };
+                                    const newRaw = prev.map(t => t.id === updatedTask.id ? updatedTask : t);
+                                    // Adjust following tasks to maintain concatenation
+                                    return adjustTasksAfterMove(newRaw, dragState.id, task.startDayIndex, task.endDayIndex);
+                                });
                             }
                         }
                         dragRef.current = null;
                         setActiveDragId(null);
+                        setSnapTargetIndex(null);
+                        setSnapPoints([]);
                     }
                 };
 
@@ -673,6 +879,16 @@
                     hasMoved: false
                 };
                 setActiveDragId(task.id);
+                
+                // Set snap points for move mode
+                if (mode === 'move') {
+                    const currentTasks = tasksRef.current;
+                    const snaps = getSnapPoints(currentTasks, task.id);
+                    setSnapPoints(snaps);
+                } else {
+                    setSnapPoints([]);
+                }
+                setSnapTargetIndex(null);
             };
 
             const handleSidebarClick = (e, task) => {
@@ -855,7 +1071,30 @@
                                         })}
                                     </div>
 
-                                    <div className="space-y-2 relative z-0 px-2 mt-2">
+                                    {/* Snap guide lines */}
+                                    {activeDragId && snapPoints.length > 0 && (
+                                        <div className="absolute inset-0 pointer-events-none z-30">
+                                            {snapPoints.map((point, idx) => {
+                                                const left = point.dayIndex * cellWidth;
+                                                const isTarget = snapTargetIndex === point.dayIndex;
+                                                return (
+                                                    <div
+                                                        key={`snap-${point.taskId}-${idx}`}
+                                                        className={`absolute top-0 bottom-0 w-0.5 transition-all duration-150 ${
+                                                            isTarget 
+                                                                ? 'bg-brand-500 opacity-100' 
+                                                                : 'bg-brand-300 opacity-40'
+                                                        }`}
+                                                        style={{ left: `${left}px` }}
+                                                    />
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    <div className={`space-y-2 relative z-0 px-2 mt-2 transition-opacity duration-200 ${
+                                        activeDragId ? 'opacity-40' : 'opacity-100'
+                                    }`}>
                                         {Object.entries(categories).flatMap(([cat, t]) => t.sort((a, b) => {
                                             const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
                                             const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
@@ -872,7 +1111,11 @@
                                                         id={'task-bar-' + task.id}
                                                         className={`absolute top-0.5 bottom-0.5 rounded-md shadow-sm border flex flex-col justify-center px-2 cursor-pointer group select-none overflow-hidden
                                                             ${task.color}
-                                                            ${(activeDragId === task.id || popover?.task.id === task.id) ? 'z-50 ring-2 ring-brand-400 shadow-xl opacity-90' : 'hover:shadow-md'}
+                                                            ${(activeDragId === task.id || popover?.task.id === task.id) 
+                                                                ? 'z-50 ring-2 ring-brand-400 shadow-xl opacity-100' 
+                                                                : activeDragId 
+                                                                    ? 'opacity-30' 
+                                                                    : 'hover:shadow-md opacity-100'}
                                                         `}
                                                         style={{ left, width, transition: activeDragId === task.id ? 'none' : 'all 0.1s' }}
                                                         onMouseDown={(e) => handleMouseDown(e, task, 'move')}
