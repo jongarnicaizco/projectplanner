@@ -841,9 +841,11 @@
             };
 
             // Function to reorganize tasks after moving one to a new position
-            // Key principle: Tasks shift in cascade to fill the space
-            // Example: A(10-15), B(15-20), C(20-25). Move C to 10:
-            //   C goes to 10-15, A shifts to 15-20, B shifts to 20-25
+            // Strategy:
+            // 1. Place moved task at target position (end of previous task - snap point)
+            // 2. Identify the gap left at original position
+            // 3. Tasks to the RIGHT of gap: shift LEFT to fill gap (join at start of nearest tasks to the left)
+            // 4. Tasks to the LEFT of gap: shift RIGHT to make room (join at end of nearest tasks to the right)
             const reorganizeTasksAfterMove = (tasks, movedTaskId, targetStartDayIndex, originalStartDayIndex) => {
                 const movedTask = tasks.find(t => t.id === movedTaskId);
                 if (!movedTask || movedTask.prio === 'Done') {
@@ -851,8 +853,13 @@
                 }
 
                 console.log('[REORGANIZE] ===== START =====');
-                console.log('[REORGANIZE] Moved task:', movedTaskId, 'prio:', movedTask.prio);
+                console.log('[REORGANIZE] Moved task:', movedTaskId, 'category:', movedTask.category, 'prio:', movedTask.prio);
                 console.log('[REORGANIZE] Original start:', originalStartDayIndex, 'Target start:', targetStartDayIndex);
+
+                // Calculate original end position of moved task
+                const originalEndDayIndex = movedTask.endDayIndex;
+                const gapStart = originalStartDayIndex;
+                const gapEnd = originalEndDayIndex;
 
                 // Calculate new position for moved task (at target, adjusting for OOO)
                 const targetStartDate = addDays(START_DATE, targetStartDayIndex);
@@ -873,8 +880,7 @@
                 }
                 const movedTaskEndIndex = getDaysDiff(START_DATE, movedTaskEndDate);
 
-                // Sort ALL tasks by priority (across ALL categories - Admin, Inbound, Rate Cards, Outbound, etc.)
-                // This ensures tasks from different categories are properly interleaved based on priority
+                // Sort ALL tasks by priority (across ALL categories)
                 const sortedTasks = [...tasks].sort((a, b) => {
                     const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
                     const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
@@ -882,14 +888,36 @@
                 });
 
                 console.log('[REORGANIZE] Processing', sortedTasks.length, 'tasks across all categories');
-                console.log('[REORGANIZE] Task categories:', [...new Set(sortedTasks.map(t => t.category))]);
+                console.log('[REORGANIZE] Gap from', gapStart, 'to', gapEnd);
+
+                // Identify tasks that need repositioning
+                // Tasks to the RIGHT of the gap (start >= gapEnd) need to shift LEFT
+                const tasksToShiftLeft = sortedTasks.filter(t => 
+                    t.id !== movedTaskId && 
+                    t.prio !== 'Done' && 
+                    t.startDayIndex >= gapEnd
+                ).sort((a, b) => a.startDayIndex - b.startDayIndex);
+
+                // Tasks to the LEFT of the target (end <= adjustedTargetStartIndex) need to stay as is
+                // Tasks between target and gap need to shift
+                const tasksToShiftRight = sortedTasks.filter(t => 
+                    t.id !== movedTaskId && 
+                    t.prio !== 'Done' && 
+                    t.endDayIndex <= adjustedTargetStartIndex &&
+                    t.startDayIndex < gapStart
+                ).sort((a, b) => a.startDayIndex - b.startDayIndex);
+
+                // Now rebuild the timeline:
+                // 1. Place all tasks before target position
+                // 2. Place moved task at target
+                // 3. Place all tasks after moved task, but skip the gap
+                // 4. Place tasks that were in/after gap, shifted left
 
                 const newSortedTasks = [];
                 let globalCursor = new Date(START_DATE);
                 let movedTaskPlaced = false;
 
-                // Process all tasks in priority order
-                // When the cursor reaches or would pass the target position, place the moved task
+                // Process ALL tasks in priority order
                 for (const task of sortedTasks) {
                     if (task.prio === 'Done') {
                         newSortedTasks.push({ ...task, startDayIndex: 0, endDayIndex: 0 });
@@ -897,22 +925,21 @@
                     }
 
                     if (task.id === movedTaskId) {
-                        // Skip the moved task in the priority loop - we'll place it when cursor reaches target
-                        continue;
+                        continue; // Skip moved task, place it at target
                     }
 
-                    // Check if placing this task would go past the target position
+                    // Check if this task overlaps with the gap - if so, we'll handle it separately
+                    const taskOverlapsGap = task.startDayIndex < gapEnd && task.endDayIndex > gapStart;
+                    
+                    // Check if we should place moved task before this task
                     let testCursor = new Date(globalCursor);
                     while (isOOO(testCursor)) {
                         testCursor = addDays(testCursor, 1);
                     }
                     const testStartIndex = getDaysDiff(START_DATE, testCursor);
                     
-                    // If we haven't placed the moved task yet and this task would start at or after target, place moved task first
-                    // This works for tasks from ANY category - moved task can be placed before any other task
+                    // If we haven't placed moved task and we've reached/passed target, place it now
                     if (!movedTaskPlaced && testStartIndex >= adjustedTargetStartIndex) {
-                        // Place moved task at target (regardless of its category)
-                        console.log('[REORGANIZE] Placing moved task (category:', movedTask.category, ') at position:', adjustedTargetStartIndex, 'before task:', task.id, '(category:', task.category, ')');
                         newSortedTasks.push({
                             ...movedTask,
                             startDayIndex: adjustedTargetStartIndex,
@@ -922,7 +949,19 @@
                         movedTaskPlaced = true;
                     }
 
-                    // Now place the current task
+                    // If task overlaps gap, skip it (it will be repositioned)
+                    if (taskOverlapsGap) {
+                        continue;
+                    }
+
+                    // If task is to the right of gap, it needs to shift left
+                    if (task.startDayIndex >= gapEnd) {
+                        // This task will be placed after we've processed all tasks before the gap
+                        // We'll handle it in a second pass
+                        continue;
+                    }
+
+                    // Place current task (it's before the gap or before target)
                     while (isOOO(globalCursor)) {
                         globalCursor = addDays(globalCursor, 1);
                     }
@@ -946,16 +985,42 @@
                     });
                 }
 
-                // If moved task wasn't placed yet (target is after all other tasks), place it at the end
+                // Place moved task if not placed yet
                 if (!movedTaskPlaced) {
                     newSortedTasks.push({
                         ...movedTask,
                         startDayIndex: adjustedTargetStartIndex,
                         endDayIndex: movedTaskEndIndex
                     });
+                    globalCursor = new Date(movedTaskEndDate);
                 }
 
-                console.log('[REORGANIZE] Final tasks:', newSortedTasks.map(t => ({id: t.id, prio: t.prio, start: t.startDayIndex, end: t.endDayIndex})));
+                // Now place tasks that were to the right of the gap (shifted left)
+                for (const task of tasksToShiftLeft) {
+                    while (isOOO(globalCursor)) {
+                        globalCursor = addDays(globalCursor, 1);
+                    }
+
+                    const taskStartIndex = getDaysDiff(START_DATE, globalCursor);
+                    let taskEndDate = new Date(globalCursor);
+                    daysRemaining = task.durationDays;
+                    while (daysRemaining > 0) {
+                        taskEndDate = addDays(taskEndDate, 1);
+                        if (!isOOO(taskEndDate)) {
+                            daysRemaining--;
+                        }
+                    }
+                    const taskEndIndex = getDaysDiff(START_DATE, taskEndDate);
+                    globalCursor = taskEndDate;
+
+                    newSortedTasks.push({
+                        ...task,
+                        startDayIndex: taskStartIndex,
+                        endDayIndex: taskEndIndex
+                    });
+                }
+
+                console.log('[REORGANIZE] Final tasks:', newSortedTasks.map(t => ({id: t.id, category: t.category, prio: t.prio, start: t.startDayIndex, end: t.endDayIndex})));
                 console.log('[REORGANIZE] ===== END =====');
 
                 // Map back to original order
