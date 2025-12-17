@@ -602,7 +602,7 @@
 
             useEffect(() => { tasksRef.current = tasks; }, [tasks]);
 
-            // Function to get all snap points (start positions of all tasks)
+            // Function to get all snap points (END positions of all tasks - where new tasks can start)
             const getSnapPoints = (tasks, excludeTaskId) => {
                 const sortedTasks = [...tasks].sort((a, b) => {
                     const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
@@ -613,8 +613,9 @@
                 const points = [];
                 sortedTasks.forEach(task => {
                     if (task.id !== excludeTaskId && task.prio !== 'Done') {
+                        // Use endDayIndex as snap point (where the next task can start)
                         points.push({
-                            dayIndex: task.startDayIndex,
+                            dayIndex: task.endDayIndex,
                             taskId: task.id,
                             priority: task.prio === 'Done' ? -1 : parseInt(task.prio)
                         });
@@ -847,7 +848,7 @@
                                     const updatedTask = { ...task, durationDays: newDuration };
                                     const newRaw = prev.map(t => t.id === updatedTask.id ? updatedTask : t);
                                     // Adjust following tasks to maintain concatenation
-                                    return adjustTasksAfterMove(newRaw, dragState.id, task.startDayIndex, task.endDayIndex);
+                                    return reorganizeTasksAfterMove(newRaw, dragState.id, task.startDayIndex);
                                 });
                             }
                         }
