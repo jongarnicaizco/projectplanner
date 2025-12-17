@@ -840,13 +840,12 @@
                 return updatedTasks;
             };
 
-            // Simple reorganization: place moved task at target, reorganize all others sequentially by priority
+            // Simple reorganization: place moved task at target, reorganize all others sequentially by temporal position
             const reorganizeTasksAfterMove = (tasks, movedTaskId, targetStartDayIndex, originalStartDayIndex) => {
                 const movedTask = tasks.find(t => t.id === movedTaskId);
                 if (!movedTask || movedTask.prio === 'Done') {
                     return tasks;
                 }
-
 
                 // Calculate new position for moved task (at target, adjusting for OOO)
                 const targetStartDate = addDays(START_DATE, targetStartDayIndex);
@@ -867,25 +866,17 @@
                 }
                 const movedTaskEndIndex = getDaysDiff(START_DATE, movedTaskEndDate);
 
-                // Sort ALL tasks by priority (across ALL categories)
-                const sortedTasks = [...tasks].sort((a, b) => {
-                    const pA = a.prio === 'Done' ? -1 : parseInt(a.prio);
-                    const pB = b.prio === 'Done' ? -1 : parseInt(b.prio);
-                    return pA - pB;
+                // Sort ALL tasks by their current temporal position (startDayIndex)
+                const sortedTasks = [...tasks].filter(t => t.prio !== 'Done').sort((a, b) => {
+                    return a.startDayIndex - b.startDayIndex;
                 });
-
 
                 const newSortedTasks = [];
                 let globalCursor = new Date(START_DATE);
                 let movedTaskPlaced = false;
 
-                // Process ALL tasks in priority order
+                // Process ALL tasks in temporal order
                 for (const task of sortedTasks) {
-                    if (task.prio === 'Done') {
-                        newSortedTasks.push({ ...task, startDayIndex: 0, endDayIndex: 0 });
-                        continue;
-                    }
-
                     if (task.id === movedTaskId) {
                         continue; // Skip moved task, place it at target
                     }
@@ -939,8 +930,12 @@
                         startDayIndex: adjustedTargetStartIndex,
                         endDayIndex: movedTaskEndIndex
                     });
-                    globalCursor = new Date(movedTaskEndDate);
                 }
+
+                // Add Done tasks back
+                tasks.filter(t => t.prio === 'Done').forEach(doneTask => {
+                    newSortedTasks.push({ ...doneTask, startDayIndex: 0, endDayIndex: 0 });
+                });
 
 
                 // Map back to original order
